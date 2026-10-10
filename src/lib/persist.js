@@ -19,10 +19,11 @@ function fromRow(row) {
 }
 
 // Photos that no project and no album uses any more.
-function orphans({ projects, albums, images }) {
+function orphans({ projects, albums, presets, images }) {
   const used = new Set()
-  // Versions kept for undo count as using their photos too.
-  for (const p of [...projects, ...historyProjects()]) {
+  // Versions kept for undo and saved templates count as using their photos too.
+  for (const p of [...projects, ...historyProjects(), ...presets]) {
+    if (p.background?.imageId) used.add(p.background.imageId)
     for (const l of p.layers) if (l.imageId) used.add(l.imageId)
     for (const c of p.cells ?? []) if (c.imageId) used.add(c.imageId)
   }

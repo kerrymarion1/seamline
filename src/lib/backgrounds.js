@@ -1,6 +1,7 @@
 // Backgrounds are plain data so the editor (CSS) and the exporter (canvas)
 // can both draw them. A background is a base plus an optional image on top:
 //   { type: 'solid', color }  or  { type: 'gradient', id }
+//   or { type: 'photo', imageId, blur, dim }: a photo covering the whole strip
 //   + motif     repeating image drawn over the base (see MOTIFS)
 //   + ink       image colour; left out, it is white on dark bases, black on light
 //   + strength  how strongly the image shows (1 = subtle default)
@@ -106,7 +107,7 @@ const MAPLE = [
   [-0.34, 0], [-0.46, -0.16], [-0.2, -0.14], [-0.24, -0.36], [-0.1, -0.28],
 ]
 
-const SHAPES = {
+export const SHAPES = {
   leaf(ctx, i) {
     if (i % 2) {
       poly(ctx, MAPLE)
@@ -354,6 +355,7 @@ const gradientOf = (bg) => GRADIENTS.find((x) => x.id === bg.id) ?? GRADIENTS[0]
 // Whether light text and light images read better on this background.
 export function isDarkBackground(input) {
   const bg = normalizeBackground(input)
+  if (bg.type === 'photo') return true
   if (bg.type !== 'solid') return !!gradientOf(bg).dark
   const n = parseInt(bg.color.slice(1), 16)
   return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) < 128
@@ -363,7 +365,7 @@ const tiles = new Map()
 
 // The tile for a background's image, tinted and faded, or null if it has none.
 function motifTile(bg) {
-  if (!bg.motif || !PAINT[bg.motif]) return null
+  if (bg.type === 'photo' || !bg.motif || !PAINT[bg.motif]) return null
   const dark = isDarkBackground(bg)
   const color = bg.ink ?? (dark ? '#FFFFFF' : '#000000')
   const alpha = Math.min(1, (bg.ink ? 0.2 : dark ? 0.08 : 0.07) * (bg.strength ?? 1))
@@ -391,8 +393,20 @@ function motifTile(bg) {
 
 // CSS for a background. `scale` is screen pixels per scene pixel, which sets
 // how large the image tile is drawn.
+// Where a background photo is drawn so it covers W x H. Blurring fades the
+// edges, so the photo is laid a little past them on every side.
+export function photoCover(bg, image, W, H) {
+  const pad = (bg.blur ?? 0) * 3
+  const k = Math.max((W + pad * 2) / image.width, (H + pad * 2) / image.height)
+  const w = image.width * k
+  const h = image.height * k
+  return { x: (W - w) / 2, y: (H - h) / 2, w, h }
+}
+
 export function backgroundStyle(input, scale = 1) {
   const bg = normalizeBackground(input)
+  // The photo itself is an element in the strip; this is what shows behind it.
+  if (bg.type === 'photo') return { backgroundImage: 'linear-gradient(#111, #111)' }
   const base =
     bg.type === 'solid'
       ? `linear-gradient(${bg.color}, ${bg.color})`
@@ -407,8 +421,25 @@ export function backgroundStyle(input, scale = 1) {
 }
 
 // Paint a background onto a canvas context covering W x H scene pixels.
-export function paintBackground(ctx, input, W, H) {
+// `photo` is { img, width, height } for a photo background, already decoded.
+export function paintBackground(ctx, input, W, H, photo) {
   const bg = normalizeBackground(input)
+  if (bg.type === 'photo') {
+    ctx.fillStyle = '#111'
+    ctx.fillRect(0, 0, W, H)
+    if (photo) {
+      const r = photoCover(bg, photo, W, H)
+      ctx.save()
+      if (bg.blur && 'filter' in ctx) ctx.filter = `blur(${bg.blur}px)`
+      ctx.drawImage(photo.img, r.x, r.y, r.w, r.h)
+      ctx.restore()
+    }
+    if (bg.dim > 0) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${bg.dim})`
+      ctx.fillRect(0, 0, W, H)
+    }
+    return
+  }
   if (bg.type === 'solid') {
     ctx.fillStyle = bg.color
   } else {

@@ -6,7 +6,7 @@ import StripView from '../components/StripView'
 import { FormatPicker, Stepper, TemplateThumb } from '../editor/panels'
 import { MAX_SPOTS, templatesFor } from '../lib/cells'
 import { frameH, FORMATS, MAX_FRAMES, MIN_FRAMES } from '../lib/scene'
-import { createAlbum, createProject, deleteProject, fillEmptySpots, useStore } from '../lib/store'
+import { createAlbum, createProject, deleteProject, duplicateProject, fillEmptySpots, useStore } from '../lib/store'
 
 const THUMB_H = 132
 
@@ -154,6 +154,9 @@ export default function Home({ tab }) {
                   <h3>{p.name}</h3>
                   <p>{p.frames === 1 ? 'Single image' : `${p.frames} frames`} · {ago(p.updatedAt)}</p>
                 </div>
+                <button className="icon-btn" onClick={() => duplicateProject(p.id)} aria-label={`Duplicate ${p.name}`}>
+                  <Icon name="copy" size={20} />
+                </button>
                 <button className="icon-btn" onClick={() => setDoomed(p)} aria-label={`Delete ${p.name}`}>
                   <Icon name="trash" size={20} />
                 </button>

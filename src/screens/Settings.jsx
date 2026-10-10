@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import { createBackup, restoreBackup } from '../lib/backup'
-import { shareUrl, signIn, signOut, stopShare, STORAGE_LIMIT, useCloud } from '../lib/cloud'
+import { expiryText, shareUrl, signIn, signOut, stopShare, STORAGE_LIMIT, useCloud } from '../lib/cloud'
 import StripView from '../components/StripView'
 import { deletePreset, setImportAlbum, useStore } from '../lib/store'
 
@@ -238,7 +238,7 @@ export default function Settings() {
                   <div>
                     <h3>{s.title || (s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? 'Carousel' : 'Album')}</h3>
                     <p>
-                      {s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? `Carousel, ${s.items.length} frames` : `${s.items.length} photos`} · {mb(s.bytes)}
+                      {s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? `Carousel, ${s.items.length} frames` : `${s.items.length} photos`} · {mb(s.bytes)} · {expiryText(s)}
                     </p>
                   </div>
                   <button className="pill-btn" onClick={() => copy(s)}>{copied === s.id ? 'Copied' : 'Copy'}</button>

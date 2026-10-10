@@ -219,6 +219,23 @@ export const swapCells = (id, a, b) =>
     }
   })
 
+// A copy of a project, photos and all, to use as the start of the next one.
+export function duplicateProject(id) {
+  const src = state.projects.find((p) => p.id === id)
+  if (!src) return null
+  const copy = {
+    ...src,
+    id: uid(),
+    name: `${src.name} copy`,
+    cells: (src.cells ?? []).map((c) => ({ ...c, id: uid() })),
+    layers: src.layers.map((l) => ({ ...l, id: uid() })),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+  setState((s) => ({ ...s, projects: [copy, ...s.projects] }))
+  return copy
+}
+
 export function deleteProject(id) {
   setState((s) => ({ ...s, projects: s.projects.filter((p) => p.id !== id) }))
 }
@@ -318,7 +335,7 @@ export function savePreset(projectId, name) {
     background: p.background,
     layout: p.layout,
     cells: (p.cells ?? []).map((c) => ({ ...c, imageId: null, ox: 0, oy: 0, zoom: 1 })),
-    layers: p.layers.filter((l) => l.type === 'text'),
+    layers: p.layers.filter((l) => l.type !== 'photo'), // keep text and shapes
   }
   setState((s) => ({ ...s, presets: [preset, ...s.presets] }))
   return preset

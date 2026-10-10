@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import Sheet from '../components/Sheet'
-import { CanvasPanel, LayersPanel, LayoutPanel, TextPanel } from '../editor/panels'
+import { CanvasPanel, LayersPanel, LayoutPanel, PhotoStylePanel, ShapePanel, TextPanel } from '../editor/panels'
+import { newShape } from '../lib/shapes'
 import PhotoPicker from '../editor/PhotoPicker'
 import Stage from '../editor/Stage'
 import Preview from './Preview'
@@ -66,6 +67,7 @@ export default function Editor({ projectId }) {
   const [heights, setHeights] = useState({})
   const [fitAll, setFitAll] = useState(false)
   const [notice, setNotice] = useState(null)
+  const [shapeColor, setShapeColor] = useState('#FFFFFF')
   const [previewing, setPreviewing] = useState(false)
   const kb = useKeyboardInset()
 
@@ -116,13 +118,14 @@ export default function Editor({ projectId }) {
   // Stable per-sheet callbacks so Sheet's ResizeObserver is not re-created.
   const heightCbs = useRef({
     canvas: onHeight('canvas'), text: onHeight('text'), layers: onHeight('layers'), layout: onHeight('layout'),
-    photos: onHeight('photos'),
+    photos: onHeight('photos'), shapes: onHeight('shapes'), photostyle: onHeight('photostyle'),
   }).current
 
   if (!project) return null
 
   // The text sheet only makes sense while a text layer is selected.
-  const openSheet = sheet === 'text' && selected?.type !== 'text' ? null : sheet
+  const openSheet =
+    (sheet === 'text' && selected?.type !== 'text') || (sheet === 'photostyle' && selected?.type !== 'photo') ? null : sheet
   const inset = openSheet
     ? Math.max(0, (heights[openSheet] ?? 0) + kb - (toolbar.current?.offsetHeight ?? 80))
     : 0
@@ -156,6 +159,12 @@ export default function Editor({ projectId }) {
   }
 
   function placePhotos(records) {
+    // Picked for the background rather than the canvas.
+    if (pickFor.current === 'background') {
+      pickFor.current = null
+      if (records[0]) updateProject(project.id, { background: { type: 'photo', imageId: records[0].id, blur: 24, dim: 0.25 } })
+      return
+    }
     const start = stage.current.visibleFrame()
     // Photos snap into the collage first: the cell the picker was opened for,
     // then empty cells left to right. Anything left over becomes a free layer.
@@ -186,6 +195,14 @@ export default function Editor({ projectId }) {
     })
     addLayers(project.id, layers)
     if (layers.length) select(layers.at(-1).id)
+  }
+
+  function addShape(sticker) {
+    const frame = stage.current.visibleFrame()
+    const layer = newShape(uid(), sticker, shapeColor, (frame + 0.5) * FRAME_W, H / 2)
+    addLayers(project.id, [layer])
+    select(layer.id)
+    setSheet(null)
   }
 
   function addText() {
@@ -301,11 +318,14 @@ export default function Editor({ projectId }) {
           <ToolButton icon="photo" label="Photos" onClick={() => pickPhotos()} />
           <ToolButton icon="layout" label="Layouts" onClick={() => toggle('layout')} />
           <ToolButton icon="text" label="Text" onClick={addText} />
+          <ToolButton icon="shapes" label="Shapes" onClick={() => toggle('shapes')} />
           <ToolButton icon="canvas" label="Canvas" onClick={() => toggle('canvas')} />
           <ToolButton icon="layers" label="Layers" onClick={() => toggle('layers')} />
         </div>
         <div className={`tools ${bar === 'layer' ? 'show' : ''}`} inert={bar !== 'layer'}>
           {selected?.type === 'text' && <ToolButton icon="edit" label="Edit" onClick={() => setSheet('text')} />}
+          {selected?.type === 'photo' && <ToolButton icon="edit" label="Style" onClick={() => setSheet('photostyle')} />}
+          {selected?.type === 'shape' && <ToolButton icon="edit" label="Colour" onClick={() => setSheet('shapes')} />}
           <ToolButton icon="forward" label="Forward" onClick={() => moveLayer(project.id, selectedId, 1)} />
           <ToolButton icon="backward" label="Back" onClick={() => moveLayer(project.id, selectedId, -1)} />
           <ToolButton icon="copy" label="Copy" onClick={() => select(duplicateLayer(project.id, selectedId))} />
@@ -349,10 +369,22 @@ export default function Editor({ projectId }) {
         <LayoutPanel project={project} />
       </Sheet>
       <Sheet open={openSheet === 'canvas'} onClose={() => setSheet(null)} title="Canvas" onHeight={heightCbs.canvas}>
-        <CanvasPanel project={project} />
+        <CanvasPanel project={project} onPickBackground={() => pickPhotos('background')} />
       </Sheet>
       <Sheet open={openSheet === 'text'} onClose={() => setSheet(null)} title="Text" onHeight={heightCbs.text}>
         <TextPanel project={project} layer={selected?.type === 'text' ? selected : null} />
+      </Sheet>
+      <Sheet open={openSheet === 'shapes'} onClose={() => setSheet(null)} title="Shapes" onHeight={heightCbs.shapes}>
+        <ShapePanel
+          project={project}
+          layer={selected?.type === 'shape' ? selected : null}
+          color={shapeColor}
+          onColor={setShapeColor}
+          onAdd={addShape}
+        />
+      </Sheet>
+      <Sheet open={openSheet === 'photostyle'} onClose={() => setSheet(null)} title="Photo style" onHeight={heightCbs.photostyle}>
+        <PhotoStylePanel project={project} layer={selected?.type === 'photo' ? selected : null} />
       </Sheet>
       <Sheet open={openSheet === 'layers'} onClose={() => setSheet(null)} title="Layers" onHeight={heightCbs.layers}>
         <LayersPanel project={project} selectedId={selectedId} onSelect={select} />

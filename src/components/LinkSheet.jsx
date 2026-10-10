@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { navigate } from '../App'
-import { findShare, outOfDate, shareUrl, stopShare, syncShare, useCloud } from '../lib/cloud'
+import {
+  EXPIRY_CHOICES, expiryText, findShare, isExpired, outOfDate, setExpiry, shareUrl, stopShare, syncShare, useCloud,
+} from '../lib/cloud'
 import { useStore } from '../lib/store'
 import Icon from './Icon'
 import Sheet from './Sheet'
@@ -106,7 +108,19 @@ export default function LinkSheet({ target, onClose, onSendFiles }) {
               <button className="secondary block" onClick={sync}>Update link</button>
             </>
           )}
-          <p className="note">Anyone with this link can view and download {what}.</p>
+          <div className="row">
+            <span className={`label ${isExpired(share) ? 'expired' : ''}`}>{expiryText(share)}</span>
+          </div>
+          <div className="chips">
+            {EXPIRY_CHOICES.map((c) => (
+              <button key={c.label} className="chip small" onClick={() => run(() => setExpiry(share, c.days))}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <p className="note">
+            Anyone with this link can view and download {what}. Choosing a time restarts the countdown from now.
+          </p>
           <button className="text-btn danger" onClick={() => run(() => stopShare(share))}>Stop sharing</button>
         </>
       ) : (

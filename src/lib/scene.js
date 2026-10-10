@@ -4,6 +4,7 @@ export const FRAME_W = 1080
 export const FORMATS = [
   { id: 'portrait', name: '4:5', h: 1350 },
   { id: 'square', name: '1:1', h: 1080 },
+  { id: 'story', name: '9:16', h: 1920 },
 ]
 export const MIN_FRAMES = 1
 

@@ -1,10 +1,11 @@
 import { memo, useContext } from 'react'
-import { backgroundStyle } from '../lib/backgrounds'
+import { backgroundStyle, normalizeBackground, photoCover } from '../lib/backgrounds'
 import { cellImageBox, cellRect } from '../lib/cells'
 import Icon from './Icon'
-import { fontOf, layerSize, LINE_HEIGHT } from '../lib/fonts'
+import { fontOf, layerSize, LINE_HEIGHT, photoDecor, textDecor } from '../lib/fonts'
 import { FontsContext } from '../lib/fontsContext'
 import { frameH, sceneWidth } from '../lib/scene'
+import { shapeUrl } from '../lib/shapes'
 import { useStore } from '../lib/store'
 
 // CSS box for a layer at a given display scale (scene px -> screen px).
@@ -17,12 +18,16 @@ export function layerBox(layer, scale) {
   }
 }
 
+const shadowCss = (s, scale, spread = 0) =>
+  `0 ${s.y * scale}px ${s.blur * scale}px ${spread * scale}px ${s.color}`
+
 const LayerView = memo(function LayerView({ layer, scale, image }) {
   useContext(FontsContext) // re-measure text when fonts arrive
   const box = layerBox(layer, scale)
 
   if (layer.type === 'text') {
     const f = fontOf(layer.font)
+    const d = textDecor(layer)
     return (
       <div
         className="layer layer-text"
@@ -35,6 +40,13 @@ const LayerView = memo(function LayerView({ layer, scale, image }) {
           lineHeight: LINE_HEIGHT,
           color: layer.color,
           textAlign: layer.align,
+          letterSpacing: `${layer.spacing ?? 0}em`,
+          WebkitTextStroke: d.outline ? `${d.outline.width * scale}px ${d.outline.color}` : undefined,
+          paintOrder: 'stroke fill',
+          textShadow: d.shadow ? `0 ${d.shadow.y * scale}px ${d.shadow.blur * scale}px ${d.shadow.color}` : undefined,
+          background: d.pill?.color,
+          borderRadius: d.pill ? d.pill.radius * scale : undefined,
+          boxShadow: d.pill ? `0 0 0 ${d.pill.pad * scale}px ${d.pill.color}` : undefined,
         }}
       >
         {layer.text}
@@ -42,8 +54,21 @@ const LayerView = memo(function LayerView({ layer, scale, image }) {
     )
   }
 
+  if (layer.type === 'shape') {
+    return (
+      <div className="layer" data-layer-id={layer.id} style={box}>
+        <img src={shapeUrl(layer)} alt="" draggable={false} />
+      </div>
+    )
+  }
+
+  const d = photoDecor(layer)
+  const shadows = [
+    d.border && `0 0 0 ${d.border * scale}px #fff`,
+    d.shadow && shadowCss(d.shadow, scale, d.border),
+  ].filter(Boolean)
   return (
-    <div className="layer" data-layer-id={layer.id} style={box}>
+    <div className="layer" data-layer-id={layer.id} style={{ ...box, boxShadow: shadows.join(', ') || undefined }}>
       {image && <img src={image.previewUrl} alt="" draggable={false} />}
     </div>
   )
@@ -82,18 +107,40 @@ function CellView({ cell, project, scale, image, drop }) {
   )
 }
 
+// A photo used as the background: stretched to cover the whole strip, blurred
+// and dimmed so whatever sits on top stays readable.
+function BackgroundPhoto({ bg, image, W, H, scale }) {
+  const r = photoCover(bg, image, W, H)
+  return (
+    <>
+      <img
+        className="bg-photo"
+        src={image.previewUrl}
+        alt=""
+        draggable={false}
+        style={{
+          width: r.w * scale,
+          height: r.h * scale,
+          transform: `translate3d(${r.x * scale}px, ${r.y * scale}px, 0)`,
+          filter: bg.blur ? `blur(${bg.blur * scale}px)` : undefined,
+        }}
+      />
+      {bg.dim > 0 && <i className="bg-dim" style={{ background: `rgba(0, 0, 0, ${bg.dim})` }} />}
+    </>
+  )
+}
+
 // The whole carousel strip: background, collage cells, then free layers.
 export default function StripView({ project, scale, dropCellId }) {
   const images = useStore((s) => s.images)
+  const bg = normalizeBackground(project.background)
+  const W = sceneWidth(project.frames)
+  const H = frameH(project)
   return (
-    <div
-      className="strip"
-      style={{
-        width: sceneWidth(project.frames) * scale,
-        height: frameH(project) * scale,
-        ...backgroundStyle(project.background, scale),
-      }}
-    >
+    <div className="strip" style={{ width: W * scale, height: H * scale, ...backgroundStyle(bg, scale) }}>
+      {bg.type === 'photo' && images[bg.imageId] && (
+        <BackgroundPhoto bg={bg} image={images[bg.imageId]} W={W} H={H} scale={scale} />
+      )}
       {(project.cells ?? []).map((c) => (
         <CellView key={c.id} cell={c} project={project} scale={scale} image={images[c.imageId]} drop={c.id === dropCellId} />
       ))}

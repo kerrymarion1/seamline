@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { MAX_SPOTS, templatesFor, tilesOf } from '../lib/cells'
 import { FONTS, TEXT_COLORS } from '../lib/fonts'
 import { frameH, FORMATS, MAX_FRAMES, MIN_FRAMES } from '../lib/scene'
+import { SHAPE_COLORS, shapeUrl, STICKERS } from '../lib/shapes'
 import {
   applyLayout, clearLayout, savePreset, moveLayer, removeLayer, setFormat, setFrames, updateLayer, updateLayout, updateProject, useStore,
 } from '../lib/store'
@@ -53,7 +54,7 @@ function Swatches({ colors, value, onPick }) {
   )
 }
 
-export function CanvasPanel({ project }) {
+export function CanvasPanel({ project, onPickBackground }) {
   const bg = normalizeBackground(project.background)
   const set = (background) => updateProject(project.id, { background })
   // A new colour keeps the image on top but lets it pick a readable tint again.
@@ -97,8 +98,28 @@ export function CanvasPanel({ project }) {
         ))}
       </div>
 
-      <div className="label">Image</div>
-      <div className="templates">
+      <div className="label">Photo</div>
+      {bg.type === 'photo' ? (
+        <>
+          <label className="row range-row">
+            <span className="label">Blur</span>
+            <input className="slider" type="range" min={0} max={60} value={bg.blur ?? 0} onChange={(e) => set({ ...bg, blur: +e.target.value })} />
+          </label>
+          <label className="row range-row">
+            <span className="label">Dim</span>
+            <input className="slider" type="range" min={0} max={80} value={Math.round((bg.dim ?? 0) * 100)} onChange={(e) => set({ ...bg, dim: +e.target.value / 100 })} />
+          </label>
+          <div className="btn-pair">
+            <button className="text-btn" onClick={onPickBackground}>Change photo</button>
+            <button className="text-btn" onClick={() => set({ type: 'solid', color: '#F2F0EB' })}>Remove photo</button>
+          </div>
+        </>
+      ) : (
+        <button className="secondary block" onClick={onPickBackground}>Use a photo as the background</button>
+      )}
+
+      {bg.type !== 'photo' && <div className="label">Image</div>}
+      <div className="templates" hidden={bg.type === 'photo'}>
         <button className={`tpl ${bg.motif ? '' : 'on'}`} onClick={() => set({ ...bg, motif: undefined, ink: undefined })}>
           <span className="bg-art" style={backgroundStyle({ ...bg, motif: undefined })} />
           <span>None</span>
@@ -114,7 +135,7 @@ export function CanvasPanel({ project }) {
           </button>
         ))}
       </div>
-      {bg.motif && (
+      {bg.motif && bg.type !== 'photo' && (
         <label className="row range-row">
           <span className="label">Strength</span>
           <input
@@ -190,6 +211,62 @@ export function TextPanel({ project, layer }) {
           ))}
         </div>
       </div>
+      <div className="chips">
+        {[['outline', 'Outline'], ['shadow', 'Shadow'], ['pill', 'Backing']].map(([key, label]) => (
+          <button key={key} className={`chip small ${layer[key] ? 'on' : ''}`} onClick={() => set({ [key]: !layer[key] })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <label className="row range-row">
+        <span className="label">Spacing</span>
+        <input
+          className="slider"
+          type="range"
+          min={-5}
+          max={40}
+          value={Math.round((layer.spacing ?? 0) * 100)}
+          onChange={(e) => set({ spacing: +e.target.value / 100 })}
+        />
+      </label>
+    </>
+  )
+}
+
+// Add a shape or sticker, or recolour the selected one.
+export function ShapePanel({ project, layer, color, onColor, onAdd }) {
+  const current = layer?.color ?? color
+  const pick = (c) => {
+    onColor(c)
+    if (layer) updateLayer(project.id, layer.id, { color: c })
+  }
+  return (
+    <>
+      <Swatches colors={SHAPE_COLORS} value={current} onPick={pick} />
+      <div className="sticker-grid">
+        {STICKERS.map((st) => (
+          <button key={st.id} className="sticker" onClick={() => onAdd(st)} aria-label={`Add ${st.name}`}>
+            <img src={shapeUrl({ shape: st.id, color: current, w: st.ratio, h: 1 })} alt="" draggable={false} />
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+
+// Border and shadow for a free photo.
+export function PhotoStylePanel({ project, layer }) {
+  if (!layer) return null
+  const set = (patch) => updateLayer(project.id, layer.id, patch)
+  return (
+    <>
+      <label className="row range-row">
+        <span className="label">Border</span>
+        <input className="slider" type="range" min={0} max={80} value={layer.border ?? 0} onChange={(e) => set({ border: +e.target.value })} />
+      </label>
+      <div className="chips">
+        <button className={`chip small ${layer.shadow ? 'on' : ''}`} onClick={() => set({ shadow: !layer.shadow })}>Shadow</button>
+      </div>
     </>
   )
 }
@@ -206,9 +283,9 @@ export function LayersPanel({ project, selectedId, onSelect }) {
             {l.type === 'text' ? (
               <span className="thumb text-thumb">T</span>
             ) : (
-              <img className="thumb" src={images[l.imageId]?.previewUrl} alt="" />
+              <img className={`thumb ${l.type === 'shape' ? 'shape-thumb' : ''}`} src={l.type === 'shape' ? shapeUrl(l) : images[l.imageId]?.previewUrl} alt="" />
             )}
-            <span className="layer-name">{l.type === 'text' ? l.text || 'Text' : 'Photo'}</span>
+            <span className="layer-name">{l.type === 'text' ? l.text || 'Text' : l.type === 'shape' ? STICKERS.find((x) => x.id === l.shape)?.name ?? 'Shape' : 'Photo'}</span>
           </button>
           <button className="icon-btn" disabled={i === 0} onClick={() => moveLayer(project.id, l.id, 1)} aria-label="Bring forward">
             <Icon name="up" size={20} />

@@ -141,6 +141,33 @@ export async function syncShare({ kind, sourceId, title, images }, onProgress = 
   }
 }
 
+// How long a link stays open. `days` of null means it never expires.
+export const EXPIRY_CHOICES = [
+  { label: 'Never', days: null },
+  { label: '1 day', days: 1 },
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
+]
+
+export const isExpired = (share) => !!share.expires_at && new Date(share.expires_at) <= new Date()
+
+// "Never expires", "Expires in 6 days" or "Expired".
+export function expiryText(share) {
+  if (!share.expires_at) return 'Never expires'
+  const hours = (new Date(share.expires_at) - Date.now()) / 36e5
+  if (hours <= 0) return 'Expired'
+  if (hours < 24) return `Expires in ${Math.max(1, Math.round(hours))} h`
+  return `Expires in ${Math.round(hours / 24)} day${Math.round(hours / 24) === 1 ? '' : 's'}`
+}
+
+// Set or clear a link's expiry, counted from now.
+export async function setExpiry(share, days) {
+  const expires_at = days ? new Date(Date.now() + days * 864e5).toISOString() : null
+  const { data, error } = await supabase.from('seamline_shares').update({ expires_at }).eq('id', share.id).select().single()
+  if (error) throw new Error(error.message)
+  set({ shares: state.shares.map((s) => (s.id === data.id ? data : s)) })
+}
+
 // Remove a link and every photo uploaded for it.
 export async function stopShare(share) {
   if (share.items.length) {
