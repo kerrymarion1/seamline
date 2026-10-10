@@ -7,12 +7,12 @@ import { useStore } from '../lib/store'
 import Icon from './Icon'
 import Sheet from './Sheet'
 
-// Sharing options for an album or a single photo: send the files themselves,
-// or create, copy, update and remove a public link.
+// Sharing for an album, a photo or a carousel: create, copy, send, update and
+// remove a public link to a page that shows it. The files are never sent.
 // target: { kind: 'album' | 'photo', sourceId, title, imageIds } for photos kept
 // in the app, or { kind: 'carousel', sourceId, title, uploads, stale } for a
 // finished carousel, where `uploads` are its exported frames. Null when closed.
-export default function LinkSheet({ target, onClose, onSendFiles }) {
+export default function LinkSheet({ target, onClose }) {
   const cloud = useCloud()
   const images = useStore((s) => s.images)
   const [progress, setProgress] = useState(null)
@@ -71,13 +71,7 @@ export default function LinkSheet({ target, onClose, onSendFiles }) {
   }
 
   return (
-    <Sheet open={!!target} onClose={close} title={carousel ? 'Share by link' : target?.kind === 'photo' ? 'Share photo' : 'Share album'} modal>
-      {onSendFiles && (
-        <button className="secondary block" onClick={onSendFiles}>
-          <Icon name="share" size={20} /> Send the {n} photo{n === 1 ? '' : 's'}
-        </button>
-      )}
-
+    <Sheet open={!!target} onClose={close} title={carousel ? 'Share by link' : target?.kind === 'photo' ? 'Share photo link' : 'Share album link'} modal>
       {!cloud.configured ? (
         <p className="hint">Links are not set up on this copy of the app.</p>
       ) : cloud.loading ? (

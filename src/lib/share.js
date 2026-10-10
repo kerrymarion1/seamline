@@ -59,16 +59,3 @@ export async function saveToPhone(files, zipName = 'photos') {
   if (files.length === 1) downloadFile(files[0])
   else await downloadZip(files, zipName)
 }
-
-// Whether this browser can hand files to other apps at all.
-export const canShare = () => typeof navigator.share === 'function' && typeof navigator.canShare === 'function'
-
-// Send photos to another app through the system share sheet.
-export async function sharePhotos(files) {
-  if (!canShareFiles(files)) {
-    throw new Error(
-      files.length > 1 ? 'Too many photos to share at once. Select fewer and try again.' : 'This photo cannot be shared from here.',
-    )
-  }
-  return shareFiles(files)
-}

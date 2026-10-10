@@ -4,7 +4,7 @@ import Icon from '../components/Icon'
 import LinkSheet from '../components/LinkSheet'
 import Sheet from '../components/Sheet'
 import { importFile } from '../lib/images'
-import { canShare, imageFile, saveToPhone, sharePhotos } from '../lib/share'
+import { imageFile, saveToPhone } from '../lib/share'
 import {
   addImages, addToAlbum, deleteAlbum, removeFromAlbum, renameAlbum, useAlbum, useStore,
 } from '../lib/store'
@@ -67,19 +67,21 @@ export default function Album({ albumId }) {
     setBusy(false)
   }
 
-  // Must run straight from the tap: browsers only open the share sheet then.
-  async function share(imageIds) {
-    setBusy(true)
-    try {
-      await sharePhotos(filesOf(imageIds))
-    } catch (e) {
-      setNotice({ text: e.message || 'Could not share the photos' })
-    }
-    setBusy(false)
-  }
-  const shareable = canShare()
+  // Sharing always means a link to a page showing the photos, never the files.
   const linkPhoto = () =>
     setLinking({ kind: 'photo', sourceId: viewing, title: (viewed.name ?? 'Photo').replace(/\.[^.]+$/, ''), imageIds: [viewing] })
+  // A few chosen photos get a page of their own, separate from the album's.
+  const linkPicked = () => {
+    const chosen = ids.filter((id) => picked.includes(id))
+    let hash = 5381
+    for (const ch of chosen.join()) hash = ((hash * 33) ^ ch.charCodeAt(0)) >>> 0
+    setLinking({
+      kind: 'album',
+      sourceId: `${album.id}:${hash.toString(36)}`,
+      title: `${album.name} · ${chosen.length} photo${chosen.length === 1 ? '' : 's'}`,
+      imageIds: chosen,
+    })
+  }
 
   const stopSelecting = () => {
     setSelecting(false)
@@ -117,9 +119,9 @@ export default function Album({ albumId }) {
           <button
             className="icon-btn"
             onClick={() => setLinking({ kind: 'album', sourceId: album.id, title: album.name, imageIds: ids })}
-            aria-label="Share album"
+            aria-label="Share album link"
           >
-            <Icon name="share" size={20} />
+            <Icon name="link" size={20} />
           </button>
         )}
         <button className="icon-btn" onClick={() => setConfirmDelete(true)} aria-label="Delete album">
@@ -159,12 +161,10 @@ export default function Album({ albumId }) {
       {selecting && (
         <nav className="toolbar">
           <div className="tools show">
-            {shareable && (
-              <button className="tool" disabled={!picked.length || busy} onClick={() => share(picked)}>
-                <Icon name="share" />
-                <span>Share {picked.length || ''}</span>
-              </button>
-            )}
+            <button className="tool" disabled={!picked.length} onClick={linkPicked}>
+              <Icon name="link" />
+              <span>Share link</span>
+            </button>
             <button className="tool" disabled={!picked.length || busy} onClick={() => save(picked)}>
               <Icon name="download" />
               <span>Save {picked.length || ''}</span>
@@ -192,24 +192,10 @@ export default function Album({ albumId }) {
             <img src={viewed.url} alt="" draggable={false} />
           </div>
           <footer className="preview-actions">
-            {shareable ? (
-              <>
-                <button className="primary block" disabled={busy} onClick={() => share([viewing])}>
-                  <Icon name="share" size={20} /> Share
-                </button>
-                <div className="btn-pair">
-                  <button className="text-btn" onClick={linkPhoto}>Share link</button>
-                  <button className="text-btn" disabled={busy} onClick={() => save([viewing])}>Save to phone</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <button className="primary block" disabled={busy} onClick={() => save([viewing])}>
-                  <Icon name="download" size={20} /> Save to phone
-                </button>
-                <button className="text-btn" onClick={linkPhoto}>Share link</button>
-              </>
-            )}
+            <button className="primary block" onClick={linkPhoto}>
+              <Icon name="link" size={20} /> Share link
+            </button>
+            <button className="text-btn" disabled={busy} onClick={() => save([viewing])}>Save to phone</button>
           </footer>
         </div>
       )}
@@ -221,11 +207,7 @@ export default function Album({ albumId }) {
         </div>
       )}
 
-      <LinkSheet
-        target={linking}
-        onClose={() => setLinking(null)}
-        onSendFiles={shareable && linking?.kind === 'album' ? () => share(ids) : null}
-      />
+      <LinkSheet target={linking} onClose={() => setLinking(null)} />
 
       <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete album?" modal>
         <p className="hint">
