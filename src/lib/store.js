@@ -28,6 +28,39 @@ export const subscribe = (l) => {
 export const useStore = (selector) =>
   useSyncExternalStore(subscribe, () => selector(state))
 
+// ---------- what sync needs to know about deletions ----------
+// Deleting something only on this device would let the next sync bring it
+// straight back, so each deletion leaves a marker until other devices hear of it.
+const TOMBS = 'seamline:tombstones'
+export const tombstones = () => JSON.parse(localStorage.getItem(TOMBS) || '[]')
+const saveTombs = (list) => localStorage.setItem(TOMBS, JSON.stringify(list))
+function entomb(kind, id) {
+  saveTombs([...tombstones().filter((t) => !(t.kind === kind && t.id === id)), { kind, id, at: Date.now() }])
+}
+export const clearTombstone = (kind, id) =>
+  saveTombs(tombstones().filter((t) => !(t.kind === kind && t.id === id)))
+
+const LISTS = { project: 'projects', album: 'albums', preset: 'presets' }
+
+// Take in changes made on another device: `docs` replace or add, `removed`
+// delete. Nothing here counts as a local edit, so it is not sent back.
+export function applyRemote({ docs = [], removed = [] }) {
+  if (!docs.length && !removed.length) return
+  setState((s) => {
+    const next = { ...s }
+    for (const [kind, list] of Object.entries(LISTS)) {
+      const incoming = new Map(docs.filter((d) => d.kind === kind).map((d) => [d.doc.id, d.doc]))
+      const gone = new Set(removed.filter((r) => r.kind === kind).map((r) => r.id))
+      if (!incoming.size && !gone.size) continue
+      const kept = s[list].filter((x) => !incoming.has(x.id) && !gone.has(x.id))
+      next[list] = [...incoming.values(), ...kept].sort(
+        (a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0),
+      )
+    }
+    return next
+  })
+}
+
 // Called once at startup with whatever was saved on this device.
 export const hydrate = (data) => setState((s) => ({ ...s, ...data, ready: true }))
 
@@ -237,6 +270,7 @@ export function duplicateProject(id) {
 }
 
 export function deleteProject(id) {
+  entomb('project', id)
   setState((s) => ({ ...s, projects: s.projects.filter((p) => p.id !== id) }))
 }
 
@@ -285,19 +319,21 @@ export function duplicateLayer(pid, lid) {
 export const useAlbum = (id) => useStore((s) => s.albums.find((a) => a.id === id))
 
 function patchAlbum(id, fn) {
-  setState((s) => ({ ...s, albums: s.albums.map((a) => (a.id === id ? fn(a) : a)) }))
+  setState((s) => ({ ...s, albums: s.albums.map((a) => (a.id === id ? { ...fn(a), updatedAt: Date.now() } : a)) }))
 }
 
 export function createAlbum(name) {
-  const album = { id: uid(), name: name?.trim() || 'Untitled album', imageIds: [], createdAt: Date.now() }
+  const album = { id: uid(), name: name?.trim() || 'Untitled album', imageIds: [], createdAt: Date.now(), updatedAt: Date.now() }
   setState((s) => ({ ...s, albums: [album, ...s.albums] }))
   return album
 }
 
 export const renameAlbum = (id, name) => patchAlbum(id, (a) => ({ ...a, name }))
 
-export const deleteAlbum = (id) =>
+export function deleteAlbum(id) {
+  entomb('album', id)
   setState((s) => ({ ...s, albums: s.albums.filter((a) => a.id !== id) }))
+}
 
 // Newest photos first.
 export const addToAlbum = (id, imageIds) =>
@@ -341,8 +377,10 @@ export function savePreset(projectId, name) {
   return preset
 }
 
-export const deletePreset = (id) =>
+export function deletePreset(id) {
+  entomb('preset', id)
   setState((s) => ({ ...s, presets: s.presets.filter((t) => t.id !== id) }))
+}
 
 // Put photos into a project's empty spots, left to right. Returns the ids
 // that did not fit.

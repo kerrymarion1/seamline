@@ -1,9 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { useSyncExternalStore } from 'react'
 
-// Shared links: photos uploaded to Supabase Storage and listed in the
-// seamline_shares table, reachable by anyone holding the link's random code.
-// Only the signed-in, allow-listed owner can create, change or remove them.
+// Everything online lives in one "library" that its members share: photos in
+// Supabase Storage with a registry row each (seamline_photos), links to them
+// (seamline_shares) reachable by anyone holding a link's random code, and the
+// projects and albums themselves (seamline_docs, see sync.js).
 const URL_ = import.meta.env.VITE_SUPABASE_URL
 const KEY = import.meta.env.VITE_SUPABASE_KEY
 const BUCKET = 'seamline'
@@ -20,8 +21,12 @@ const NO_HEARTS = { byItem: {}, byShare: {} }
 const AUTO_SYNC = 'seamline:autoSync'
 // `autoSync` keeps albums online ahead of time so sharing one is only a link;
 // `syncing` is { id, done, total } for the album being put online right now.
+// `library` is the id everything is filed under; `photos` maps a photo's id to
+// its online copy; `canSync` is false until the database has been set up for it.
 let state = {
   configured: !!supabase, loading: !!supabase, session: null, uploader: false, shares: [], hearts: NO_HEARTS,
+  library: null, photos: {}, canSync: false,
+  recovering: false, // arrived from a password-reset email and must choose a new one
   autoSync: localStorage.getItem(AUTO_SYNC) !== 'off', syncing: null, syncError: null,
 }
 const listeners = new Set()
@@ -34,16 +39,49 @@ const subscribe = (l) => {
   return () => listeners.delete(l)
 }
 export const useCloud = () => useSyncExternalStore(subscribe, () => state)
+export const getCloud = () => state
+export const onCloud = subscribe
 
 async function refresh(session) {
-  if (!session) return set({ loading: false, session: null, uploader: false, shares: [], hearts: NO_HEARTS })
+  if (!session) {
+    return set({ loading: false, session: null, uploader: false, shares: [], hearts: NO_HEARTS, library: null, photos: {}, canSync: false })
+  }
   set({ session })
-  const [{ data: uploader }, { data: shares }] = await Promise.all([
+  const [{ data: uploader }, { data: shares }, lib] = await Promise.all([
     supabase.rpc('seamline_is_uploader'),
     supabase.from('seamline_shares').select('*').order('created_at', { ascending: false }),
+    supabase.rpc('seamline_my_library'),
   ])
-  set({ loading: false, uploader: !!uploader, shares: shares ?? [] })
+  // Before the database knows about libraries, fall back to links only.
+  const canSync = !lib.error && !!lib.data
+  set({
+    loading: false, uploader: !!uploader, shares: shares ?? [],
+    library: canSync ? lib.data : session.user.id, canSync,
+  })
+  if (canSync) await refreshPhotos()
   await refreshHearts()
+}
+
+// Re-read which photos are online, adopting any that older links put there
+// before the registry existed.
+export async function refreshPhotos() {
+  if (!supabase || !state.session || !state.canSync) return
+  const { data } = await supabase.from('seamline_photos').select('*')
+  if (!data) return
+  const photos = Object.fromEntries(data.map((row) => [row.id, row]))
+  const strays = new Map()
+  for (const sh of state.shares) {
+    if (sh.kind === 'carousel') continue
+    for (const it of sh.items) if (!it.visitor && !photos[it.id] && !strays.has(it.id)) strays.set(it.id, it)
+  }
+  if (strays.size) {
+    const rows = [...strays.values()].map(({ id, path, name, width, height, bytes }) => ({
+      library: state.library, id, path, name, width, height, bytes,
+    }))
+    const { data: added } = await supabase.from('seamline_photos').upsert(rows).select()
+    for (const row of added ?? []) photos[row.id] = row
+  }
+  set({ photos })
 }
 
 // Re-read the owner's links, for example to pick up photos visitors added.
@@ -65,18 +103,51 @@ export async function refreshHearts() {
   set({ hearts })
 }
 
+// "Keep me signed in" unticked: the sign-in lasts until the app is closed.
+// The marker in sessionStorage disappears with the tab, which is how a fresh
+// start is told apart from a reload.
+const EPHEMERAL = 'seamline:ephemeral'
+const THIS_VISIT = 'seamline:visit'
+if (supabase && localStorage.getItem(EPHEMERAL) && !sessionStorage.getItem(THIS_VISIT)) {
+  localStorage.removeItem(EPHEMERAL)
+  supabase.auth.signOut()
+}
+
 if (supabase) {
   // Fires once with the stored session, then on every sign-in and sign-out.
   // Deferred: Supabase must not be called from inside this callback.
-  supabase.auth.onAuthStateChange((_event, session) => setTimeout(() => refresh(session).catch(() => set({ loading: false }))))
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') set({ recovering: true })
+    setTimeout(() => refresh(session).catch(() => set({ loading: false })))
+  })
 }
 
-export async function signIn(email, password) {
+export async function signIn(email, password, remember = true) {
   const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+  if (error) throw new Error(error.message)
+  if (remember) localStorage.removeItem(EPHEMERAL)
+  else {
+    localStorage.setItem(EPHEMERAL, '1')
+    sessionStorage.setItem(THIS_VISIT, '1')
+  }
+}
+
+// Email a link for choosing a new password. It comes back to Settings here.
+export async function requestPasswordReset(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/settings` })
   if (error) throw new Error(error.message)
 }
 
-export const signOut = () => supabase.auth.signOut()
+export async function setNewPassword(password) {
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) throw new Error(error.message)
+  set({ recovering: false })
+}
+
+export function signOut() {
+  localStorage.removeItem(EPHEMERAL)
+  return supabase.auth.signOut()
+}
 
 // ---------- links ----------
 
@@ -122,26 +193,78 @@ async function uploadCopy(image) {
   return { blob, ...size }
 }
 
-// Every photo already online, by its id, whichever link put it there.
-function onlineItems(exceptShareId) {
-  const map = new Map()
+// A photo's online copy: from the registry, or failing that from a link.
+function onlineItem(imageId) {
+  const row = state.photos[imageId]
+  if (row) return { id: row.id, path: row.path, name: row.name, width: row.width, height: row.height, bytes: row.bytes }
   for (const sh of state.shares) {
-    if (sh.id === exceptShareId) continue
-    for (const it of sh.items) if (!it.visitor && !map.has(it.id)) map.set(it.id, it)
+    const it = sh.items.find((x) => x.id === imageId && !x.visitor)
+    if (it) return it
   }
-  return map
+  return null
 }
-export const isOnline = (imageId) => onlineItems().has(imageId)
+export const isOnline = (imageId) => !!onlineItem(imageId)
+
+// A photo that can go into a link: it is on this device, or already online.
+export const linkable = (imageIds, images) =>
+  imageIds.map((id) => images[id] ?? (isOnline(id) ? { id } : null)).filter(Boolean)
 
 // Storage paths that links other than `exceptShareId` still show.
 const pathsInUse = (exceptShareId) =>
   new Set(state.shares.filter((sh) => sh.id !== exceptShareId).flatMap((sh) => sh.items.map((it) => it.path)))
+// Paths the registry looks after; those are only deleted by its own clean-up.
+const registered = () => new Set(Object.values(state.photos).map((row) => row.path))
 
-// Bytes actually stored: a photo shown by several links is only stored once.
+// Bytes actually stored: a photo used in several places is only stored once.
 export function storageUsed(shares = state.shares) {
   const seen = new Map()
+  for (const row of Object.values(state.photos)) seen.set(row.path, row.bytes)
   for (const sh of shares) for (const it of sh.items) seen.set(it.path, it.bytes)
   return [...seen.values()].reduce((n, b) => n + b, 0)
+}
+
+// Put photos online that are not there yet, and note each in the registry.
+// `images` are photos held on this device. Returns nothing; read the results
+// back with onlineItem.
+export async function ensurePhotos(images, onProgress = () => {}) {
+  const todo = images.filter((img) => img.url && !onlineItem(img.id))
+  let done = 0
+  for (const image of todo) {
+    onProgress(done++, todo.length)
+    const copy = await uploadCopy(image)
+    if (storageUsed() + copy.blob.size > STORAGE_LIMIT) throw new Error('Storage is full. Remove some photos or links first.')
+    const path = `${state.library}/${random(12)}.jpg`
+    const { error } = await supabase.storage.from(BUCKET).upload(path, copy.blob, { contentType: 'image/jpeg', cacheControl: '31536000' })
+    if (error) throw new Error(error.message)
+    const base = (image.name ?? 'photo').replace(/\.[^.]+$/, '') || 'photo'
+    const row = { library: state.library, id: image.id, path, name: `${base}.jpg`, width: copy.width, height: copy.height, bytes: copy.blob.size }
+    if (state.canSync) {
+      const saved = await supabase.from('seamline_photos').upsert(row).select().single()
+      if (saved.error) {
+        await supabase.storage.from(BUCKET).remove([path]).catch(() => {})
+        throw new Error(saved.error.message)
+      }
+    }
+    set({ photos: { ...state.photos, [image.id]: row } })
+  }
+}
+
+// Remove online copies nothing refers to any more. `usedIds` are the photos
+// every project, album and template mentions. Recent uploads are left alone:
+// the album or project that will mention them may not have synced yet.
+export async function cleanPhotos(usedIds) {
+  if (!state.canSync) return
+  const linked = new Set(state.shares.flatMap((sh) => sh.items.map((it) => it.id)))
+  const hourAgo = Date.now() - 3600e3
+  const dead = Object.values(state.photos).filter(
+    (row) => !usedIds.has(row.id) && !linked.has(row.id) && row.created_at && Date.parse(row.created_at) < hourAgo,
+  )
+  if (!dead.length) return
+  await supabase.storage.from(BUCKET).remove(dead.map((row) => row.path))
+  await supabase.from('seamline_photos').delete().eq('library', state.library).in('id', dead.map((row) => row.id))
+  const photos = { ...state.photos }
+  for (const row of dead) delete photos[row.id]
+  set({ photos })
 }
 
 let queue = Promise.resolve()
@@ -157,36 +280,32 @@ export function syncShare(target, onProgress = () => {}) {
 }
 
 async function doSync({ kind, sourceId, title, images }, onProgress) {
-  const uid = state.session.user.id
   // Read the links afresh: a visitor may have added photos since they were loaded.
   await refreshShares()
   const existing = findShare(state.shares, kind, sourceId)
   const fromVisitors = visitorItems(existing)
-  const have = new Map((existing?.items ?? []).filter((it) => !it.visitor).map((it) => [it.id, it]))
-  const elsewhere = onlineItems(existing?.id)
-  for (const img of images) if (!have.has(img.id) && elsewhere.has(img.id)) have.set(img.id, elsewhere.get(img.id))
-  const todo = images.filter((img) => !have.has(img.id))
-  const used = storageUsed()
+  const before = (existing?.items ?? []).filter((it) => !it.visitor)
+
+  // A carousel's frames are finished images that belong to this link alone;
+  // anything else is a library photo, put online once and shared by every link.
+  const frames = images.filter((img) => img.ready)
+  await ensurePhotos(images.filter((img) => !img.ready), onProgress)
 
   const fresh = []
   try {
+    const made = new Map()
     let done = 0
-    for (const image of todo) {
-      onProgress(done++, todo.length)
-      const copy = await uploadCopy(image)
-      if (used + copy.blob.size > STORAGE_LIMIT) throw new Error('Storage is full. Stop sharing something first.')
-      const path = `${uid}/${random(12)}.jpg`
-      const { error } = await supabase.storage.from(BUCKET).upload(path, copy.blob, { contentType: 'image/jpeg', cacheControl: '31536000' })
+    for (const frame of frames) {
+      onProgress(done++, frames.length)
+      const path = `${state.library}/${random(12)}.jpg`
+      const { error } = await supabase.storage.from(BUCKET).upload(path, frame.blob, { contentType: 'image/jpeg', cacheControl: '31536000' })
       if (error) throw new Error(error.message)
       fresh.push(path)
-      const base = (image.name ?? 'photo').replace(/\.[^.]+$/, '') || 'photo'
-      have.set(image.id, { id: image.id, path, name: `${base}.jpg`, width: copy.width, height: copy.height, bytes: copy.blob.size })
+      made.set(frame.id, { id: frame.id, path, name: frame.name, width: frame.width, height: frame.height, bytes: frame.blob.size })
     }
 
-    const keep = new Set(images.map((i) => i.id))
-    const gone = [...have.values()].filter((it) => !keep.has(it.id))
-    // The owner's photos in their order, then whatever visitors have added.
-    const items = [...images.map((i) => have.get(i.id)), ...fromVisitors]
+    // In the order given, then whatever visitors have added.
+    const items = [...images.map((img) => made.get(img.id) ?? onlineItem(img.id)).filter(Boolean), ...fromVisitors]
     const row = {
       kind, source_id: sourceId, title, items,
       bytes: items.reduce((n, it) => n + it.bytes, 0),
@@ -194,14 +313,16 @@ async function doSync({ kind, sourceId, title, images }, onProgress) {
     }
     const query = existing
       ? supabase.from('seamline_shares').update(row).eq('id', existing.id)
-      : supabase.from('seamline_shares').insert({ ...row, token: random(16) })
+      : supabase.from('seamline_shares').insert({ ...row, token: random(16), owner: state.library })
     const { data, error } = await query.select().single()
     if (error) throw new Error(error.message)
     set({ shares: existing ? state.shares.map((sh) => (sh.id === data.id ? data : sh)) : [data, ...state.shares] })
 
-    // Delete what this link dropped, unless another link still shows it.
-    const inUse = pathsInUse(null)
-    const dead = gone.map((it) => it.path).filter((path) => !inUse.has(path))
+    // Delete what this link dropped, unless something else still needs it.
+    const kept = new Set(items.map((it) => it.path))
+    const inUse = pathsInUse(data.id)
+    const library = registered()
+    const dead = before.map((it) => it.path).filter((path) => !kept.has(path) && !inUse.has(path) && !library.has(path))
     if (dead.length) await supabase.storage.from(BUCKET).remove(dead)
     return data
   } catch (err) {
@@ -232,8 +353,10 @@ export async function syncAlbums(albums, images) {
   syncingNow = true
   try {
     for (const album of albums) {
-      const photos = album.imageIds.map((id) => images[id]).filter(Boolean)
-      if (!photos.length) continue
+      // Photos still downloading from another device are already online; an
+      // album with a photo that is neither here nor online is left for later.
+      const photos = linkable(album.imageIds, images)
+      if (!photos.length || photos.length !== album.imageIds.length) continue
       const share = findShare(state.shares, 'album', album.id)
       if (share && share.title === album.name && !outOfDate(share, photos.map((ph) => ph.id))) continue
       set({ syncing: { id: album.id, done: 0, total: 0 }, syncError: null })
@@ -289,10 +412,11 @@ export async function replaceLink(share) {
   set({ shares: state.shares.map((sh) => (sh.id === data.id ? data : sh)) })
 }
 
-// Remove a link, and delete its photos unless another link still shows them.
+// Remove a link, and delete its photos unless something else still needs them.
 export async function stopShare(share) {
   const inUse = pathsInUse(share.id)
-  const dead = share.items.map((it) => it.path).filter((path) => !inUse.has(path))
+  const library = registered()
+  const dead = share.items.map((it) => it.path).filter((path) => !inUse.has(path) && !library.has(path))
   if (dead.length) {
     const { error } = await supabase.storage.from(BUCKET).remove(dead)
     if (error) throw new Error(error.message)

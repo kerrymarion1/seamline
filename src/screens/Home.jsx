@@ -5,6 +5,7 @@ import Sheet from '../components/Sheet'
 import StripView from '../components/StripView'
 import { FormatPicker, Stepper, TemplateThumb } from '../editor/panels'
 import { MAX_SPOTS, templatesFor } from '../lib/cells'
+import { useCloud } from '../lib/cloud'
 import { frameH, FORMATS, MAX_FRAMES, MIN_FRAMES } from '../lib/scene'
 import { createAlbum, createProject, deleteProject, duplicateProject, fillEmptySpots, useStore } from '../lib/store'
 
@@ -77,6 +78,7 @@ export default function Home({ tab }) {
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
   const saveFailed = useStore((s) => s.saveFailed)
+  const cloud = useCloud()
   const [namingAlbum, setNamingAlbum] = useState(false)
   const [albumName, setAlbumName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -130,6 +132,12 @@ export default function Home({ tab }) {
           <Icon name="gear" size={22} />
         </button>
       </header>
+      {cloud.configured && !cloud.loading && !cloud.session && (
+        <button className="signin-bar" onClick={() => navigate('/settings')}>
+          <span>Sign in to see your projects and albums on every device</span>
+          <b>Sign in</b>
+        </button>
+      )}
       {saveFailed && (
         <p className="banner" role="alert">
           Changes are not being saved on this device. Storage may be full or blocked (private browsing).

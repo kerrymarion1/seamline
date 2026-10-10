@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import {
-  EXPIRY_CHOICES, expiryText, findShare, isExpired, isOnline, outOfDate, replaceLink, rememberedPin, setExpiry, setUploadPin, shareUrl,
+  EXPIRY_CHOICES, expiryText, findShare, isExpired, isOnline, linkable, outOfDate, replaceLink, rememberedPin, setExpiry, setUploadPin, shareUrl,
   stopShare, syncShare, useCloud,
 } from '../lib/cloud'
 import { useStore } from '../lib/store'
@@ -51,7 +51,7 @@ export default function LinkSheet({ target, onClose }) {
     run(async () => {
       setProgress('Preparing…')
       await syncShare(
-        { ...target, images: carousel ? target.uploads : target.imageIds.map((id) => images[id]).filter(Boolean) },
+        { ...target, images: carousel ? target.uploads : linkable(target.imageIds, images) },
         (done, total) => setProgress(`Uploading ${done + 1} of ${total}`),
       )
     })
