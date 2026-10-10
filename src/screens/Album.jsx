@@ -4,7 +4,8 @@ import Icon from '../components/Icon'
 import LinkSheet from '../components/LinkSheet'
 import PhotoPager from '../components/PhotoPager'
 import {
-  adoptVisitorItems, findShare, publicUrl, refreshHearts, refreshShares, removeVisitorItem, syncShare, useCloud, visitorItems,
+  adoptVisitorItems, findShare, publicUrl, refreshHearts, refreshShares, removeVisitorItem, stopShare, syncShare, useCloud,
+  visitorItems,
 } from '../lib/cloud'
 import Sheet from '../components/Sheet'
 import { importFile } from '../lib/images'
@@ -18,7 +19,7 @@ import {
 export default function Album({ albumId }) {
   const album = useAlbum(albumId)
   const images = useStore((s) => s.images)
-  const { hearts, shares } = useCloud()
+  const { hearts, shares, syncing, syncError } = useCloud()
   const fileInput = useRef(null)
   const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState([])
@@ -177,6 +178,13 @@ export default function Album({ albumId }) {
         </div>
       ) : (
         <main className="album-body">
+          {syncing?.id === album.id && (
+            <p className="sync-note">
+              <i className="spinner inline" />
+              {syncing.total ? `Putting photos online, ${syncing.done + 1} of ${syncing.total}` : 'Checking what is online'}
+            </p>
+          )}
+          {syncError && !syncing && <p className="sync-note error">Could not put photos online: {syncError}</p>}
           {added.length > 0 && (
             <section className="visitor-box">
               <div className="row">
@@ -274,9 +282,18 @@ export default function Album({ albumId }) {
       <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete album?" modal>
         <p className="hint">
           “{album.name}” and its {ids.length} photo{ids.length === 1 ? '' : 's'} will be removed from the app.
-          Photos already used in a project stay in that project.
+          Photos already used in a project stay in that project.{share ? ' Its shared link will stop working.' : ''}
         </p>
-        <button className="primary block danger" onClick={() => deleteAlbum(album.id)}>Delete</button>
+        <button
+          className="primary block danger"
+          onClick={() => {
+            // Its link goes with it; photos other links still show are kept online.
+            if (share) stopShare(share).catch(() => {})
+            deleteAlbum(album.id)
+          }}
+        >
+          Delete
+        </button>
       </Sheet>
 
       <input

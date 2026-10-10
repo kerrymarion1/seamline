@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { clearTextCache } from './lib/fonts'
 import { FontsContext } from './lib/fontsContext'
+import CloudSync from './components/CloudSync'
 import SharedInbox from './components/SharedInbox'
 import { useStore } from './lib/store'
 import Album from './screens/Album'
@@ -61,6 +62,7 @@ export default function App() {
         <Home tab={path === '/albums' ? 'albums' : 'projects'} />
       )}
       <SharedInbox />
+      <CloudSync />
     </FontsContext.Provider>
   )
 }

@@ -2,7 +2,9 @@ import { useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import { createBackup, restoreBackup } from '../lib/backup'
-import { expiryText, shareUrl, signIn, signOut, stopShare, STORAGE_LIMIT, useCloud } from '../lib/cloud'
+import {
+  expiryText, setAutoSync, shareUrl, signIn, signOut, stopShare, STORAGE_LIMIT, storageUsed, useCloud,
+} from '../lib/cloud'
 import StripView from '../components/StripView'
 import { deletePreset, setImportAlbum, useStore } from '../lib/store'
 
@@ -177,8 +179,8 @@ export default function Settings() {
   const cloud = useCloud()
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(null)
-  const used = cloud.shares.reduce((n, s) => n + s.bytes, 0)
-  const photos = cloud.shares.reduce((n, s) => n + s.items.length, 0)
+  const used = storageUsed(cloud.shares)
+  const photos = new Set(cloud.shares.flatMap((s) => s.items.map((it) => it.path))).size
 
   const copy = async (share) => {
     await navigator.clipboard.writeText(shareUrl(share)).catch(() => {})
@@ -219,10 +221,23 @@ export default function Settings() {
             </section>
 
             <section className="panel">
+              <h2>Keep albums online</h2>
+              <p className="hint">
+                {cloud.autoSync
+                  ? 'On. Photos you add to an album are put online in the background, so sharing an album or a photo is just a link, with no waiting.'
+                  : 'Off. Photos are only put online when you create a link, which then has to wait for the upload.'}
+              </p>
+              <p className="note">Nobody can see an album online until you give them its link.</p>
+              <button className="secondary block" onClick={() => setAutoSync(!cloud.autoSync)}>
+                {cloud.autoSync ? 'Turn off' : 'Turn on'}
+              </button>
+            </section>
+
+            <section className="panel">
               <h2>Storage used</h2>
               <div className="meter"><i style={{ width: `${Math.min(100, (used / STORAGE_LIMIT) * 100)}%` }} /></div>
               <p className="hint">
-                {mb(used)} of 1 GB · {photos} shared photo{photos === 1 ? '' : 's'} in {cloud.shares.length} link{cloud.shares.length === 1 ? '' : 's'}
+                {mb(used)} of 1 GB · {photos} photo{photos === 1 ? '' : 's'} online in {cloud.shares.length} link{cloud.shares.length === 1 ? '' : 's'}
               </p>
               <p className="note">
                 The free plan pauses after a week with no activity. Links stop working while it is paused and come back

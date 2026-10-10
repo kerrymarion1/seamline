@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import {
-  EXPIRY_CHOICES, expiryText, findShare, isExpired, outOfDate, rememberedPin, setExpiry, setUploadPin, shareUrl,
+  EXPIRY_CHOICES, expiryText, findShare, isExpired, isOnline, outOfDate, replaceLink, rememberedPin, setExpiry, setUploadPin, shareUrl,
   stopShare, syncShare, useCloud,
 } from '../lib/cloud'
 import { useStore } from '../lib/store'
@@ -34,6 +34,9 @@ export default function LinkSheet({ target, onClose }) {
   const n = (carousel ? target.uploads : target?.imageIds)?.length ?? 0
   const what = carousel ? (n === 1 ? 'this image' : 'this carousel') : n === 1 ? 'this photo' : 'these photos'
 
+  // The album this target belongs to is being put online right now.
+  const syncing = cloud.syncing && target?.kind === 'album' && cloud.syncing.id === target.sourceId ? cloud.syncing : null
+
   const run = async (fn) => {
     setError(null)
     try {
@@ -52,6 +55,22 @@ export default function LinkSheet({ target, onClose }) {
         (done, total) => setProgress(`Uploading ${done + 1} of ${total}`),
       )
     })
+
+  // When every photo is already online there is nothing to upload, so make
+  // the link straight away instead of asking.
+  const ready = !!target && !carousel && !share && !progress && !syncing && cloud.session && cloud.uploader &&
+    target.imageIds.length > 0 && target.imageIds.every(isOnline)
+  // Only once per opening, so stopping a link does not bring it straight back.
+  const made = useRef(null)
+  useEffect(() => {
+    if (!target) made.current = null
+    else if (ready && made.current !== target.sourceId) {
+      made.current = target.sourceId
+      sync()
+    }
+    // Runs when a target becomes ready, or the sheet closes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, target?.sourceId])
 
   const copy = () =>
     run(async () => {
@@ -91,8 +110,11 @@ export default function LinkSheet({ target, onClose }) {
         </>
       ) : !cloud.uploader ? (
         <p className="hint">This account is not allowed to create links.</p>
-      ) : progress ? (
-        <p className="hint centre"><i className="spinner inline" /> {progress}</p>
+      ) : progress || (syncing && !share) ? (
+        <p className="hint centre">
+          <i className="spinner inline" />{' '}
+          {progress ?? (syncing.total ? `Putting photos online, ${syncing.done + 1} of ${syncing.total}` : 'Getting the link ready')}
+        </p>
       ) : share ? (
         <>
           <div className="link-box">
@@ -151,8 +173,26 @@ export default function LinkSheet({ target, onClose }) {
           </div>
           <p className="note">
             Anyone with this link can view and download {what}. Choosing a time restarts the countdown from now.
+            {target.kind === 'album' && cloud.autoSync && ' Replacing the link makes the old one stop working.'}
           </p>
-          <button className="text-btn danger" onClick={() => run(() => stopShare(share))}>Stop sharing</button>
+          {target.kind === 'album' && cloud.autoSync ? (
+            // The album stays online for next time; only its address changes.
+            <button className="text-btn danger" onClick={() => run(() => replaceLink(share))}>
+              Replace with a new link
+            </button>
+          ) : (
+            <button
+              className="text-btn danger"
+              onClick={() =>
+                run(async () => {
+                  await stopShare(share)
+                  close()
+                })
+              }
+            >
+              Stop sharing
+            </button>
+          )}
         </>
       ) : (
         <>

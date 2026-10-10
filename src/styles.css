@@ -1225,3 +1225,6 @@ select.field { appearance: none; -webkit-appearance: none; }
 @media (hover: none) {
   .pager-btn { display: none; }
 }
+
+.sync-note { margin: 2px 12px 10px; color: var(--text-2); font-size: 13px; }
+.sync-note.error { color: var(--danger); }
