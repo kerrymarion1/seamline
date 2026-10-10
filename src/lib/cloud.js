@@ -15,7 +15,9 @@ export const supabase = URL_ && KEY ? createClient(URL_, KEY) : null
 
 // ---------- sign-in state, kept outside React ----------
 
-let state = { configured: !!supabase, loading: !!supabase, session: null, uploader: false, shares: [] }
+// `hearts` counts visitors' favourites: per photo across all links, and per link.
+const NO_HEARTS = { byItem: {}, byShare: {} }
+let state = { configured: !!supabase, loading: !!supabase, session: null, uploader: false, shares: [], hearts: NO_HEARTS }
 const listeners = new Set()
 const set = (patch) => {
   state = { ...state, ...patch }
@@ -28,13 +30,26 @@ const subscribe = (l) => {
 export const useCloud = () => useSyncExternalStore(subscribe, () => state)
 
 async function refresh(session) {
-  if (!session) return set({ loading: false, session: null, uploader: false, shares: [] })
+  if (!session) return set({ loading: false, session: null, uploader: false, shares: [], hearts: NO_HEARTS })
   set({ session })
   const [{ data: uploader }, { data: shares }] = await Promise.all([
     supabase.rpc('seamline_is_uploader'),
     supabase.from('seamline_shares').select('*').order('created_at', { ascending: false }),
   ])
   set({ loading: false, uploader: !!uploader, shares: shares ?? [] })
+  await refreshHearts()
+}
+
+// Re-read the favourites visitors have left on the owner's links.
+export async function refreshHearts() {
+  if (!supabase || !state.session) return
+  const { data } = await supabase.from('seamline_favorites').select('share_id, item_id')
+  const hearts = { byItem: {}, byShare: {} }
+  for (const row of data ?? []) {
+    hearts.byItem[row.item_id] = (hearts.byItem[row.item_id] ?? 0) + 1
+    hearts.byShare[row.share_id] = (hearts.byShare[row.share_id] ?? 0) + 1
+  }
+  set({ hearts })
 }
 
 if (supabase) {
@@ -185,4 +200,29 @@ export async function fetchShare(token) {
   const { data, error } = await supabase.rpc('seamline_get_share', { share_token: token })
   if (error) throw new Error('This link could not be loaded right now. Try again in a minute.')
   return data?.[0] ?? null
+}
+
+// ---------- favourites, from the visitor's side ----------
+
+// An anonymous id for this browser, so a visitor's hearts are their own.
+export function visitorId() {
+  const KEY = 'seamline:visitor'
+  let id = localStorage.getItem(KEY)
+  if (!id) {
+    id = random(12)
+    localStorage.setItem(KEY, id)
+  }
+  return id
+}
+
+export async function fetchMyFavorites(token) {
+  const { data } = await supabase.rpc('seamline_my_favorites', { share_token: token, visitor_id: visitorId() })
+  return (data ?? []).map((r) => r.item_id)
+}
+
+export async function setFavorite(token, itemId, liked) {
+  const { error } = await supabase.rpc('seamline_set_favorite', {
+    share_token: token, item: itemId, visitor_id: visitorId(), liked,
+  })
+  if (error) throw new Error('Could not save that favourite. Try again.')
 }

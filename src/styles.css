@@ -1118,3 +1118,41 @@ select.field { appearance: none; -webkit-appearance: none; }
 .selection.locked { outline-style: dashed; outline-color: var(--text-2); }
 .icon-btn.active { color: var(--accent); }
 .tools { padding: 0 2px; }
+
+/* ---------- favourites ---------- */
+
+.heart {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  color: #fff;
+  transition: transform 0.2s var(--spring), color 0.15s;
+}
+.heart:active { transform: scale(0.82); }
+.heart.on { color: var(--accent); }
+.heart.on svg { fill: currentColor; }
+.heart.corner { position: absolute; right: 0; bottom: 0; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7)); }
+.shareview-head { position: relative; }
+.heart.head-heart { position: absolute; top: 20px; right: 12px; color: var(--text-2); }
+.heart.head-heart.on { color: var(--accent); }
+.photo-open { display: block; width: 100%; height: 100%; }
+
+.hearts {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px 3px 5px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.hearts svg { fill: currentColor; }
+.hearts.inline { position: static; margin-left: 8px; background: none; padding: 0; vertical-align: -1px; }

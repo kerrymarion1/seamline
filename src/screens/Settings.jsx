@@ -239,6 +239,7 @@ export default function Settings() {
                     <h3>{s.title || (s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? 'Carousel' : 'Album')}</h3>
                     <p>
                       {s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? `Carousel, ${s.items.length} frames` : `${s.items.length} photos`} · {mb(s.bytes)} · {expiryText(s)}
+                      {cloud.hearts.byShare[s.id] > 0 && ` · ${cloud.hearts.byShare[s.id]} ♥`}
                     </p>
                   </div>
                   <button className="pill-btn" onClick={() => copy(s)}>{copied === s.id ? 'Copied' : 'Copy'}</button>

@@ -104,6 +104,9 @@ export default function LinkSheet({ target, onClose }) {
           )}
           <div className="row">
             <span className={`label ${isExpired(share) ? 'expired' : ''}`}>{expiryText(share)}</span>
+            {cloud.hearts.byShare[share.id] > 0 && (
+              <span className="hearts inline"><Icon name="heart" size={13} /> {cloud.hearts.byShare[share.id]} favourite{cloud.hearts.byShare[share.id] === 1 ? '' : 's'}</span>
+            )}
           </div>
           <div className="chips">
             {EXPIRY_CHOICES.map((c) => (

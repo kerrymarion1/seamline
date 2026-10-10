@@ -1,7 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../components/Icon'
-import { downloadUrl, fetchShare, publicUrl } from '../lib/cloud'
+import { downloadUrl, fetchMyFavorites, fetchShare, publicUrl, setFavorite } from '../lib/cloud'
 import { downloadZip } from '../lib/share'
+
+function Heart({ on, onToggle, className = '' }) {
+  return (
+    <button
+      className={`heart ${on ? 'on' : ''} ${className}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
+      aria-label={on ? 'Remove favourite' : 'Mark as favourite'}
+      aria-pressed={on}
+    >
+      <Icon name="heart" size={22} />
+    </button>
+  )
+}
 
 // The page a visitor lands on from a shared link. No sign-in, no editor:
 // just the photos, full size on tap, with download buttons.
@@ -12,6 +28,7 @@ export default function ShareView({ token }) {
   const [zipping, setZipping] = useState(null)
   const [index, setIndex] = useState(0)
   const scroller = useRef(null)
+  const [liked, setLiked] = useState(() => new Set())
 
   useEffect(() => {
     fetchShare(token).then(setShare).catch((e) => {
@@ -19,6 +36,26 @@ export default function ShareView({ token }) {
       setError(e.message)
     })
   }, [token])
+
+  useEffect(() => {
+    fetchMyFavorites(token).then((ids) => setLiked(new Set(ids))).catch(() => {})
+  }, [token])
+
+  // Show the change at once; put it back if saving fails.
+  const toggle = (item) => {
+    const on = !liked.has(item.id)
+    const flip = (want) => setLiked((prev) => {
+      const next = new Set(prev)
+      if (want) next.add(item.id)
+      else next.delete(item.id)
+      return next
+    })
+    flip(on)
+    setFavorite(token, item.id, on).catch((e) => {
+      flip(!on)
+      setError(e.message)
+    })
+  }
 
   useEffect(() => {
     if (share?.title) document.title = `${share.title} · Seamline`
@@ -63,6 +100,13 @@ export default function ShareView({ token }) {
     <div className="screen shareview">
       <header className="shareview-head">
         <h1>{share.title || 'Shared photos'}</h1>
+        {(single || carousel) && (
+          <Heart
+            className="head-heart"
+            on={liked.has(items[single ? 0 : index].id)}
+            onToggle={() => toggle(items[single ? 0 : index])}
+          />
+        )}
         {!single && <p>{carousel ? `${index + 1} of ${items.length} · swipe to see the rest` : `${items.length} photos`}</p>}
       </header>
 
@@ -89,9 +133,12 @@ export default function ShareView({ token }) {
       ) : (
         <div className="photo-grid">
           {items.map((it) => (
-            <button key={it.path} className="photo" onClick={() => setViewing(it.path)}>
-              <img src={publicUrl(it.path)} alt={it.name} loading="lazy" decoding="async" draggable={false} />
-            </button>
+            <div key={it.path} className="photo">
+              <button className="photo-open" onClick={() => setViewing(it.path)} aria-label={`Open ${it.name}`}>
+                <img src={publicUrl(it.path)} alt={it.name} loading="lazy" decoding="async" draggable={false} />
+              </button>
+              <Heart className="corner" on={liked.has(it.id)} onToggle={() => toggle(it)} />
+            </div>
           ))}
         </div>
       )}
@@ -118,7 +165,7 @@ export default function ShareView({ token }) {
               <Icon name="close" />
             </button>
             <div className="preview-title">{items.indexOf(viewed) + 1} of {items.length}</div>
-            <span className="topbar-spacer" />
+            <Heart on={liked.has(viewed.id)} onToggle={() => toggle(viewed)} />
           </header>
           <div className="viewer-body">
             <img src={publicUrl(viewed.path)} alt={viewed.name} draggable={false} />

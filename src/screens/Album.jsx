@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import LinkSheet from '../components/LinkSheet'
+import { refreshHearts, useCloud } from '../lib/cloud'
 import Sheet from '../components/Sheet'
 import { importFile } from '../lib/images'
 import { imageFile, saveToPhone } from '../lib/share'
@@ -14,6 +15,7 @@ import {
 export default function Album({ albumId }) {
   const album = useAlbum(albumId)
   const images = useStore((s) => s.images)
+  const { hearts } = useCloud()
   const fileInput = useRef(null)
   const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState([])
@@ -26,6 +28,11 @@ export default function Album({ albumId }) {
   useEffect(() => {
     if (!album) navigate('/albums', { replace: true })
   }, [album])
+
+  // Pick up any favourites visitors have left since the app was opened.
+  useEffect(() => {
+    refreshHearts()
+  }, [])
 
   useEffect(() => {
     if (!notice || notice.busy) return
@@ -146,6 +153,9 @@ export default function Album({ albumId }) {
                 <button key={id} className={`photo ${on ? 'on' : ''}`} onClick={() => tap(id)}>
                   <img src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
                   {selecting && <b>{on && <Icon name="check" size={14} />}</b>}
+                  {hearts.byItem[id] > 0 && (
+                    <span className="hearts"><Icon name="heart" size={13} /> {hearts.byItem[id]}</span>
+                  )}
                 </button>
               )
             })}
@@ -183,7 +193,10 @@ export default function Album({ albumId }) {
             <button className="icon-btn" onClick={() => setViewing(null)} aria-label="Close photo">
               <Icon name="close" />
             </button>
-            <div className="preview-title">{viewed.width} × {viewed.height}</div>
+            <div className="preview-title">
+              {viewed.width} × {viewed.height}
+              {hearts.byItem[viewing] > 0 && <span className="hearts inline"><Icon name="heart" size={13} /> {hearts.byItem[viewing]}</span>}
+            </div>
             <button className="icon-btn" onClick={() => remove([viewing])} aria-label="Remove from album">
               <Icon name="trash" size={20} />
             </button>
