@@ -1228,3 +1228,7 @@ select.field { appearance: none; -webkit-appearance: none; }
 
 .sync-note { margin: 2px 12px 10px; color: var(--text-2); font-size: 13px; }
 .sync-note.error { color: var(--danger); }
+
+.shareview-nav { padding: 12px 12px 0; }
+.shareview-nav .pill-btn { display: inline-flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; }
+.shareview-head { padding-top: 14px; }

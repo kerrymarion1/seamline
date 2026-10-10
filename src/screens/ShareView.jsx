@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Icon from '../components/Icon'
 import PhotoPager from '../components/PhotoPager'
 import Sheet from '../components/Sheet'
-import { downloadUrl, fetchMyFavorites, fetchShare, publicUrl, setFavorite, visitorUpload } from '../lib/cloud'
+import { downloadUrl, fetchMyFavorites, fetchShare, publicUrl, setFavorite, useCloud, visitorUpload } from '../lib/cloud'
 import { downloadZip } from '../lib/share'
 
 function Heart({ on, onToggle, className = '' }) {
@@ -24,6 +24,7 @@ function Heart({ on, onToggle, className = '' }) {
 // The page a visitor lands on from a shared link. No sign-in, no editor:
 // just the photos, full size on tap, with download buttons.
 export default function ShareView({ token }) {
+  const { session } = useCloud()
   const [share, setShare] = useState(undefined) // undefined = loading, null = not found
   const [error, setError] = useState(null)
   const [viewing, setViewing] = useState(null)
@@ -144,6 +145,12 @@ export default function ShareView({ token }) {
 
   return (
     <div className="screen shareview">
+      {/* A way out of the page: into the app, at the albums when signed in. */}
+      <nav className="shareview-nav">
+        <a className="pill-btn" href={session ? '/albums' : '/'}>
+          <Icon name="back" size={16} /> {session ? 'All albums' : 'Open Seamline'}
+        </a>
+      </nav>
       <header className="shareview-head">
         <h1>{share.title || 'Shared photos'}</h1>
         {(single || carousel) && (
