@@ -23,7 +23,8 @@ const shadowCss = (s, scale, spread = 0) =>
 
 const LayerView = memo(function LayerView({ layer, scale, image }) {
   useContext(FontsContext) // re-measure text when fonts arrive
-  const box = layerBox(layer, scale)
+  // A locked layer lets taps and drags fall through to whatever is beneath it.
+  const box = { ...layerBox(layer, scale), pointerEvents: layer.locked ? 'none' : undefined }
 
   if (layer.type === 'text') {
     const f = fontOf(layer.font)

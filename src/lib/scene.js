@@ -41,9 +41,11 @@ function nearest(offsets, targets, base, threshold) {
   return best
 }
 
-// Snap a moving layer to frame seams, frame centres, canvas centre and edges.
-// Returns the adjusted centre plus the guide lines to draw.
-export function snapMove({ x, y, w, h, rotation, frames, height, threshold }) {
+// Snap a moving layer to frame seams, frame centres, canvas centre and edges,
+// and to the edges and centres of the other items on the canvas (`others`:
+// boxes of { x0, x1, cx, y0, y1, cy }). Edges line up with edges, centres with
+// centres. Returns the adjusted centre plus the guide lines to draw.
+export function snapMove({ x, y, w, h, rotation, frames, height, threshold, others = [] }) {
   const { hw, hh } = halfExtents(w, h, rotation)
   const seams = Array.from({ length: frames + 1 }, (_, i) => i * FRAME_W)
   const centres = Array.from({ length: frames }, (_, i) => (i + 0.5) * FRAME_W)
@@ -51,7 +53,10 @@ export function snapMove({ x, y, w, h, rotation, frames, height, threshold }) {
 
   const sx = nearest(
     [{ kind: 'edge', value: -hw }, { kind: 'centre', value: 0 }, { kind: 'edge', value: hw }],
-    { edge: seams, centre: [...seams, ...centres, sceneWidth(frames) / 2] },
+    {
+      edge: [...seams, ...others.flatMap((o) => [o.x0, o.x1])],
+      centre: [...seams, ...centres, sceneWidth(frames) / 2, ...others.map((o) => o.cx)],
+    },
     x,
     threshold,
   )
@@ -62,7 +67,7 @@ export function snapMove({ x, y, w, h, rotation, frames, height, threshold }) {
 
   const sy = nearest(
     [{ kind: 'edge', value: -hh }, { kind: 'centre', value: 0 }, { kind: 'edge', value: hh }],
-    { edge: [0, height], centre: [height / 2] },
+    { edge: [0, height, ...others.flatMap((o) => [o.y0, o.y1])], centre: [height / 2, ...others.map((o) => o.cy)] },
     y,
     threshold,
   )

@@ -275,7 +275,7 @@ export function duplicateLayer(pid, lid) {
   patchProject(pid, (p) => {
     const src = p.layers.find((l) => l.id === lid)
     if (!src) return p
-    return { ...p, layers: [...p.layers, { ...src, ...copy, x: src.x + 60, y: src.y + 60 }] }
+    return { ...p, layers: [...p.layers, { ...src, ...copy, locked: false, x: src.x + 60, y: src.y + 60 }] }
   })
   return copy.id
 }

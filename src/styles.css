@@ -1114,3 +1114,7 @@ select.field { appearance: none; -webkit-appearance: none; }
 .tool { min-width: 0; }
 .tool span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .label.expired { color: var(--danger); }
+
+.selection.locked { outline-style: dashed; outline-color: var(--text-2); }
+.icon-btn.active { color: var(--accent); }
+.tools { padding: 0 2px; }

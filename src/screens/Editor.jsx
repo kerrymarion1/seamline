@@ -3,6 +3,7 @@ import { navigate } from '../App'
 import Icon from '../components/Icon'
 import Sheet from '../components/Sheet'
 import { CanvasPanel, LayersPanel, LayoutPanel, PhotoStylePanel, ShapePanel, TextPanel } from '../editor/panels'
+import { useProjectPalette } from '../lib/palette'
 import { newShape } from '../lib/shapes'
 import PhotoPicker from '../editor/PhotoPicker'
 import Stage from '../editor/Stage'
@@ -11,7 +12,7 @@ import { isDarkBackground } from '../lib/backgrounds'
 import { importFile } from '../lib/images'
 import { frameH, FRAME_W, uid } from '../lib/scene'
 import {
-  addImages, addLayers, canRedo, canUndo, clearHistory, duplicateLayer, redo, undo, moveLayer, removeCell, removeLayer, swapCells, updateCells, fileImports,
+  addImages, addLayers, canRedo, canUndo, clearHistory, duplicateLayer, redo, undo, updateLayer, moveLayer, removeCell, removeLayer, swapCells, updateCells, fileImports,
   updateProject, useProject, useStore,
 } from '../lib/store'
 
@@ -55,6 +56,7 @@ export default function Editor({ projectId }) {
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
   // Recomputed on every store change, which is exactly when these can change.
+  const palette = useProjectPalette(project, images)
   const undoable = useStore(() => canUndo(projectId))
   const redoable = useStore(() => canRedo(projectId))
   const stage = useRef(null)
@@ -329,6 +331,15 @@ export default function Editor({ projectId }) {
           <ToolButton icon="forward" label="Forward" onClick={() => moveLayer(project.id, selectedId, 1)} />
           <ToolButton icon="backward" label="Back" onClick={() => moveLayer(project.id, selectedId, -1)} />
           <ToolButton icon="copy" label="Copy" onClick={() => select(duplicateLayer(project.id, selectedId))} />
+          <ToolButton
+            icon={selected?.locked ? 'unlock' : 'lock'}
+            label={selected?.locked ? 'Unlock' : 'Lock'}
+            onClick={() => {
+              updateLayer(project.id, selectedId, { locked: !selected.locked })
+              // Once locked it is out of the way; unlock it again from Layers.
+              if (!selected.locked) select(null)
+            }}
+          />
           <ToolButton icon="trash" label="Delete" danger onClick={() => removeLayer(project.id, selectedId)} />
           <ToolButton icon="check" label="Done" onClick={() => select(null)} />
         </div>
@@ -369,14 +380,15 @@ export default function Editor({ projectId }) {
         <LayoutPanel project={project} />
       </Sheet>
       <Sheet open={openSheet === 'canvas'} onClose={() => setSheet(null)} title="Canvas" onHeight={heightCbs.canvas}>
-        <CanvasPanel project={project} onPickBackground={() => pickPhotos('background')} />
+        <CanvasPanel project={project} palette={palette} onPickBackground={() => pickPhotos('background')} />
       </Sheet>
       <Sheet open={openSheet === 'text'} onClose={() => setSheet(null)} title="Text" onHeight={heightCbs.text}>
-        <TextPanel project={project} layer={selected?.type === 'text' ? selected : null} />
+        <TextPanel project={project} palette={palette} layer={selected?.type === 'text' ? selected : null} />
       </Sheet>
       <Sheet open={openSheet === 'shapes'} onClose={() => setSheet(null)} title="Shapes" onHeight={heightCbs.shapes}>
         <ShapePanel
           project={project}
+          palette={palette}
           layer={selected?.type === 'shape' ? selected : null}
           color={shapeColor}
           onColor={setShapeColor}

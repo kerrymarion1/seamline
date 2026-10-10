@@ -35,7 +35,7 @@ export function FormatPicker({ value, onChange }) {
   )
 }
 
-function Swatches({ colors, value, onPick }) {
+function Swatches({ colors, value, onPick, custom = true }) {
   return (
     <div className="swatches">
       {colors.map((c) => (
@@ -47,14 +47,27 @@ function Swatches({ colors, value, onPick }) {
           aria-label={c}
         />
       ))}
-      <label className="swatch custom" aria-label="Custom colour">
-        <input type="color" value={value ?? '#ffffff'} onChange={(e) => onPick(e.target.value)} />
-      </label>
+      {custom && (
+        <label className="swatch custom" aria-label="Custom colour">
+          <input type="color" value={value ?? '#ffffff'} onChange={(e) => onPick(e.target.value)} />
+        </label>
+      )}
     </div>
   )
 }
 
-export function CanvasPanel({ project, onPickBackground }) {
+// Tones taken from the project's own photos, offered wherever a colour is chosen.
+function Matched({ palette = [], value, onPick }) {
+  if (!palette.length) return null
+  return (
+    <>
+      <div className="label">From your photos</div>
+      <Swatches colors={palette} value={value} onPick={onPick} custom={false} />
+    </>
+  )
+}
+
+export function CanvasPanel({ project, palette, onPickBackground }) {
   const bg = normalizeBackground(project.background)
   const set = (background) => updateProject(project.id, { background })
   // A new colour keeps the image on top but lets it pick a readable tint again.
@@ -79,6 +92,11 @@ export function CanvasPanel({ project, onPickBackground }) {
         <FormatPicker value={frameH(project)} onChange={(f) => setFormat(project.id, f.id)} />
       </div>
 
+      <Matched
+        palette={palette}
+        value={bg.type === 'solid' ? bg.color : null}
+        onPick={(color) => setBase({ type: 'solid', color })}
+      />
       <div className="label">Colour</div>
       <Swatches
         colors={SOLIDS}
@@ -162,7 +180,7 @@ export function CanvasPanel({ project, onPickBackground }) {
   )
 }
 
-export function TextPanel({ project, layer }) {
+export function TextPanel({ project, layer, palette }) {
   if (!layer) return null
   const set = (patch) => updateLayer(project.id, layer.id, patch)
   return (
@@ -187,6 +205,7 @@ export function TextPanel({ project, layer }) {
           </button>
         ))}
       </div>
+      <Matched palette={palette} value={layer.color} onPick={(color) => set({ color })} />
       <Swatches colors={TEXT_COLORS} value={layer.color} onPick={(color) => set({ color })} />
       <div className="row">
         <input
@@ -234,7 +253,7 @@ export function TextPanel({ project, layer }) {
 }
 
 // Add a shape or sticker, or recolour the selected one.
-export function ShapePanel({ project, layer, color, onColor, onAdd }) {
+export function ShapePanel({ project, layer, palette, color, onColor, onAdd }) {
   const current = layer?.color ?? color
   const pick = (c) => {
     onColor(c)
@@ -242,6 +261,7 @@ export function ShapePanel({ project, layer, color, onColor, onAdd }) {
   }
   return (
     <>
+      <Matched palette={palette} value={current} onPick={pick} />
       <Swatches colors={SHAPE_COLORS} value={current} onPick={pick} />
       <div className="sticker-grid">
         {STICKERS.map((st) => (
@@ -292,6 +312,13 @@ export function LayersPanel({ project, selectedId, onSelect }) {
           </button>
           <button className="icon-btn" disabled={i === layers.length - 1} onClick={() => moveLayer(project.id, l.id, -1)} aria-label="Send back">
             <Icon name="down" size={20} />
+          </button>
+          <button
+            className={`icon-btn ${l.locked ? 'active' : ''}`}
+            onClick={() => updateLayer(project.id, l.id, { locked: !l.locked })}
+            aria-label={l.locked ? 'Unlock' : 'Lock'}
+          >
+            <Icon name={l.locked ? 'lock' : 'unlock'} size={20} />
           </button>
           <button className="icon-btn" onClick={() => removeLayer(project.id, l.id)} aria-label="Delete">
             <Icon name="trash" size={20} />

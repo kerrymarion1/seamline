@@ -2,7 +2,7 @@ import { useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import StripView, { layerBox } from '../components/StripView'
 import { cellImageBox, cellRect, clampPan, edgeTargets, linkedEdge, MAX_ZOOM, snapTo } from '../lib/cells'
 import { layerSize } from '../lib/fonts'
-import { clamp, frameH, FRAME_W, rad, sceneWidth, snapMove, snapRotation } from '../lib/scene'
+import { clamp, frameH, FRAME_W, halfExtents, rad, sceneWidth, snapMove, snapRotation } from '../lib/scene'
 import { getState, updateCells, updateLayer } from '../lib/store'
 
 const SNAP_PX = 8 // snap distance in screen pixels
@@ -23,7 +23,9 @@ function clampFactor(base, s) {
 const scaled = (base, s) =>
   base.type === 'text' ? { size: base.size * s } : { w: base.w * s, h: base.h * s }
 
+// A locked layer shows where it is but offers nothing to grab.
 function Selection({ layer, scale }) {
+  if (layer.locked) return <div className="selection locked" data-overlay data-layer-id={layer.id} style={layerBox(layer, scale)} />
   return (
     <div className="selection" data-overlay data-layer-id={layer.id} style={layerBox(layer, scale)}>
       {['nw', 'ne', 'sw', 'se'].map((c) => (
@@ -119,6 +121,23 @@ export default function Stage({
   const cellById = (id) => live.current.cells.find((c) => c.id === id)
   const patch = (id, p) => updateLayer(live.current.project.id, id, p)
   const patchCell = (id, p) => updateCells(live.current.project.id, { [id]: p })
+
+  // Boxes of everything except the layer being moved, for it to line up with.
+  const otherBoxes = (movingId) => {
+    const { project: p, cells: cs } = live.current
+    const box = (x0, y0, x1, y1) => ({ x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 })
+    return [
+      ...p.layers.filter((l) => l.id !== movingId).map((l) => {
+        const { w, h } = layerSize(l)
+        const { hw, hh } = halfExtents(w, h, l.rotation)
+        return box(l.x - hw, l.y - hh, l.x + hw, l.y + hh)
+      }),
+      ...cs.map((c) => {
+        const r = cellRect(c, p)
+        return box(r.x, r.y, r.x + r.w, r.y + r.h)
+      }),
+    ]
+  }
 
   const showGuides = (g, next) => {
     const key = next.map((x) => x.axis + x.pos).join()
@@ -228,6 +247,11 @@ export default function Stage({
       return
     }
 
+    // A locked layer stays put: touching it only pans or reselects.
+    if (layer.locked) {
+      gesture.current = pan()
+      return
+    }
     if (pointers.current.size === 2) return startPinch(layerId)
     const base = baseOf(layer)
     const p0 = toScene(e.clientX, e.clientY)
@@ -246,7 +270,7 @@ export default function Stage({
         grab: { x: base.x + cv.x - p0.x, y: base.y + cv.y - p0.y },
       }
     } else if (hitLayer === layerId) {
-      gesture.current = { type: 'move', layerId, base, ...start, photo: layer.type === 'photo' }
+      gesture.current = { type: 'move', layerId, base, ...start, photo: layer.type === 'photo', others: otherBoxes(layerId) }
     } else {
       gesture.current = pan()
     }
@@ -304,6 +328,7 @@ export default function Stage({
         frames: live.current.project.frames,
         height: live.current.height,
         threshold: SNAP_PX / m.s,
+        others: g.others,
       })
       patch(g.layerId, { x: snap.x, y: snap.y })
       // A photo held over an empty cell will drop into it.
