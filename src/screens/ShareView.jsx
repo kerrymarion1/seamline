@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../components/Icon'
+import PhotoPager from '../components/PhotoPager'
 import Sheet from '../components/Sheet'
 import { downloadUrl, fetchMyFavorites, fetchShare, publicUrl, setFavorite, visitorUpload } from '../lib/cloud'
 import { downloadZip } from '../lib/share'
@@ -246,9 +247,11 @@ export default function ShareView({ token }) {
             <div className="preview-title">{items.indexOf(viewed) + 1} of {items.length}</div>
             <Heart on={liked.has(viewed.id)} onToggle={() => toggle(viewed)} />
           </header>
-          <div className="viewer-body">
-            <img src={publicUrl(viewed.path)} alt={viewed.name} draggable={false} />
-          </div>
+          <PhotoPager
+            slides={items.map((it) => ({ key: it.path, src: publicUrl(it.path), alt: it.name }))}
+            index={items.indexOf(viewed)}
+            onIndex={(i) => setViewing(items[i].path)}
+          />
           <footer className="preview-actions">
             <a className="primary block" href={downloadUrl(viewed)}>
               <Icon name="download" size={20} /> Download

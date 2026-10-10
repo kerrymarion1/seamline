@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import LinkSheet from '../components/LinkSheet'
+import PhotoPager from '../components/PhotoPager'
 import {
   adoptVisitorItems, findShare, publicUrl, refreshHearts, refreshShares, removeVisitorItem, syncShare, useCloud, visitorItems,
 } from '../lib/cloud'
@@ -247,9 +248,11 @@ export default function Album({ albumId }) {
               <Icon name="trash" size={20} />
             </button>
           </header>
-          <div className="viewer-body">
-            <img src={viewed.url} alt="" draggable={false} />
-          </div>
+          <PhotoPager
+            slides={ids.map((id) => ({ key: id, src: images[id].url }))}
+            index={ids.indexOf(viewing)}
+            onIndex={(i) => setViewing(ids[i])}
+          />
           <footer className="preview-actions">
             <button className="primary block" onClick={linkPhoto}>
               <Icon name="link" size={20} /> Share link

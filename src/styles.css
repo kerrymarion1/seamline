@@ -1184,3 +1184,44 @@ select.field { appearance: none; -webkit-appearance: none; }
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
 }
+
+/* ---------- swiping between full-size photos ---------- */
+
+.viewer-strip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.viewer-strip::-webkit-scrollbar { display: none; }
+.viewer-strip > div {
+  position: relative;
+  flex: none;
+  width: 100%;
+  height: 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+.pager-btn {
+  position: absolute;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin-top: -24px;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+.pager-btn.prev { left: 12px; }
+.pager-btn.next { right: 12px; }
+.pager-btn.next svg { transform: scaleX(-1); }
+/* Touch screens swipe instead. */
+@media (hover: none) {
+  .pager-btn { display: none; }
+}
