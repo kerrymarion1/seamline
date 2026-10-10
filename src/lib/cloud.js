@@ -40,6 +40,13 @@ async function refresh(session) {
   await refreshHearts()
 }
 
+// Re-read the owner's links, for example to pick up photos visitors added.
+export async function refreshShares() {
+  if (!supabase || !state.session) return
+  const { data } = await supabase.from('seamline_shares').select('*').order('created_at', { ascending: false })
+  if (data) set({ shares: data })
+}
+
 // Re-read the favourites visitors have left on the owner's links.
 export async function refreshHearts() {
   if (!supabase || !state.session) return
@@ -80,8 +87,12 @@ export const findShare = (shares, kind, sourceId) =>
   shares.find((s) => s.kind === kind && s.source_id === sourceId)
 
 // True when the photos behind a link no longer match the local ones.
-export const outOfDate = (share, imageIds) =>
-  share.items.length !== imageIds.length || share.items.some((it, i) => it.id !== imageIds[i])
+// Photos that visitors added are not part of that comparison.
+export const visitorItems = (share) => (share?.items ?? []).filter((it) => it.visitor)
+export const outOfDate = (share, imageIds) => {
+  const own = share.items.filter((it) => !it.visitor)
+  return own.length !== imageIds.length || own.some((it, i) => it.id !== imageIds[i])
+}
 
 // A JPEG copy sized for sharing. Originals on the device are never touched.
 async function uploadCopy(image) {
@@ -109,8 +120,11 @@ async function uploadCopy(image) {
 // new photos are uploaded, removed ones are deleted, the link stays the same.
 export async function syncShare({ kind, sourceId, title, images }, onProgress = () => {}) {
   const uid = state.session.user.id
+  // Read the link afresh: a visitor may have added photos since it was loaded.
+  await refreshShares()
   const existing = findShare(state.shares, kind, sourceId)
-  const have = new Map((existing?.items ?? []).map((it) => [it.id, it]))
+  const fromVisitors = visitorItems(existing)
+  const have = new Map((existing?.items ?? []).filter((it) => !it.visitor).map((it) => [it.id, it]))
   const todo = images.filter((img) => !have.has(img.id))
   const used = state.shares.reduce((n, s) => n + s.bytes, 0)
 
@@ -138,7 +152,8 @@ export async function syncShare({ kind, sourceId, title, images }, onProgress = 
 
   const keep = new Set(images.map((i) => i.id))
   const gone = [...have.values()].filter((it) => !keep.has(it.id))
-  const items = images.map((i) => have.get(i.id))
+  // The owner's photos in their order, then whatever visitors have added.
+  const items = [...images.map((i) => have.get(i.id)), ...fromVisitors]
   const row = {
     kind, source_id: sourceId, title, items,
     bytes: items.reduce((n, it) => n + it.bytes, 0),
@@ -197,7 +212,7 @@ export async function stopShare(share) {
 // What a visitor sees: looked up by the link's code, no sign-in needed.
 export async function fetchShare(token) {
   if (!supabase) throw new Error('Sharing is not set up on this copy of the app.')
-  const { data, error } = await supabase.rpc('seamline_get_share', { share_token: token })
+  const { data, error } = await supabase.rpc('seamline_open_share', { share_token: token })
   if (error) throw new Error('This link could not be loaded right now. Try again in a minute.')
   return data?.[0] ?? null
 }
@@ -225,4 +240,74 @@ export async function setFavorite(token, itemId, liked) {
     share_token: token, item: itemId, visitor_id: visitorId(), liked,
   })
   if (error) throw new Error('Could not save that favourite. Try again.')
+}
+
+// ---------- photos added by visitors ----------
+
+const LAST_PIN = 'seamline:uploadPin'
+export const rememberedPin = () => localStorage.getItem(LAST_PIN) ?? ''
+
+async function saveShare(share, patch) {
+  const { data, error } = await supabase.from('seamline_shares').update(patch).eq('id', share.id).select().single()
+  if (error) throw new Error(error.message)
+  set({ shares: state.shares.map((s) => (s.id === data.id ? data : s)) })
+  return data
+}
+
+// Turn visitor uploads on (with a 4 to 8 digit PIN) or off (null) for a link.
+export async function setUploadPin(share, pin) {
+  if (pin !== null && !/^[0-9]{4,8}$/.test(pin)) throw new Error('The PIN must be 4 to 8 digits.')
+  if (pin) localStorage.setItem(LAST_PIN, pin)
+  return saveShare(share, { upload_pin: pin, pin_failures: 0, pin_locked_until: null })
+}
+
+// Delete one photo a visitor added.
+export async function removeVisitorItem(share, item) {
+  await supabase.storage.from(BUCKET).remove([item.path])
+  const items = share.items.filter((it) => it.id !== item.id)
+  return saveShare(share, { items, bytes: items.reduce((n, it) => n + it.bytes, 0) })
+}
+
+// After a visitor's photo has been copied into the owner's album, record it
+// under the album photo's id so it is no longer treated as a visitor's.
+export const adoptVisitorItems = (share, idMap) =>
+  saveShare(share, {
+    items: share.items.map((it) => (idMap[it.id] ? { ...it, id: idMap[it.id], visitor: undefined } : it)),
+  })
+
+// What the visitor's page calls. With no file it only checks the PIN.
+export async function visitorUpload(token, pin, file) {
+  const form = new FormData()
+  form.append('token', token)
+  form.append('pin', pin)
+  if (file) {
+    const url = URL.createObjectURL(file)
+    try {
+      const probe = new Image()
+      probe.src = url
+      await probe.decode()
+      const copy = await uploadCopy({ url, width: probe.naturalWidth, height: probe.naturalHeight })
+      const base = (file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo'
+      form.append('file', new File([copy.blob], `${base}.jpg`, { type: 'image/jpeg' }))
+      form.append('width', copy.width)
+      form.append('height', copy.height)
+    } catch {
+      throw new Error('That file could not be read as a photo.')
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+  let res
+  try {
+    res = await fetch(`${URL_}/functions/v1/seamline-visitor-upload`, { method: 'POST', headers: { apikey: KEY }, body: form })
+  } catch {
+    throw new Error('Could not reach the album. Check your connection.')
+  }
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(body.error || 'The photo could not be added.')
+    err.wrongPin = res.status === 401 || res.status === 429
+    throw err
+  }
+  return body.item ?? null
 }

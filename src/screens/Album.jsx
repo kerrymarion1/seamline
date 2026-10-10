@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import LinkSheet from '../components/LinkSheet'
-import { refreshHearts, useCloud } from '../lib/cloud'
+import {
+  adoptVisitorItems, findShare, publicUrl, refreshHearts, refreshShares, removeVisitorItem, syncShare, useCloud, visitorItems,
+} from '../lib/cloud'
 import Sheet from '../components/Sheet'
 import { importFile } from '../lib/images'
 import { imageFile, saveToPhone } from '../lib/share'
@@ -15,7 +17,7 @@ import {
 export default function Album({ albumId }) {
   const album = useAlbum(albumId)
   const images = useStore((s) => s.images)
-  const { hearts } = useCloud()
+  const { hearts, shares } = useCloud()
   const fileInput = useRef(null)
   const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState([])
@@ -32,6 +34,7 @@ export default function Album({ albumId }) {
   // Pick up any favourites visitors have left since the app was opened.
   useEffect(() => {
     refreshHearts()
+    refreshShares()
   }, [])
 
   useEffect(() => {
@@ -90,6 +93,33 @@ export default function Album({ albumId }) {
     })
   }
 
+  // Photos visitors added through this album's link wait here until kept or removed.
+  const share = findShare(shares, 'album', album.id)
+  const added = visitorItems(share)
+
+  async function keepAdded() {
+    setBusy(true)
+    try {
+      const idMap = {}
+      for (const [i, item] of added.entries()) {
+        setNotice({ busy: true, text: `Saving ${i + 1} of ${added.length}` })
+        const res = await fetch(publicUrl(item.path))
+        if (!res.ok) throw new Error('A photo could not be downloaded')
+        const record = await importFile(new File([await res.blob()], item.name, { type: 'image/jpeg' }))
+        addImages([record])
+        addToAlbum(album.id, [record.id])
+        idMap[item.id] = record.id
+      }
+      await adoptVisitorItems(share, idMap)
+      setNotice({ text: `Added ${added.length} to this album` })
+    } catch (e) {
+      setNotice({ text: e.message || 'Could not save those photos' })
+    }
+    setBusy(false)
+  }
+
+  const dropAdded = (item) => removeVisitorItem(share, item).catch((e) => setNotice({ text: e.message }))
+
   const stopSelecting = () => {
     setSelecting(false)
     setPicked([])
@@ -136,7 +166,7 @@ export default function Album({ albumId }) {
         </button>
       </header>
 
-      {ids.length === 0 ? (
+      {ids.length === 0 && added.length === 0 ? (
         <div className="empty">
           <h2>An empty pool</h2>
           <p>Add photos here once and reuse them in any carousel or collage.</p>
@@ -146,6 +176,22 @@ export default function Album({ albumId }) {
         </div>
       ) : (
         <main className="album-body">
+          {added.length > 0 && (
+            <section className="visitor-box">
+              <div className="row">
+                <div className="label">{added.length} added by visitors</div>
+                <button className="pill-btn" disabled={busy} onClick={keepAdded}>Keep in album</button>
+              </div>
+              <div className="visitor-strip">
+                {added.map((item) => (
+                  <div key={item.id} className="visitor-thumb">
+                    <img src={publicUrl(item.path)} alt={item.name} loading="lazy" draggable={false} />
+                    <button onClick={() => dropAdded(item)} aria-label={`Remove ${item.name}`}><Icon name="close" size={14} /></button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           <div className="photo-grid">
             {ids.map((id) => {
               const on = picked.includes(id)

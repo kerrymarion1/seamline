@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../components/Icon'
-import { downloadUrl, fetchMyFavorites, fetchShare, publicUrl, setFavorite } from '../lib/cloud'
+import Sheet from '../components/Sheet'
+import { downloadUrl, fetchMyFavorites, fetchShare, publicUrl, setFavorite, visitorUpload } from '../lib/cloud'
 import { downloadZip } from '../lib/share'
 
 function Heart({ on, onToggle, className = '' }) {
@@ -29,6 +30,50 @@ export default function ShareView({ token }) {
   const [index, setIndex] = useState(0)
   const scroller = useRef(null)
   const [liked, setLiked] = useState(() => new Set())
+  const fileInput = useRef(null)
+  const PIN_KEY = `seamline:pin:${token}`
+  const [pin, setPin] = useState(() => sessionStorage.getItem(PIN_KEY) ?? '')
+  const [askPin, setAskPin] = useState(false)
+  const [pinError, setPinError] = useState(null)
+  const [adding, setAdding] = useState(null)
+
+  // Check the PIN before opening the photo picker, so a wrong one is caught first.
+  const startAdding = async (candidate = pin) => {
+    if (!candidate) return setAskPin(true)
+    // Already checked in this visit: open the photo picker straight away.
+    if (sessionStorage.getItem(PIN_KEY) === candidate) return fileInput.current.click()
+    setPinError(null)
+    setAdding('Checking PIN')
+    try {
+      await visitorUpload(token, candidate, null)
+      sessionStorage.setItem(PIN_KEY, candidate)
+      setPin(candidate)
+      setAskPin(false)
+      fileInput.current.click()
+    } catch (e) {
+      sessionStorage.removeItem(PIN_KEY)
+      setPinError(e.message)
+      setAskPin(true)
+    }
+    setAdding(null)
+  }
+
+  const addFiles = async (files) => {
+    setError(null)
+    let failed = null
+    for (const [i, file] of files.entries()) {
+      setAdding(`Adding ${i + 1} of ${files.length}`)
+      try {
+        const item = await visitorUpload(token, pin, file)
+        if (item) setShare((sh) => ({ ...sh, items: [...sh.items, item] }))
+      } catch (e) {
+        failed = e.message
+        if (e.wrongPin) break
+      }
+    }
+    setAdding(null)
+    if (failed) setError(failed)
+  }
 
   useEffect(() => {
     fetchShare(token).then(setShare).catch((e) => {
@@ -62,7 +107,7 @@ export default function ShareView({ token }) {
   }, [share])
 
   if (share === undefined) return <div className="splash">Seamline</div>
-  if (!share || share.items.length === 0) {
+  if (!share || (share.items.length === 0 && !share.allow_uploads)) {
     return (
       <div className="screen">
         <div className="empty">
@@ -74,7 +119,7 @@ export default function ShareView({ token }) {
   }
 
   const { items } = share
-  const single = share.kind === 'photo' || items.length === 1
+  const single = share.kind === 'photo' || (items.length === 1 && !share.allow_uploads)
   const carousel = share.kind === 'carousel' && !single
   const viewed = items.find((it) => it.path === viewing)
 
@@ -144,6 +189,11 @@ export default function ShareView({ token }) {
       )}
 
       <footer className="shareview-foot">
+        {share.allow_uploads && (
+          <button className="secondary add-photos" onClick={() => startAdding()} disabled={!!adding}>
+            <Icon name="plus" size={20} /> {adding ?? 'Add your photos'}
+          </button>
+        )}
         {error && <p className="preview-error" role="alert">{error}</p>}
         Made with <a href="/">Seamline</a>
       </footer>
@@ -157,6 +207,35 @@ export default function ShareView({ token }) {
           <Icon name="download" size={20} /> {zipping ?? 'Download all'}
         </button>
       )}
+
+      <Sheet open={askPin} onClose={() => setAskPin(false)} title="Enter the PIN" modal>
+        <p className="hint">Ask the person who shared this album for its PIN to add your own photos.</p>
+        <input
+          className="field pin-field"
+          inputMode="numeric"
+          maxLength={8}
+          placeholder="PIN"
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+          onKeyDown={(e) => e.key === 'Enter' && pin.length >= 4 && startAdding(pin)}
+        />
+        {pinError && <p className="preview-error" role="alert">{pinError}</p>}
+        <button className="primary block" disabled={pin.length < 4 || !!adding} onClick={() => startAdding(pin)}>
+          {adding ?? 'Continue'}
+        </button>
+      </Sheet>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = [...e.target.files]
+          e.target.value = ''
+          addFiles(files)
+        }}
+      />
 
       {viewed && (
         <div className="viewer">
