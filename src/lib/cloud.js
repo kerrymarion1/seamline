@@ -11,6 +11,7 @@ const BUCKET = 'seamline'
 const UPLOAD_EDGE = 2560 // long edge of uploaded copies
 const UPLOAD_QUALITY = 0.88
 export const STORAGE_LIMIT = 1024 ** 3 // free plan: 1 GB
+export const VIDEO_LIMIT = 10 * 1024 ** 3 // Cloudflare R2's free allowance: 10 GB
 
 export const supabase = URL_ && KEY ? createClient(URL_, KEY) : null
 
@@ -42,20 +43,28 @@ export const useCloud = () => useSyncExternalStore(subscribe, () => state)
 export const getCloud = () => state
 export const onCloud = subscribe
 
+// Whose membership was last confirmed on this device, so the app still opens
+// for them when it cannot reach the server to ask again.
+const MEMBER = 'seamline:member'
+
 async function refresh(session) {
   if (!session) {
     return set({ loading: false, session: null, uploader: false, shares: [], hearts: NO_HEARTS, library: null, photos: {}, canSync: false })
   }
   set({ session })
-  const [{ data: uploader }, { data: shares }, lib] = await Promise.all([
+  const [{ data: isMember, error: memberError }, { data: shares }, lib] = await Promise.all([
     supabase.rpc('seamline_is_uploader'),
     supabase.from('seamline_shares').select('*').order('created_at', { ascending: false }),
     supabase.rpc('seamline_my_library'),
   ])
+  let uploader = !!isMember
+  if (memberError) uploader = localStorage.getItem(MEMBER) === session.user.id // offline: go by last time
+  else if (uploader) localStorage.setItem(MEMBER, session.user.id)
+  else localStorage.removeItem(MEMBER)
   // Before the database knows about libraries, fall back to links only.
   const canSync = !lib.error && !!lib.data
   set({
-    loading: false, uploader: !!uploader, shares: shares ?? [],
+    loading: false, uploader, shares: shares ?? [],
     library: canSync ? lib.data : session.user.id, canSync,
   })
   if (canSync) await refreshPhotos()
@@ -157,8 +166,48 @@ const random = (bytes) => {
 }
 
 export const shareUrl = (share) => `${window.location.origin}/s/${share.token}`
-export const publicUrl = (path) => supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
-export const downloadUrl = (item) => `${publicUrl(item.path)}?download=${encodeURIComponent(item.name)}`
+// Photos are in Supabase Storage and recorded by their path there. Videos are
+// in Cloudflare R2 (see supabase/functions/seamline-media) and recorded by
+// their full address, which is how the two are told apart.
+const external = (path) => /^https?:\/\//.test(path)
+export const publicUrl = (path) => (external(path) ? path : supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl)
+// A video is stored marked as a download, so its plain address already saves it.
+export const downloadUrl = (item) =>
+  external(item.path) ? item.path : `${publicUrl(item.path)}?download=${encodeURIComponent(item.name)}`
+
+const isVideo = (image) => image?.kind === 'video'
+
+async function media(body) {
+  const { data, error } = await supabase.functions.invoke('seamline-media', { body })
+  if (error || data?.error) throw new Error(data?.error || 'Could not reach video storage')
+  return data
+}
+
+// Send a file straight to video storage and return its address. `onFraction`
+// hears how far along it is, from 0 to 1.
+async function putMedia(blob, { ext, type, name }, onFraction = () => {}) {
+  const { files } = await media({ action: 'sign', files: [{ ext }] })
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', files[0].url)
+    xhr.setRequestHeader('Content-Type', type)
+    xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    if (name) xhr.setRequestHeader('Content-Disposition', `attachment; filename="${name.replace(/[^\w.\- ]+/g, '_')}"`)
+    xhr.upload.onprogress = (e) => e.lengthComputable && onFraction(e.loaded / e.total)
+    xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error('The video could not be uploaded')))
+    xhr.onerror = () => reject(new Error('The upload was interrupted. Check your connection.'))
+    xhr.send(blob)
+  })
+  return files[0].path
+}
+
+// Delete stored files, wherever each one lives.
+async function removeStored(paths) {
+  const there = paths.filter(external)
+  const here = paths.filter((p) => !external(p))
+  if (here.length) await supabase.storage.from(BUCKET).remove(here)
+  if (there.length) await media({ action: 'delete', paths: there })
+}
 
 export const findShare = (shares, kind, sourceId) =>
   shares.find((s) => s.kind === kind && s.source_id === sourceId)
@@ -196,7 +245,10 @@ async function uploadCopy(image) {
 // A photo's online copy: from the registry, or failing that from a link.
 function onlineItem(imageId) {
   const row = state.photos[imageId]
-  if (row) return { id: row.id, path: row.path, name: row.name, width: row.width, height: row.height, bytes: row.bytes }
+  if (row) {
+    const item = { id: row.id, path: row.path, name: row.name, width: row.width, height: row.height, bytes: row.bytes }
+    return row.kind === 'video' ? { ...item, kind: 'video', poster: row.poster, duration: row.duration } : item
+  }
   for (const sh of state.shares) {
     const it = sh.items.find((x) => x.id === imageId && !x.visitor)
     if (it) return it
@@ -205,9 +257,13 @@ function onlineItem(imageId) {
 }
 export const isOnline = (imageId) => !!onlineItem(imageId)
 
-// A photo that can go into a link: it is on this device, or already online.
+// Videos need the photo registry to record where they are; without it they
+// stay on the device and are left out of links.
+export const canLink = (image) => !isVideo(image) || state.canSync
+
+// A photo or video that can go into a link: it is on this device, or already online.
 export const linkable = (imageIds, images) =>
-  imageIds.map((id) => images[id] ?? (isOnline(id) ? { id } : null)).filter(Boolean)
+  imageIds.map((id) => (!canLink(images[id]) ? null : images[id] ?? (isOnline(id) ? { id } : null))).filter(Boolean)
 
 // Storage paths that links other than `exceptShareId` still show.
 const pathsInUse = (exceptShareId) =>
@@ -216,21 +272,50 @@ const pathsInUse = (exceptShareId) =>
 const registered = () => new Set(Object.values(state.photos).map((row) => row.path))
 
 // Bytes actually stored: a photo used in several places is only stored once.
-export function storageUsed(shares = state.shares) {
+// Videos are counted apart, as they are stored somewhere else.
+function stored(shares, wanted) {
   const seen = new Map()
   for (const row of Object.values(state.photos)) seen.set(row.path, row.bytes)
   for (const sh of shares) for (const it of sh.items) seen.set(it.path, it.bytes)
-  return [...seen.values()].reduce((n, b) => n + b, 0)
+  return [...seen].filter(([path]) => external(path) === wanted).reduce((n, [, b]) => n + Number(b), 0)
+}
+export const storageUsed = (shares = state.shares) => stored(shares, false)
+export const videoStorageUsed = (shares = state.shares) => stored(shares, true)
+
+// Put a video online exactly as it is, with its still, and note it in the registry.
+async function ensureVideo(image, onFraction) {
+  if (videoStorageUsed() + image.blob.size > VIDEO_LIMIT) throw new Error('Video storage is full. Remove some videos first.')
+  const ext = image.name?.match(/\.([a-z0-9]+)$/i)?.[1].toLowerCase() ?? 'mp4'
+  const stored = []
+  try {
+    stored.push(await putMedia(image.blob, { ext, type: image.blob.type || 'video/mp4', name: image.name }, onFraction))
+    stored.push(await putMedia(image.previewBlob, { ext: 'jpg', type: 'image/jpeg' }))
+    const row = {
+      library: state.library, id: image.id, path: stored[0], poster: stored[1], kind: 'video', duration: image.duration ?? 0,
+      name: image.name ?? 'video.mp4', width: image.width, height: image.height, bytes: image.blob.size + image.previewBlob.size,
+    }
+    const saved = await supabase.from('seamline_photos').upsert(row).select().single()
+    if (saved.error) throw new Error(saved.error.message)
+    set({ photos: { ...state.photos, [image.id]: saved.data } })
+  } catch (err) {
+    await removeStored(stored).catch(() => {})
+    throw err
+  }
 }
 
-// Put photos online that are not there yet, and note each in the registry.
-// `images` are photos held on this device. Returns nothing; read the results
-// back with onlineItem.
+// Put photos and videos online that are not there yet, and note each in the
+// registry. `images` are held on this device. Returns nothing; read the
+// results back with onlineItem. `onProgress` also hears, as a third value,
+// how far through a large upload it is (0 to 1).
 export async function ensurePhotos(images, onProgress = () => {}) {
-  const todo = images.filter((img) => img.url && !onlineItem(img.id))
+  const todo = images.filter((img) => img.blob && canLink(img) && !onlineItem(img.id))
   let done = 0
   for (const image of todo) {
-    onProgress(done++, todo.length)
+    onProgress(done++, todo.length, isVideo(image) ? 0 : undefined)
+    if (isVideo(image)) {
+      await ensureVideo(image, (fraction) => onProgress(done - 1, todo.length, fraction))
+      continue
+    }
     const copy = await uploadCopy(image)
     if (storageUsed() + copy.blob.size > STORAGE_LIMIT) throw new Error('Storage is full. Remove some photos or links first.')
     const path = `${state.library}/${random(12)}.jpg`
@@ -260,12 +345,19 @@ export async function cleanPhotos(usedIds) {
     (row) => !usedIds.has(row.id) && !linked.has(row.id) && row.created_at && Date.parse(row.created_at) < hourAgo,
   )
   if (!dead.length) return
-  await supabase.storage.from(BUCKET).remove(dead.map((row) => row.path))
+  await removeStored(dead.flatMap((row) => (row.poster ? [row.path, row.poster] : [row.path])))
   await supabase.from('seamline_photos').delete().eq('library', state.library).in('id', dead.map((row) => row.id))
   const photos = { ...state.photos }
   for (const row of dead) delete photos[row.id]
   set({ photos })
 }
+
+// "Putting photos online, 2 of 5", or for a video, which reports how far
+// through it is, "Putting a video online, 2 of 5 (40%)".
+export const progressText = (done, total, fraction) =>
+  fraction == null
+    ? `Putting photos online, ${done + 1} of ${total}`
+    : `Putting a video online, ${done + 1} of ${total} (${Math.round(fraction * 100)}%)`
 
 let queue = Promise.resolve()
 
@@ -355,14 +447,15 @@ export async function syncAlbums(albums, images) {
     for (const album of albums) {
       // Photos still downloading from another device are already online; an
       // album with a photo that is neither here nor online is left for later.
-      const photos = linkable(album.imageIds, images)
-      if (!photos.length || photos.length !== album.imageIds.length) continue
+      const wanted = album.imageIds.filter((id) => canLink(images[id]))
+      const photos = linkable(wanted, images)
+      if (!photos.length || photos.length !== wanted.length) continue
       const share = findShare(state.shares, 'album', album.id)
       if (share && share.title === album.name && !outOfDate(share, photos.map((ph) => ph.id))) continue
       set({ syncing: { id: album.id, done: 0, total: 0 }, syncError: null })
       await syncShare(
         { kind: 'album', sourceId: album.id, title: album.name, images: photos },
-        (done, total) => set({ syncing: { id: album.id, done, total } }),
+        (done, total, fraction) => set({ syncing: { id: album.id, done, total, fraction } }),
       )
     }
   } catch (err) {

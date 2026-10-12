@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import {
-  EXPIRY_CHOICES, expiryText, findShare, isExpired, isOnline, linkable, outOfDate, replaceLink, rememberedPin, setExpiry, setUploadPin, shareUrl,
+  EXPIRY_CHOICES, expiryText, findShare, isExpired, isOnline, linkable, outOfDate, progressText, replaceLink, rememberedPin, setExpiry, setUploadPin, shareUrl,
   stopShare, syncShare, useCloud,
 } from '../lib/cloud'
 import { useStore } from '../lib/store'
 import Icon from './Icon'
 import Sheet from './Sheet'
 
-// Sharing for an album, a photo or a carousel: create, copy, send, update and
+// Sharing for an album, a photo or a collage: create, copy, send, update and
 // remove a public link to a page that shows it. The files are never sent.
 // target: { kind: 'album' | 'photo', sourceId, title, imageIds } for photos kept
 // in the app, or { kind: 'carousel', sourceId, title, uploads, stale } for a
-// finished carousel, where `uploads` are its exported frames. Null when closed.
+// finished collage, where `uploads` are its exported images. Null when closed.
 export default function LinkSheet({ target, onClose }) {
   const cloud = useCloud()
   const images = useStore((s) => s.images)
@@ -32,7 +32,7 @@ export default function LinkSheet({ target, onClose }) {
   const carousel = target?.kind === 'carousel'
   const stale = share && (carousel ? target.stale(share) : outOfDate(share, target.imageIds))
   const n = (carousel ? target.uploads : target?.imageIds)?.length ?? 0
-  const what = carousel ? (n === 1 ? 'this image' : 'this carousel') : n === 1 ? 'this photo' : 'these photos'
+  const what = carousel ? (n === 1 ? 'this collage' : 'these frames') : n === 1 ? 'this photo' : 'these photos'
 
   // The album this target belongs to is being put online right now.
   const syncing = cloud.syncing && target?.kind === 'album' && cloud.syncing.id === target.sourceId ? cloud.syncing : null
@@ -52,7 +52,7 @@ export default function LinkSheet({ target, onClose }) {
       setProgress('Preparing…')
       await syncShare(
         { ...target, images: carousel ? target.uploads : linkable(target.imageIds, images) },
-        (done, total) => setProgress(`Uploading ${done + 1} of ${total}`),
+        (done, total, fraction) => setProgress(progressText(done, total, fraction)),
       )
     })
 
@@ -113,7 +113,7 @@ export default function LinkSheet({ target, onClose }) {
       ) : progress || (syncing && !share) ? (
         <p className="hint centre">
           <i className="spinner inline" />{' '}
-          {progress ?? (syncing.total ? `Putting photos online, ${syncing.done + 1} of ${syncing.total}` : 'Getting the link ready')}
+          {progress ?? (syncing.total ? progressText(syncing.done, syncing.total, syncing.fraction) : 'Getting the link ready')}
         </p>
       ) : share ? (
         <>

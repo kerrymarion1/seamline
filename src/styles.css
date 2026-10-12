@@ -4,6 +4,7 @@
   --surface-2: #222226;
   --surface-3: #303036;
   --line: rgba(255, 255, 255, 0.07);
+  --edge: rgba(255, 255, 255, 0.13); /* borders around cards */
   --text: #f2f0eb;
   --text-2: #96948f;
   --accent: #ff8a4c;
@@ -319,9 +320,89 @@ h1, h2, h3, p {
 
 /* ---------- home ---------- */
 
-.home-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 10px 22px; }
-.home-head h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.03em; }
-.home-head h1::after { content: '.'; color: var(--accent); }
+.home-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 16px 14px 22px; }
+.home-sub { margin-top: 6px; color: var(--text-2); font-size: 13px; }
+
+/* ---------- the wordmark ---------- */
+
+.logo {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  margin: 0;
+  padding-bottom: 7px;
+  color: var(--text);
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+/* The letters slot in from below and above in turn, like a weave. */
+.logo span {
+  display: inline-block;
+  animation: logo-weave-up 0.6s var(--spring) both;
+  animation-delay: calc(var(--i) * 55ms);
+}
+.logo span:nth-child(even) { animation-name: logo-weave-down; }
+/* The full stop drops in after the letters. */
+.logo b {
+  width: 0.22em;
+  height: 0.22em;
+  margin-left: 0.07em;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: logo-dot 0.55s var(--spring) 0.85s both;
+}
+/* The seam: one fine line drawn in beneath the name, fading out at its end. */
+.logo::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  right: 0.32em;
+  bottom: 1px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, var(--accent) 55%, rgba(255, 138, 76, 0));
+  animation: seam-draw 0.9s ease-out 0.45s both;
+}
+@keyframes logo-weave-up {
+  from { opacity: 0; transform: translateY(16px); }
+}
+@keyframes logo-weave-down {
+  from { opacity: 0; transform: translateY(-16px); }
+}
+@keyframes logo-dot {
+  from { opacity: 0; transform: translateY(-16px) scale(0.2); }
+}
+@keyframes seam-draw {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.splash .logo { font-size: 36px; }
+
+/* ---------- the glow behind the front page and the sign-in page ---------- */
+
+.ambient { isolation: isolate; }
+.ambient::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: -1;
+  height: 360px;
+  background: radial-gradient(70% 100% at 15% 0%, rgba(255, 138, 76, 0.14), transparent 72%);
+  pointer-events: none;
+}
+.gate.ambient::before {
+  height: 100%;
+  background: radial-gradient(80% 60% at 50% 0%, rgba(255, 138, 76, 0.16), transparent 70%);
+}
+
+/* ---------- the sign-in page in front of the app ---------- */
+
+.gate { align-items: center; justify-content: center; padding: 24px 20px; overflow-y: auto; }
+.gate-box { display: flex; flex-direction: column; align-items: center; gap: 28px; width: 100%; max-width: 400px; }
+.gate-box .logo { font-size: 38px; }
+.gate-box .panel { width: 100%; border: 1px solid var(--edge); }
 
 .empty {
   flex: 1;
@@ -337,46 +418,62 @@ h1, h2, h3, p {
 .empty p { max-width: 300px; color: var(--text-2); font-size: 16px; }
 .empty .primary { margin-top: 14px; }
 
-/* Three frames with one band gliding under the seams. */
-.empty-art {
-  position: relative;
-  display: flex;
-  gap: 6px;
-  margin-bottom: 22px;
-  overflow: hidden;
-  border-radius: 6px;
-  background: var(--surface-2);
-}
-.empty-art i {
-  position: relative;
-  z-index: 1;
-  width: 72px;
-  height: 90px;
-  box-shadow: 0 0 0 3px var(--bg);
-}
-.empty-art b {
-  position: absolute;
-  top: 26px;
-  left: 0;
-  width: 132px;
-  height: 38px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, var(--accent), #ffb785);
-  animation: glide 4.2s ease-in-out infinite alternate;
-}
-@keyframes glide {
-  from { transform: translateX(14px) rotate(-5deg); }
-  to { transform: translateX(82px) rotate(4deg); }
-}
-
-.project-list {
+.home-body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 10px 16px calc(var(--safe-b) + 110px);
+  gap: 30px;
+  padding: 6px 16px calc(var(--safe-b) + 36px);
+  overflow-x: hidden;
   overflow-y: auto;
 }
+.home-body > section { flex: none; width: 100%; max-width: 980px; margin: 0 auto; }
+.section-head { display: flex; align-items: center; justify-content: space-between; min-height: 36px; margin-bottom: 12px; padding-left: 6px; }
+.section-head h2 { display: flex; align-items: center; gap: 9px; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+.section-head .count {
+  padding: 2px 9px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+.section-head .pill-btn, .invite .pill-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Stands in for a section that has nothing in it yet. */
+.invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 28px;
+  border: 1px dashed var(--edge);
+  border-radius: 24px;
+  background: var(--surface);
+  text-align: center;
+}
+.invite h3 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+.invite p { max-width: 300px; color: var(--text-2); }
+.invite button { margin-top: 10px; }
+
+/* Collages sit in a grid like the albums: nothing on the page scrolls sideways. */
+.shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.shelf .card { min-width: 0; border: 1px solid var(--edge); transition: border-color 0.2s; }
+.shelf .card-open { padding: 12px 12px 0; }
+.shelf .card-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+/* The name gets the full width; duplicate and delete sit beneath it. */
+.shelf .card-meta { flex-wrap: wrap; padding: 10px 6px 6px 14px; }
+.shelf .card-meta > div { flex: 1 1 100%; }
+.shelf .card-meta h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shelf .card-meta .icon-btn { width: 40px; height: 40px; }
+.shelf .card-meta .icon-btn:first-of-type { margin-left: auto; }
 .card {
   flex: none;
   overflow: hidden;
@@ -885,18 +982,6 @@ h1, h2, h3, p {
   letter-spacing: -0.03em;
 }
 
-.tabs { display: flex; padding: 3px; border-radius: 20px; background: var(--surface); }
-.tabs button {
-  height: 34px;
-  padding: 0 16px;
-  border-radius: 17px;
-  color: var(--text-2);
-  font-weight: 600;
-  font-size: 14px;
-  transition: background 0.2s, color 0.2s;
-}
-.tabs .on { background: var(--surface-3); color: var(--text); }
-
 .banner {
   margin: 0 16px 8px;
   padding: 12px 14px;
@@ -906,12 +991,36 @@ h1, h2, h3, p {
   font-size: 13px;
 }
 
+.collage-art { display: grid; grid-template-columns: 56px 38px; grid-template-rows: 38px 38px; gap: 5px; margin-bottom: 18px; }
+.collage-art i { border-radius: 8px; background: var(--surface-2); }
+.collage-art i:first-child { grid-row: span 2; background: linear-gradient(135deg, var(--accent), #ffb785); }
 .pool-art { display: grid; grid-template-columns: repeat(2, 44px); gap: 5px; margin-bottom: 18px; }
 .pool-art i { height: 44px; border-radius: 8px; background: var(--surface-2); }
 .pool-art i:nth-child(2) { background: linear-gradient(135deg, var(--accent), #ffb785); }
 
-.album-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-.album-card { text-align: left; min-width: 0; }
+.album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; }
+/* Each album is a framed card: the cover inset in a border, its name beneath. */
+.album-card {
+  position: relative;
+  min-width: 0;
+  padding: 6px 6px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 24px;
+  background: var(--surface);
+  text-align: left;
+  transition: transform 0.2s var(--spring), border-color 0.2s, box-shadow 0.2s;
+  animation: rise 0.5s var(--spring) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+}
+.album-card:active { transform: scale(0.98); }
+@media (hover: hover) {
+  .album-card:hover, .shelf .card:hover { border-color: rgba(255, 138, 76, 0.6); }
+  .album-card:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35); }
+}
+.album-caption { padding: 0 8px; }
 .album-card h3 {
   margin-top: 10px;
   overflow: hidden;
@@ -929,12 +1038,37 @@ h1, h2, h3, p {
   aspect-ratio: 1;
   overflow: hidden;
   border-radius: 18px;
-  background: var(--surface);
-  transition: transform 0.15s var(--spring);
+  background: var(--surface-2);
 }
-.album-card:active .album-cover { transform: scale(0.97); }
 .album-cover img { width: 100%; height: 100%; object-fit: cover; min-height: 0; }
 .album-cover img:only-child { grid-column: span 2; grid-row: span 2; }
+.album-cover img:first-child:nth-last-child(3) { grid-column: span 2; }
+.album-cover svg { grid-column: span 2; place-self: center; color: var(--surface-3); }
+
+/* The newest album: one wide cover with its name laid over the photos. */
+.album-card.featured { grid-column: 1 / -1; padding: 6px; }
+.featured .album-cover {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  aspect-ratio: 16 / 10;
+  width: 100%;
+  max-height: 420px;
+}
+.featured .album-cover img:first-child { grid-column: auto; grid-row: span 2; }
+.featured .album-cover img:nth-child(2):last-child { grid-row: span 2; }
+.featured .album-cover img:only-child { grid-column: span 2; }
+.featured .album-cover svg { grid-row: span 2; }
+.featured .album-caption {
+  position: absolute;
+  inset: auto 6px 6px;
+  padding: 56px 16px 14px;
+  border-radius: 0 0 18px 18px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+  pointer-events: none;
+}
+.featured h3 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+.featured p { color: rgba(255, 255, 255, 0.72); }
+.featured .album-cover:has(svg) + .album-caption { background: none; }
 
 .album-body { flex: 1; overflow-y: auto; padding: 4px 3px calc(var(--safe-b) + 110px); }
 .album .pill-btn { flex: none; margin-right: 2px; }
@@ -977,7 +1111,8 @@ h1, h2, h3, p {
   animation: preview-in 0.3s var(--spring);
 }
 .viewer-body { position: relative; flex: 1; min-height: 0; }
-.viewer-body img {
+.viewer-body img,
+.viewer-body video {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1157,6 +1292,20 @@ select.field { appearance: none; -webkit-appearance: none; }
   font-weight: 700;
 }
 .hearts svg { fill: currentColor; }
+/* Marks a video in the grid, with its length. */
+.clip {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 7px 3px 4px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+  font-weight: 700;
+}
 .hearts.inline { position: static; margin-left: 8px; background: none; padding: 0; vertical-align: -1px; }
 .preview-actions { width: 100%; max-width: 560px; margin: 0 auto; }
 
@@ -1241,17 +1390,3 @@ select.field { appearance: none; -webkit-appearance: none; }
 .check-row input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--accent); flex: none; }
 .check-row span { font-weight: 600; font-size: 15px; }
 .check-row small { display: block; margin-top: 2px; color: var(--text-2); font-weight: 400; font-size: 13px; }
-.signin-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 16px 10px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: var(--surface);
-  text-align: left;
-  color: var(--text-2);
-  font-size: 14px;
-}
-.signin-bar b { flex: none; color: var(--accent); font-weight: 600; }

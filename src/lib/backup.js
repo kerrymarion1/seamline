@@ -1,5 +1,5 @@
 import { strToU8, Unzip, UnzipPassThrough, Zip, ZipPassThrough } from 'fflate'
-import { previewOf } from './images'
+import { previewOf, probeVideo } from './images'
 import { addImages, getState, mergeBackup } from './store'
 
 // A backup is one zip: seamline.json (projects, albums, photo details) plus
@@ -9,7 +9,8 @@ const MANIFEST = 'seamline.json'
 
 export async function createBackup(onProgress = () => {}) {
   const { projects, albums, presets, images } = getState()
-  const list = Object.values(images)
+  // A video that only plays from its online copy has no file here to back up.
+  const list = Object.values(images).filter((img) => img.blob)
   const parts = []
   let failed = null
   const zip = new Zip((err, chunk) => {
@@ -32,13 +33,24 @@ export async function createBackup(onProgress = () => {}) {
         projects,
         albums,
         presets,
-        images: list.map(({ id, name, width, height, blob }) => ({ id, name, width, height, type: blob.type || 'image/jpeg' })),
+        images: list.map(({ id, name, width, height, blob, kind, duration }) => ({
+          id, name, width, height, type: blob.type || 'image/jpeg', kind, duration,
+        })),
       }),
     ),
   )
   for (const [i, img] of list.entries()) {
     onProgress(i, list.length)
-    add(`images/${img.id}`, new Uint8Array(await img.blob.arrayBuffer()))
+    // Piece by piece: a video is far too large to read in one go.
+    const entry = new ZipPassThrough(`images/${img.id}`)
+    zip.add(entry)
+    const reader = img.blob.stream().getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      entry.push(value, false)
+    }
+    entry.push(new Uint8Array(0), true)
   }
   zip.end()
   if (failed) throw failed
@@ -93,9 +105,11 @@ export async function restoreBackup(file, onProgress = () => {}) {
     onProgress(i, missing.length)
     const blob = new Blob([entries.get(`images/${meta.id}`)], { type: meta.type })
     try {
-      const previewBlob = await previewOf(blob)
+      const video = meta.kind === 'video'
+      const previewBlob = video ? (await probeVideo(blob)).previewBlob : await previewOf(blob)
       records.push({
         id: meta.id, name: meta.name, width: meta.width, height: meta.height, blob, previewBlob,
+        ...(video ? { kind: 'video', duration: meta.duration } : null),
         url: URL.createObjectURL(blob),
         previewUrl: URL.createObjectURL(previewBlob),
       })

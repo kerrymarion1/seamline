@@ -4,7 +4,7 @@ import Icon from '../components/Icon'
 import { createBackup, restoreBackup } from '../lib/backup'
 import {
   expiryText, requestPasswordReset, setAutoSync, setNewPassword, shareUrl, signIn, signOut, stopShare, STORAGE_LIMIT,
-  storageUsed, useCloud,
+  storageUsed, useCloud, VIDEO_LIMIT, videoStorageUsed,
 } from '../lib/cloud'
 import StripView from '../components/StripView'
 import { deletePreset, setImportAlbum, useStore } from '../lib/store'
@@ -12,7 +12,7 @@ import { getSyncStatus, onSyncStatus, syncNow } from '../lib/sync'
 
 const mb = (bytes) => (bytes < 1024 ** 2 ? `${Math.max(bytes ? 1 : 0, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`)
 
-function SignIn() {
+export function SignIn() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
@@ -53,8 +53,8 @@ function SignIn() {
     <form className="panel" onSubmit={submit} autoComplete="on">
       <h2>Sign in</h2>
       <p className="hint">
-        Use your Plait email and password. Signing in keeps your projects and albums in step on every device and lets
-        you share links.
+        Use your Plait email and password. Signing in opens the app, keeps your albums and collages in step on every device and
+        lets you share links.
       </p>
       <input
         className="field" type="email" name="email" id="seamline-email" autoComplete="username" inputMode="email"
@@ -84,7 +84,7 @@ function SignIn() {
 }
 
 // Shown after following the link in a password-reset email.
-function NewPassword() {
+export function NewPassword() {
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -275,7 +275,7 @@ function Library() {
             <span className="preset-art"><StripView project={t} scale={40 / t.frameH} /></span>
             <div>
               <h3>{t.name}</h3>
-              <p>{t.frames === 1 ? 'Single image' : `${t.frames} frames`} · {t.cells.length} spot{t.cells.length === 1 ? '' : 's'}</p>
+              <p>{t.frames > 1 && `${t.frames} frames · `}{t.cells.length} spot{t.cells.length === 1 ? '' : 's'}</p>
             </div>
             <button className="icon-btn" onClick={() => deletePreset(t.id)} aria-label={`Delete template ${t.name}`}>
               <Icon name="trash" size={20} />
@@ -292,6 +292,7 @@ export default function Settings() {
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(null)
   const used = storageUsed(cloud.shares)
+  const videoUsed = videoStorageUsed(cloud.shares)
   const photos = new Set(cloud.shares.flatMap((s) => s.items.map((it) => it.path))).size
 
   const copy = async (share) => {
@@ -356,6 +357,12 @@ export default function Settings() {
               <p className="hint">
                 {mb(used)} of 1 GB · {photos} photo{photos === 1 ? '' : 's'} online in {cloud.shares.length} link{cloud.shares.length === 1 ? '' : 's'}
               </p>
+              {videoUsed > 0 && (
+                <>
+                  <div className="meter"><i style={{ width: `${Math.min(100, (videoUsed / VIDEO_LIMIT) * 100)}%` }} /></div>
+                  <p className="hint">{mb(videoUsed)} of 10 GB · videos</p>
+                </>
+              )}
               <p className="note">
                 The free plan pauses after a week with no activity. Links stop working while it is paused and come back
                 when the project is restored in Supabase.
@@ -368,9 +375,9 @@ export default function Settings() {
               {cloud.shares.map((s) => (
                 <div key={s.id} className="share-row">
                   <div>
-                    <h3>{s.title || (s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? 'Carousel' : 'Album')}</h3>
+                    <h3>{s.title || (s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? 'Collage' : 'Album')}</h3>
                     <p>
-                      {s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? `Carousel, ${s.items.length} frames` : `${s.items.length} photos`} · {mb(s.bytes)} · {expiryText(s)}
+                      {s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? (s.items.length > 1 ? `Collage, ${s.items.length} frames` : 'Collage') : `${s.items.length} photos`} · {mb(s.bytes)} · {expiryText(s)}
                       {cloud.hearts.byShare[s.id] > 0 && ` · ${cloud.hearts.byShare[s.id]} ♥`}
                     </p>
                   </div>

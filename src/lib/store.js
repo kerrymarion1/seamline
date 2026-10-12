@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { DEFAULT_BACKGROUND } from './backgrounds'
 import { cellRect, cellToLayer, DEFAULT_LAYOUT, makeTiles } from './cells'
-import { clamp, frameH, FORMATS, MAX_FRAMES, MIN_FRAMES, uid } from './scene'
+import { frameH, FORMATS, uid } from './scene'
 
 // One small immutable store, mirrored to IndexedDB by persist.js.
 // `images` maps id -> image record (see images.js); projects and albums refer
@@ -148,7 +148,7 @@ export const historyProjects = () => [...histories.values()].flatMap((h) => [...
 
 // `template` and `count` optionally start the project with a collage layout;
 // `preset` starts it from one of the user's saved templates instead.
-export function createProject({ name, frames, format, template, count, preset }) {
+export function createProject({ name, format, template, count, preset }) {
   if (preset) {
     const project = {
       id: uid(),
@@ -168,7 +168,7 @@ export function createProject({ name, frames, format, template, count, preset })
   let project = {
     id: uid(),
     name: name?.trim() || 'Untitled',
-    frames: clamp(frames, MIN_FRAMES, MAX_FRAMES),
+    frames: 1,
     frameH: (FORMATS.find((f) => f.id === format) ?? FORMATS[0]).h,
     background: DEFAULT_BACKGROUND,
     layers: [],
@@ -216,12 +216,6 @@ export const clearLayout = (id) =>
 
 export const updateLayout = (id, patch) =>
   patchProject(id, (p) => ({ ...p, layout: { ...p.layout, ...patch } }))
-
-export const setFrames = (id, frames) =>
-  patchProject(id, (p) => {
-    const next = { ...p, frames: clamp(frames, MIN_FRAMES, MAX_FRAMES) }
-    return p.layout ? relayout(next, p.layout.template) : next
-  })
 
 export const setFormat = (id, format) =>
   patchProject(id, (p) => {

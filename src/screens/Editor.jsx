@@ -305,7 +305,7 @@ export default function Editor({ projectId }) {
       {!project.layers.length && !cells.length && (
         <div className="canvas-hint">
           <strong>Start with a photo or a layout</strong>
-          <span>Photos can stretch across the dashed lines to span frames.</span>
+          <span>{project.frames > 1 ? 'Photos can stretch across the dashed lines to span frames.' : 'A layout gives you spots to drop photos into.'}</span>
         </div>
       )}
       {notice && (

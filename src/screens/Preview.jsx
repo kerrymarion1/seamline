@@ -6,8 +6,8 @@ import { frameH } from '../lib/scene'
 import { canShareFiles, downloadFile, downloadZip, shareFiles, toFiles } from '../lib/share'
 import { getState } from '../lib/store'
 
-// Full-screen preview of the exported frames, swiped like an Instagram
-// carousel. What you see here are the actual JPEGs that get shared.
+// Full-screen preview of the finished collage. What you see here is the
+// actual JPEG that gets shared (older projects with several frames show each).
 export default function Preview({ project, onClose }) {
   const [files, setFiles] = useState(null)
   const [progress, setProgress] = useState(0)
@@ -97,7 +97,7 @@ export default function Preview({ project, onClose }) {
           !error && (
             <div className="rendering">
               <div className="bar"><i style={{ width: `${Math.round(progress * 100)}%` }} /></div>
-              <span>Rendering frames</span>
+              <span>Rendering</span>
             </div>
           )
         )}

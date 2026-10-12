@@ -4,7 +4,9 @@ import Icon from '../components/Icon'
 // Photo source for the editor: the phone's own picker, or the pool of photos
 // kept in an album. Tap photos to tick them, then add them in that order.
 export default function PhotoPicker({ albums, images, emptySpots = 0, usedIds = [], onPhone, onAdd }) {
-  const filled = albums.filter((a) => a.imageIds.some((id) => images[id]))
+  // Videos stay in albums; only photos can go into a collage.
+  const isPhoto = (id) => images[id] && images[id].kind !== 'video'
+  const filled = albums.filter((a) => a.imageIds.some(isPhoto))
   const [albumId, setAlbumId] = useState(null)
   const [picked, setPicked] = useState([])
   const album = filled.find((a) => a.id === albumId) ?? filled[0]
@@ -17,7 +19,7 @@ export default function PhotoPicker({ albums, images, emptySpots = 0, usedIds = 
 
   // One tap to fill the layout: this album's photos that are not placed yet,
   // in album order, into the empty spots.
-  const fresh = album ? album.imageIds.filter((id) => images[id] && !usedIds.includes(id)) : []
+  const fresh = album ? album.imageIds.filter((id) => isPhoto(id) && !usedIds.includes(id)) : []
   const fillCount = Math.min(emptySpots, fresh.length)
 
   return (
@@ -34,7 +36,7 @@ export default function PhotoPicker({ albums, images, emptySpots = 0, usedIds = 
       </div>
       {album && (
         <div className="photo-grid picker">
-          {album.imageIds.filter((id) => images[id]).map((id) => {
+          {album.imageIds.filter(isPhoto).map((id) => {
             const n = picked.indexOf(id) + 1
             return (
               <button key={id} className={`photo ${n ? 'on' : ''}`} onClick={() => toggle(id)}>

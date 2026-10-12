@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => ({
       manifest: {
         name: 'Seamline',
         short_name: 'Seamline',
-        description: 'Seamless carousel collages for Instagram.',
+        description: 'Photo albums and single-page collages.',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
@@ -34,7 +34,7 @@ export default defineConfig(({ mode }) => ({
           action: '/share-target',
           method: 'POST',
           enctype: 'multipart/form-data',
-          params: { files: [{ name: 'photos', accept: ['image/*'] }] },
+          params: { files: [{ name: 'photos', accept: ['image/*', 'video/*'] }] },
         },
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },

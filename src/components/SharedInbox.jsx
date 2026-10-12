@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { navigate } from '../App'
-import { importFile } from '../lib/images'
+import { importMedia, isVideoFile } from '../lib/images'
 import { clearShared, pendingShared } from '../lib/shared'
 import { addImages, addToAlbum, createAlbum, useStore } from '../lib/store'
 import Icon from './Icon'
 import Sheet from './Sheet'
 
-// Asks which album should receive photos shared in from another app
+// Asks which album should receive photos and videos shared in from another app
 // (for example Lightroom's Share button on Android).
 export default function SharedInbox() {
   const albums = useStore((s) => s.albums)
@@ -33,9 +33,9 @@ export default function SharedInbox() {
     for (const [i, file] of files.entries()) {
       setProgress(`Importing ${i + 1} of ${files.length}`)
       try {
-        records.push(await importFile(file))
+        records.push(await importMedia(file))
       } catch {
-        // Skip anything that is not a readable image.
+        // Skip anything that is not a readable photo or video.
       }
     }
     addImages(records)
@@ -47,8 +47,9 @@ export default function SharedInbox() {
   }
 
   const n = files.length
+  const noun = files.every(isVideoFile) ? 'video' : files.some(isVideoFile) ? 'item' : 'photo'
   return (
-    <Sheet open={n > 0} onClose={dismiss} title={`Add ${n} shared photo${n === 1 ? '' : 's'}`} modal>
+    <Sheet open={n > 0} onClose={dismiss} title={`Add ${n} shared ${noun}${n === 1 ? '' : 's'}`} modal>
       {progress ? (
         <p className="hint centre">
           <i className="spinner inline" /> {progress}

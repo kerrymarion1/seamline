@@ -104,6 +104,18 @@ async function fetchMissing() {
     setStatus({ fetching: { done: i, total: todo.length } })
     const row = photos[id]
     try {
+      if (row.kind === 'video') {
+        // Only the still is downloaded; the video plays from its online copy.
+        const still = await fetch(publicUrl(row.poster))
+        if (!still.ok) continue
+        const previewBlob = await still.blob()
+        addImages([{
+          id, kind: 'video', remote: publicUrl(row.path), name: row.name, width: row.width, height: row.height,
+          duration: row.duration, blob: null, previewBlob,
+          url: publicUrl(row.path), previewUrl: URL.createObjectURL(previewBlob),
+        }])
+        continue
+      }
       const res = await fetch(publicUrl(row.path))
       if (!res.ok) continue
       const blob = new Blob([await res.blob()], { type: 'image/jpeg' })

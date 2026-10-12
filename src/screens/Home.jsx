@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
+import Logo from '../components/Logo'
 import Sheet from '../components/Sheet'
 import StripView from '../components/StripView'
 import { FormatPicker, Stepper, TemplateThumb } from '../editor/panels'
 import { MAX_SPOTS, templatesFor } from '../lib/cells'
-import { useCloud } from '../lib/cloud'
-import { frameH, FORMATS, MAX_FRAMES, MIN_FRAMES } from '../lib/scene'
+import { countText, isVideo } from '../lib/images'
+import { FRAME_W, frameH, FORMATS } from '../lib/scene'
 import { createAlbum, createProject, deleteProject, duplicateProject, fillEmptySpots, useStore } from '../lib/store'
 
-const THUMB_H = 132
+// A collage's thumbnail is fitted inside this box.
+const THUMB_W = 124
+const THUMB_H = 140
 
 function ago(t) {
   const m = Math.round((Date.now() - t) / 60000)
@@ -19,29 +22,36 @@ function ago(t) {
   return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
-function EmptyState({ onNew }) {
+// The newest album leads as one wide cover; the rest follow in a grid.
+function AlbumCard({ album, images, featured, index }) {
+  const ids = album.imageIds.filter((id) => images[id])
   return (
-    <div className="empty">
-      <div className="empty-art" aria-hidden="true">
-        <i /><i /><i />
-        <b />
+    <button
+      className={`album-card ${featured ? 'featured' : ''}`}
+      style={{ '--i': Math.min(index, 8) }}
+      onClick={() => navigate(`/album/${album.id}`)}
+    >
+      <span className="album-cover">
+        {ids.slice(0, featured ? 3 : 4).map((id) => (
+          <img key={id} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
+        ))}
+        {ids.length === 0 && <Icon name="photo" size={featured ? 36 : 28} />}
+      </span>
+      <div className="album-caption">
+        <h3>{album.name}</h3>
+        <p>{countText(ids.map((id) => images[id]))}</p>
       </div>
-      <h2>One photo, many frames</h2>
-      <p>Lay your photos across a strip and Seamline slices it into a seamless carousel.</p>
-      <button className="primary" onClick={onNew}>
-        <Icon name="plus" size={20} /> New carousel
-      </button>
-    </div>
+    </button>
   )
 }
 
 function Albums({ albums, images, onNew }) {
   if (!albums.length) {
     return (
-      <div className="empty">
+      <div className="invite">
         <div className="pool-art" aria-hidden="true"><i /><i /><i /><i /></div>
-        <h2>Keep a pool of photos</h2>
-        <p>Albums hold photos inside the app, ready to drop into any carousel or save back to your phone.</p>
+        <h3>Keep a pool of photos</h3>
+        <p>Albums hold photos inside the app, ready to drop into any collage or save back to your phone.</p>
         <button className="primary" onClick={onNew}>
           <Icon name="plus" size={20} /> New album
         </button>
@@ -49,58 +59,42 @@ function Albums({ albums, images, onNew }) {
     )
   }
   return (
-    <main className="project-list">
-      <div className="album-grid">
-        {albums.map((a) => {
-          const ids = a.imageIds.filter((id) => images[id])
-          return (
-            <button key={a.id} className="album-card" onClick={() => navigate(`/album/${a.id}`)}>
-              <span className="album-cover">
-                {ids.slice(0, 4).map((id) => (
-                  <img key={id} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
-                ))}
-              </span>
-              <h3>{a.name}</h3>
-              <p>{ids.length} photo{ids.length === 1 ? '' : 's'}</p>
-            </button>
-          )
-        })}
-      </div>
-      <button className="primary fab" onClick={onNew}>
-        <Icon name="plus" size={20} /> New album
-      </button>
-    </main>
+    <div className="album-grid">
+      {albums.map((a, i) => (
+        <AlbumCard key={a.id} album={a} images={images} featured={i === 0} index={i} />
+      ))}
+    </div>
   )
 }
 
-export default function Home({ tab }) {
+export default function Home() {
   const projects = useStore((s) => s.projects)
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
   const saveFailed = useStore((s) => s.saveFailed)
-  const cloud = useCloud()
   const [namingAlbum, setNamingAlbum] = useState(false)
   const [albumName, setAlbumName] = useState('')
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
-  const [frames, setFrames] = useState(3)
+  const frames = 1 // a collage is a single page
   const [format, setFormat] = useState(FORMATS[0])
   const presets = useStore((s) => s.presets)
   const [fillFrom, setFillFrom] = useState(null) // album whose photos fill the new layout
-  const fillable = albums.filter((a) => a.imageIds.some((id) => images[id]))
-  // Photo count follows the frame count until it is set by hand.
+  const isPhoto = (id) => images[id] && !isVideo(images[id])
+  const fillable = albums.filter((a) => a.imageIds.some(isPhoto))
+  // Four photos until the number is set by hand.
   const [photos, setPhotos] = useState(null)
   const [template, setTemplate] = useState(null)
-  const count = photos ?? frames
+  const count = photos ?? 4
   const templates = templatesFor(frames, count)
   // A layout picked for other numbers may not exist for these ones.
   const chosen = templates.find((t) => t.id === template)
   const [doomed, setDoomed] = useState(null)
 
   const create = (preset) => {
-    const p = createProject({ name, frames, format: format.id, template: chosen?.id, count, preset })
+    const p = createProject({ name, format: format.id, template: chosen?.id, count, preset })
     const source = fillable.find((a) => a.id === fillFrom)
-    if (source) fillEmptySpots(p.id, source.imageIds.filter((id) => images[id]))
+    if (source) fillEmptySpots(p.id, source.imageIds.filter(isPhoto))
     setFillFrom(null)
     setCreating(false)
     setName('')
@@ -108,6 +102,13 @@ export default function Home({ tab }) {
     setTemplate(null)
     navigate(`/p/${p.id}`)
   }
+
+  // "3 albums · 41 photos · 2 collages", under the logo.
+  const say = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const kept = new Set(albums.flatMap((a) => a.imageIds.filter((id) => images[id]))).size
+  const summary = albums.length || projects.length
+    ? [say(albums.length, 'album'), say(kept, 'photo'), say(projects.length, 'collage')].join(' · ')
+    : 'Albums and collages'
 
   const makeAlbum = () => {
     const a = createAlbum(albumName)
@@ -117,67 +118,82 @@ export default function Home({ tab }) {
   }
 
   return (
-    <div className="screen home">
+    <div className="screen home ambient">
       <header className="home-head">
-        <h1>Seamline</h1>
-        <nav className="tabs">
-          <button className={tab === 'projects' ? 'on' : ''} onClick={() => navigate('/', { replace: true })}>
-            Projects
-          </button>
-          <button className={tab === 'albums' ? 'on' : ''} onClick={() => navigate('/albums', { replace: true })}>
-            Albums
-          </button>
-        </nav>
+        <div>
+          <Logo />
+          <p className="home-sub">{summary}</p>
+        </div>
         <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="Settings">
           <Icon name="gear" size={22} />
         </button>
       </header>
-      {cloud.configured && !cloud.loading && !cloud.session && (
-        <button className="signin-bar" onClick={() => navigate('/settings')}>
-          <span>Sign in to see your projects and albums on every device</span>
-          <b>Sign in</b>
-        </button>
-      )}
       {saveFailed && (
         <p className="banner" role="alert">
           Changes are not being saved on this device. Storage may be full or blocked (private browsing).
         </p>
       )}
 
-      {tab === 'albums' ? (
-        <Albums albums={albums} images={images} onNew={() => setNamingAlbum(true)} />
-      ) : projects.length === 0 ? (
-        <EmptyState onNew={() => setCreating(true)} />
-      ) : (
-        <main className="project-list">
-          {projects.map((p) => (
-            <article key={p.id} className="card">
-              <button className="card-open" onClick={() => navigate(`/p/${p.id}`)} aria-label={`Open ${p.name}`}>
-                <div className="card-thumb" style={{ height: THUMB_H }}>
-                  <StripView project={p} scale={THUMB_H / frameH(p)} />
-                </div>
+      <main className="home-body">
+        <section>
+          <div className="section-head">
+            <h2>Albums{albums.length > 0 && <span className="count">{albums.length}</span>}</h2>
+            {albums.length > 0 && (
+              <button className="pill-btn" onClick={() => setNamingAlbum(true)}>
+                <Icon name="plus" size={16} /> New
               </button>
-              <div className="card-meta">
-                <div>
-                  <h3>{p.name}</h3>
-                  <p>{p.frames === 1 ? 'Single image' : `${p.frames} frames`} · {ago(p.updatedAt)}</p>
-                </div>
-                <button className="icon-btn" onClick={() => duplicateProject(p.id)} aria-label={`Duplicate ${p.name}`}>
-                  <Icon name="copy" size={20} />
-                </button>
-                <button className="icon-btn" onClick={() => setDoomed(p)} aria-label={`Delete ${p.name}`}>
-                  <Icon name="trash" size={20} />
-                </button>
-              </div>
-            </article>
-          ))}
-          <button className="primary fab" onClick={() => setCreating(true)}>
-            <Icon name="plus" size={20} /> New carousel
-          </button>
-        </main>
-      )}
+            )}
+          </div>
+          <Albums albums={albums} images={images} onNew={() => setNamingAlbum(true)} />
+        </section>
 
-      <Sheet open={creating} onClose={() => setCreating(false)} title="New carousel" modal>
+        <section>
+          <div className="section-head">
+            <h2>Collages{projects.length > 0 && <span className="count">{projects.length}</span>}</h2>
+            {projects.length > 0 && (
+              <button className="pill-btn" onClick={() => setCreating(true)}>
+                <Icon name="plus" size={16} /> New
+              </button>
+            )}
+          </div>
+          {projects.length === 0 ? (
+            <div className="invite">
+              <div className="collage-art" aria-hidden="true"><i /><i /><i /></div>
+              <h3>Several photos, one page</h3>
+              <p>Pick a layout, drop your photos into it and save the page as a single image.</p>
+              <button className="pill-btn" onClick={() => setCreating(true)}>
+                <Icon name="plus" size={16} /> New collage
+              </button>
+            </div>
+          ) : (
+            <div className="shelf">
+              {projects.map((p) => (
+                <article key={p.id} className="card">
+                  <button className="card-open" onClick={() => navigate(`/p/${p.id}`)} aria-label={`Open ${p.name}`}>
+                    <div className="card-thumb" style={{ height: THUMB_H }}>
+                      <StripView project={p} scale={Math.min(THUMB_W / FRAME_W, THUMB_H / frameH(p))} />
+                    </div>
+                  </button>
+                  <div className="card-meta">
+                    <div>
+                      <h3>{p.name}</h3>
+                      <p>{p.frames > 1 && `${p.frames} frames · `}{ago(p.updatedAt)}</p>
+                    </div>
+                    <button className="icon-btn" onClick={() => duplicateProject(p.id)} aria-label={`Duplicate ${p.name}`}>
+                      <Icon name="copy" size={20} />
+                    </button>
+                    <button className="icon-btn" onClick={() => setDoomed(p)} aria-label={`Delete ${p.name}`}>
+                      <Icon name="trash" size={20} />
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+
+      <Sheet open={creating} onClose={() => setCreating(false)} title="New collage" modal>
         <input
           className="field"
           value={name}
@@ -185,13 +201,6 @@ export default function Home({ tab }) {
           placeholder="Name (optional)"
           enterKeyHint="done"
         />
-        <div className="row">
-          <div>
-            <div className="label">Frames</div>
-            <div className="hint">{frames === 1 ? 'One image, good for Facebook' : 'Slides to swipe, not photos'}</div>
-          </div>
-          <Stepper value={frames} min={MIN_FRAMES} max={MAX_FRAMES} onChange={setFrames} />
-        </div>
         <div className="row">
           <div className="label">Shape</div>
           <FormatPicker value={format.h} onChange={setFormat} />
@@ -257,7 +266,7 @@ export default function Home({ tab }) {
         <button className="primary block" onClick={makeAlbum}>Create album</button>
       </Sheet>
 
-      <Sheet open={!!doomed} onClose={() => setDoomed(null)} title="Delete carousel?" modal>
+      <Sheet open={!!doomed} onClose={() => setDoomed(null)} title="Delete collage?" modal>
         <p className="hint">“{doomed?.name}” will be removed from this device. This cannot be undone.</p>
         <button
           className="primary block danger"

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../components/Icon'
+import Logo from '../components/Logo'
 import PhotoPager from '../components/PhotoPager'
 import Sheet from '../components/Sheet'
 import { downloadUrl, fetchMyFavorites, fetchShare, publicUrl, setFavorite, useCloud, visitorUpload } from '../lib/cloud'
+import { clock, countText, isVideo } from '../lib/images'
 import { downloadZip } from '../lib/share'
 
 function Heart({ on, onToggle, className = '' }) {
@@ -22,7 +24,7 @@ function Heart({ on, onToggle, className = '' }) {
 }
 
 // The page a visitor lands on from a shared link. No sign-in, no editor:
-// just the photos, full size on tap, with download buttons.
+// just the photos and videos, full size on tap, with download buttons.
 export default function ShareView({ token }) {
   const { session } = useCloud()
   const [share, setShare] = useState(undefined) // undefined = loading, null = not found
@@ -108,7 +110,7 @@ export default function ShareView({ token }) {
     if (share?.title) document.title = `${share.title} · Seamline`
   }, [share])
 
-  if (share === undefined) return <div className="splash">Seamline</div>
+  if (share === undefined) return <div className="splash"><Logo as="div" /></div>
   if (!share || (share.items.length === 0 && !share.allow_uploads)) {
     return (
       <div className="screen">
@@ -125,12 +127,15 @@ export default function ShareView({ token }) {
   const carousel = share.kind === 'carousel' && !single
   const viewed = items.find((it) => it.path === viewing)
 
+  // Videos are too large to zip in the browser; each is downloaded on its own.
+  const stills = items.filter((it) => !isVideo(it))
+
   async function downloadAll() {
     setError(null)
     try {
       const files = []
-      for (const [i, it] of items.entries()) {
-        setZipping(`Fetching ${i + 1} of ${items.length}`)
+      for (const [i, it] of stills.entries()) {
+        setZipping(`Fetching ${i + 1} of ${stills.length}`)
         const res = await fetch(publicUrl(it.path))
         if (!res.ok) throw new Error('A photo could not be downloaded')
         // Keep names unique inside the zip.
@@ -160,10 +165,12 @@ export default function ShareView({ token }) {
             onToggle={() => toggle(items[single ? 0 : index])}
           />
         )}
-        {!single && <p>{carousel ? `${index + 1} of ${items.length} · swipe to see the rest` : `${items.length} photos`}</p>}
+        {!single && <p>{carousel ? `${index + 1} of ${items.length} · swipe to see the rest` : countText(items)}</p>}
       </header>
 
-      {single ? (
+      {single && isVideo(items[0]) ? (
+        <video className="single-photo" src={publicUrl(items[0].path)} poster={publicUrl(items[0].poster)} controls playsInline preload="metadata" />
+      ) : single ? (
         <img className="single-photo" src={publicUrl(items[0].path)} alt={items[0].name} />
       ) : carousel ? (
         <div className="shared-carousel">
@@ -188,7 +195,8 @@ export default function ShareView({ token }) {
           {items.map((it) => (
             <div key={it.path} className="photo">
               <button className="photo-open" onClick={() => setViewing(it.path)} aria-label={`Open ${it.name}`}>
-                <img src={publicUrl(it.path)} alt={it.name} loading="lazy" decoding="async" draggable={false} />
+                <img src={publicUrl(isVideo(it) ? it.poster : it.path)} alt={it.name} loading="lazy" decoding="async" draggable={false} />
+                {isVideo(it) && <span className="clip"><Icon name="play" size={13} /> {clock(it.duration)}</span>}
               </button>
               <Heart className="corner" on={liked.has(it.id)} onToggle={() => toggle(it)} />
             </div>
@@ -210,11 +218,11 @@ export default function ShareView({ token }) {
         <a className="primary fab" href={downloadUrl(items[0])}>
           <Icon name="download" size={20} /> Download
         </a>
-      ) : (
+      ) : stills.length > 0 ? (
         <button className="primary fab" onClick={downloadAll} disabled={!!zipping}>
-          <Icon name="download" size={20} /> {zipping ?? 'Download all'}
+          <Icon name="download" size={20} /> {zipping ?? (stills.length < items.length ? 'Download photos' : 'Download all')}
         </button>
-      )}
+      ) : null}
 
       <Sheet open={askPin} onClose={() => setAskPin(false)} title="Enter the PIN" modal>
         <p className="hint">Ask the person who shared this album for its PIN to add your own photos.</p>
@@ -255,7 +263,9 @@ export default function ShareView({ token }) {
             <Heart on={liked.has(viewed.id)} onToggle={() => toggle(viewed)} />
           </header>
           <PhotoPager
-            slides={items.map((it) => ({ key: it.path, src: publicUrl(it.path), alt: it.name }))}
+            slides={items.map((it) => ({
+              key: it.path, src: publicUrl(it.path), alt: it.name, video: isVideo(it), poster: isVideo(it) ? publicUrl(it.poster) : undefined,
+            }))}
             index={items.indexOf(viewed)}
             onIndex={(i) => setViewing(items[i].path)}
           />

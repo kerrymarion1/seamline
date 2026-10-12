@@ -3,7 +3,7 @@ import Icon from './Icon'
 
 // Full-size photos side by side: swipe left or right to move between them.
 // Arrow keys and on-screen arrows do the same where there is no touch screen.
-// slides: [{ key, src, alt }]
+// slides: [{ key, src, alt }], or for a video { key, src, poster, video: true }
 export default function PhotoPager({ slides, index, onIndex }) {
   const strip = useRef(null)
   const reported = useRef(null) // the index this component last announced itself
@@ -46,9 +46,14 @@ export default function PhotoPager({ slides, index, onIndex }) {
   return (
     <div className="viewer-body">
       <div className="viewer-strip" ref={strip} onScroll={onScroll}>
-        {slides.map((s) => (
+        {slides.map((s, i) => (
           <div key={s.key}>
-            <img src={s.src} alt={s.alt ?? ''} loading="lazy" decoding="async" draggable={false} />
+            {/* Only the video in view gets a player; swiping away stops it. */}
+            {s.video && i === index ? (
+              <video src={s.src} poster={s.poster} controls playsInline preload="metadata" />
+            ) : (
+              <img src={s.video ? s.poster : s.src} alt={s.alt ?? ''} loading="lazy" decoding="async" draggable={false} />
+            )}
           </div>
         ))}
       </div>

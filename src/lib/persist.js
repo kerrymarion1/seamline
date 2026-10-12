@@ -6,15 +6,17 @@ const saved = { projects: new Map(), albums: new Map(), presets: new Map(), imag
 let timer = 0
 let saving = Promise.resolve()
 
-const toRow = ({ id, width, height, name, blob, previewBlob }) => ({
+const toRow = ({ id, width, height, name, blob, previewBlob, kind, duration, remote }) => ({
   id, width, height, name, blob,
+  // Videos only. `remote` is the address of one that is not kept on this device.
+  ...(kind ? { kind, duration, remote } : null),
   // Small photos use one blob for both; don't store it twice.
   previewBlob: previewBlob === blob ? null : previewBlob,
 })
 
 function fromRow(row) {
   const previewBlob = row.previewBlob ?? row.blob
-  const url = URL.createObjectURL(row.blob)
+  const url = row.blob ? URL.createObjectURL(row.blob) : row.remote
   return { ...row, previewBlob, url, previewUrl: previewBlob === row.blob ? url : URL.createObjectURL(previewBlob) }
 }
 

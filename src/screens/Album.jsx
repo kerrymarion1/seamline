@@ -4,18 +4,18 @@ import Icon from '../components/Icon'
 import LinkSheet from '../components/LinkSheet'
 import PhotoPager from '../components/PhotoPager'
 import {
-  adoptVisitorItems, findShare, publicUrl, refreshHearts, refreshShares, removeVisitorItem, stopShare, syncShare, useCloud,
-  visitorItems,
+  adoptVisitorItems, canLink, findShare, progressText, publicUrl, refreshHearts, refreshShares, removeVisitorItem, stopShare,
+  useCloud, visitorItems,
 } from '../lib/cloud'
 import Sheet from '../components/Sheet'
-import { importFile } from '../lib/images'
-import { imageFile, saveToPhone } from '../lib/share'
+import { clock, importFile, importMedia, isVideo } from '../lib/images'
+import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
   addImages, addToAlbum, deleteAlbum, removeFromAlbum, renameAlbum, useAlbum, useStore,
 } from '../lib/store'
 
 // One album: a pool of photos kept in the app, ready to drop into any project
-// or save back to the phone.
+// or save back to the phone. It can hold videos too; those only live here.
 export default function Album({ albumId }) {
   const album = useAlbum(albumId)
   const images = useStore((s) => s.images)
@@ -47,6 +47,8 @@ export default function Album({ albumId }) {
 
   if (!album) return null
   const ids = album.imageIds.filter((id) => images[id])
+  // What a link can show: everything, or only the photos where videos cannot go online.
+  const photoIds = ids.filter((id) => canLink(images[id]))
   const viewed = images[viewing]
 
   async function addPhotos(files) {
@@ -56,23 +58,28 @@ export default function Album({ albumId }) {
     for (const [i, file] of files.entries()) {
       setNotice({ busy: true, text: `Importing ${i + 1} of ${files.length}` })
       try {
-        records.push(await importFile(file))
+        records.push(await importMedia(file))
       } catch {
         failed++
       }
     }
     addImages(records)
     addToAlbum(album.id, records.map((r) => r.id))
-    setNotice(failed ? { text: `${failed} photo${failed > 1 ? 's' : ''} could not be read` } : null)
+    setNotice(failed ? { text: `${failed} file${failed > 1 ? 's' : ''} could not be read` } : null)
   }
-
-  const filesOf = (imageIds) => imageIds.map((id) => imageFile(images[id]))
 
   async function save(imageIds) {
     setBusy(true)
     try {
-      await saveToPhone(filesOf(imageIds), album.name)
-      setNotice({ text: imageIds.length > 1 ? 'Saved as a zip in Downloads' : 'Saved to Downloads' })
+      // Videos are too large to zip in memory; each is saved as its own file.
+      const chosen = imageIds.map((id) => images[id])
+      const stills = chosen.filter((img) => !isVideo(img))
+      if (stills.length) await saveToPhone(stills.map(imageFile), album.name)
+      for (const clip of chosen.filter(isVideo)) {
+        if (clip.blob) downloadFile(imageFile(clip))
+        else window.open(clip.remote, '_blank') // not kept on this device: fetch the online copy
+      }
+      setNotice({ text: stills.length > 1 ? 'Saved as a zip in Downloads' : 'Saved to Downloads' })
     } catch (e) {
       setNotice({ text: e.message || 'Could not save the photos' })
     }
@@ -82,9 +89,10 @@ export default function Album({ albumId }) {
   // Sharing always means a link to a page showing the photos, never the files.
   const linkPhoto = () =>
     setLinking({ kind: 'photo', sourceId: viewing, title: (viewed.name ?? 'Photo').replace(/\.[^.]+$/, ''), imageIds: [viewing] })
+  const canLinkViewed = canLink(viewed)
   // A few chosen photos get a page of their own, separate from the album's.
   const linkPicked = () => {
-    const chosen = ids.filter((id) => picked.includes(id))
+    const chosen = photoIds.filter((id) => picked.includes(id))
     let hash = 5381
     for (const ch of chosen.join()) hash = ((hash * 33) ^ ch.charCodeAt(0)) >>> 0
     setLinking({
@@ -154,10 +162,10 @@ export default function Album({ albumId }) {
             {selecting ? 'Cancel' : 'Select'}
           </button>
         )}
-        {ids.length > 0 && !selecting && (
+        {photoIds.length > 0 && !selecting && (
           <button
             className="icon-btn"
-            onClick={() => setLinking({ kind: 'album', sourceId: album.id, title: album.name, imageIds: ids })}
+            onClick={() => setLinking({ kind: 'album', sourceId: album.id, title: album.name, imageIds: photoIds })}
             aria-label="Share album link"
           >
             <Icon name="link" size={20} />
@@ -171,9 +179,9 @@ export default function Album({ albumId }) {
       {ids.length === 0 && added.length === 0 ? (
         <div className="empty">
           <h2>An empty pool</h2>
-          <p>Add photos here once and reuse them in any carousel or collage.</p>
+          <p>Add photos here once and reuse them in any collage. Videos can be kept here too.</p>
           <button className="primary" onClick={() => fileInput.current.click()}>
-            <Icon name="plus" size={20} /> Add photos
+            <Icon name="plus" size={20} /> Add photos or videos
           </button>
         </div>
       ) : (
@@ -181,10 +189,10 @@ export default function Album({ albumId }) {
           {syncing?.id === album.id && (
             <p className="sync-note">
               <i className="spinner inline" />
-              {syncing.total ? `Putting photos online, ${syncing.done + 1} of ${syncing.total}` : 'Checking what is online'}
+              {syncing.total ? progressText(syncing.done, syncing.total, syncing.fraction) : 'Checking what is online'}
             </p>
           )}
-          {syncError && !syncing && <p className="sync-note error">Could not put photos online: {syncError}</p>}
+          {syncError && !syncing && <p className="sync-note error">Could not put this album online: {syncError}</p>}
           {added.length > 0 && (
             <section className="visitor-box">
               <div className="row">
@@ -208,6 +216,9 @@ export default function Album({ albumId }) {
                 <button key={id} className={`photo ${on ? 'on' : ''}`} onClick={() => tap(id)}>
                   <img src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
                   {selecting && <b>{on && <Icon name="check" size={14} />}</b>}
+                  {isVideo(images[id]) && (
+                    <span className="clip"><Icon name="play" size={13} /> {clock(images[id].duration)}</span>
+                  )}
                   {hearts.byItem[id] > 0 && (
                     <span className="hearts"><Icon name="heart" size={13} /> {hearts.byItem[id]}</span>
                   )}
@@ -220,13 +231,13 @@ export default function Album({ albumId }) {
 
       {ids.length > 0 && !selecting && (
         <button className="primary fab" onClick={() => fileInput.current.click()}>
-          <Icon name="plus" size={20} /> Add photos
+          <Icon name="plus" size={20} /> Add photos or videos
         </button>
       )}
       {selecting && (
         <nav className="toolbar">
           <div className="tools show">
-            <button className="tool" disabled={!picked.length} onClick={linkPicked}>
+            <button className="tool" disabled={!picked.some((id) => photoIds.includes(id))} onClick={linkPicked}>
               <Icon name="link" />
               <span>Share link</span>
             </button>
@@ -249,7 +260,7 @@ export default function Album({ albumId }) {
               <Icon name="close" />
             </button>
             <div className="preview-title">
-              {viewed.width} × {viewed.height}
+              {viewed.width} × {viewed.height}{isVideo(viewed) && ` · ${clock(viewed.duration)}`}
               {hearts.byItem[viewing] > 0 && <span className="hearts inline"><Icon name="heart" size={13} /> {hearts.byItem[viewing]}</span>}
             </div>
             <button className="icon-btn" onClick={() => remove([viewing])} aria-label="Remove from album">
@@ -257,15 +268,23 @@ export default function Album({ albumId }) {
             </button>
           </header>
           <PhotoPager
-            slides={ids.map((id) => ({ key: id, src: images[id].url }))}
+            slides={ids.map((id) => ({ key: id, src: images[id].url, poster: images[id].previewUrl, video: isVideo(images[id]) }))}
             index={ids.indexOf(viewing)}
             onIndex={(i) => setViewing(ids[i])}
           />
           <footer className="preview-actions">
-            <button className="primary block" onClick={linkPhoto}>
-              <Icon name="link" size={20} /> Share link
-            </button>
-            <button className="text-btn" disabled={busy} onClick={() => save([viewing])}>Save to phone</button>
+            {!canLinkViewed ? (
+              <button className="primary block" disabled={busy} onClick={() => save([viewing])}>
+                <Icon name="download" size={20} /> Save to phone
+              </button>
+            ) : (
+              <>
+                <button className="primary block" onClick={linkPhoto}>
+                  <Icon name="link" size={20} /> Share link
+                </button>
+                <button className="text-btn" disabled={busy} onClick={() => save([viewing])}>Save to phone</button>
+              </>
+            )}
           </footer>
         </div>
       )}
@@ -299,7 +318,7 @@ export default function Album({ albumId }) {
       <input
         ref={fileInput}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         multiple
         hidden
         onChange={(e) => {

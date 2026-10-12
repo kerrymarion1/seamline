@@ -1,7 +1,7 @@
 import { zipSync } from 'fflate'
 
 const slug = (name) =>
-  name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'carousel'
+  name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'collage'
 
 export function toFiles(blobs, name) {
   const base = slug(name)
@@ -49,8 +49,13 @@ export async function downloadZip(files, name) {
 
 // A File for a stored photo, named after the original where we know it.
 export function imageFile(image) {
-  const ext = image.blob.type === 'image/png' ? 'png' : 'jpg'
   const base = (image.name ?? 'photo').replace(/\.[^.]+$/, '') || 'photo'
+  if (image.kind === 'video') {
+    // A video is handed back exactly as it came in.
+    const ext = image.name?.match(/\.([a-z0-9]+)$/i)?.[1] ?? 'mp4'
+    return new File([image.blob], `${base}.${ext}`, { type: image.blob.type || 'video/mp4' })
+  }
+  const ext = image.blob.type === 'image/png' ? 'png' : 'jpg'
   return new File([image.blob], `${base}.${ext}`, { type: image.blob.type || 'image/jpeg' })
 }
 

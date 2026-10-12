@@ -1,4 +1,4 @@
-// Loaded into the service worker. Android posts photos here when Seamline is
+// Loaded into the service worker. Android posts photos and videos here when Seamline is
 // picked from another app's share sheet (see share_target in the manifest).
 // The photos are parked in a cache for the page to collect, then the app opens.
 self.addEventListener('fetch', (event) => {
@@ -8,7 +8,7 @@ self.addEventListener('fetch', (event) => {
     (async () => {
       try {
         const form = await event.request.formData()
-        const files = form.getAll('photos').filter((f) => f instanceof File && f.type.startsWith('image/'))
+        const files = form.getAll('photos').filter((f) => f instanceof File && /^(image|video)\//.test(f.type))
         const cache = await caches.open('shared-photos')
         const stamp = Date.now()
         await Promise.all(

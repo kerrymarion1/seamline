@@ -1,16 +1,15 @@
-// The scene is measured in export pixels: N frames side by side, each 1080 wide.
-// One frame makes a single collage image; two or more make a carousel.
+// The scene is measured in export pixels. A collage is one frame, 1080 wide.
+// Projects made when the app also built carousels may have several frames
+// side by side; those still open and export, but new ones are always one.
 export const FRAME_W = 1080
 export const FORMATS = [
   { id: 'portrait', name: '4:5', h: 1350 },
   { id: 'square', name: '1:1', h: 1080 },
   { id: 'story', name: '9:16', h: 1920 },
 ]
-export const MIN_FRAMES = 1
 
 // Height of a project's frames in pixels.
 export const frameH = (project) => project.frameH ?? FORMATS[0].h
-export const MAX_FRAMES = 10
 
 export const uid = () =>
   Date.now().toString(36) + Math.random().toString(36).slice(2, 8)

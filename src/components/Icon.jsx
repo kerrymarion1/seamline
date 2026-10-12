@@ -94,6 +94,7 @@ const paths = {
       <path d="M8.5 10.9l6.5-3.8M8.5 13.1l6.5 3.8" />
     </>
   ),
+  play: <path d="M8 5.5v13l11-6.5-11-6.5z" fill="currentColor" stroke="none" />,
   download: <path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14" />,
   preview: (
     <>

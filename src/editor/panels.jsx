@@ -3,10 +3,10 @@ import { backgroundStyle, GRADIENTS, MOTIFS, normalizeBackground, SOLIDS, THEMES
 import { useState } from 'react'
 import { MAX_SPOTS, templatesFor, tilesOf } from '../lib/cells'
 import { FONTS, TEXT_COLORS } from '../lib/fonts'
-import { frameH, FORMATS, MAX_FRAMES, MIN_FRAMES } from '../lib/scene'
+import { frameH, FORMATS } from '../lib/scene'
 import { SHAPE_COLORS, shapeUrl, STICKERS } from '../lib/shapes'
 import {
-  applyLayout, clearLayout, savePreset, moveLayer, removeLayer, setFormat, setFrames, updateLayer, updateLayout, updateProject, useStore,
+  applyLayout, clearLayout, savePreset, moveLayer, removeLayer, setFormat, updateLayer, updateLayout, updateProject, useStore,
 } from '../lib/store'
 
 export function Stepper({ value, min, max, onChange }) {
@@ -77,18 +77,9 @@ export function CanvasPanel({ project, palette, onPickBackground }) {
     <>
       <div className="row">
         <div>
-          <div className="label">Frames</div>
-          <div className="hint">Slides to swipe, 1080 × {frameH(project)} each</div>
+          <div className="label">Shape</div>
+          <div className="hint">1080 × {frameH(project)}</div>
         </div>
-        <Stepper
-          value={project.frames}
-          min={MIN_FRAMES}
-          max={MAX_FRAMES}
-          onChange={(frames) => setFrames(project.id, frames)}
-        />
-      </div>
-      <div className="row">
-        <div className="label">Shape</div>
         <FormatPicker value={frameH(project)} onChange={(f) => setFormat(project.id, f.id)} />
       </div>
 
@@ -354,9 +345,9 @@ export function TemplateThumb({ template, frames, count, ratio }) {
 export function LayoutPanel({ project }) {
   const layout = project.layout
   const cells = project.cells ?? []
-  // Start from the spots already on the canvas, else one photo per frame.
+  // Start from the spots already on the canvas.
   const [chosen, setChosen] = useState(null)
-  const count = chosen ?? (cells.length || project.frames)
+  const count = chosen ?? (cells.length || Math.max(4, project.frames))
   const templates = templatesFor(project.frames, count)
   const [naming, setNaming] = useState(null) // text while naming a template
   const [savedAs, setSavedAs] = useState(null)
@@ -381,7 +372,7 @@ export function LayoutPanel({ project }) {
         <div>
           <div className="label">Photos</div>
           <div className="hint">
-            {count} spot{count === 1 ? '' : 's'} across {project.frames} frame{project.frames === 1 ? '' : 's'}
+            {count} spot{count === 1 ? '' : 's'}{project.frames > 1 && ` across ${project.frames} frames`}
           </div>
         </div>
         <Stepper value={count} min={1} max={MAX_SPOTS} onChange={setCount} />
