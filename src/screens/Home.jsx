@@ -105,9 +105,13 @@ export default function Home() {
 
   // "3 albums · 41 photos · 2 collages", under the logo.
   const say = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
-  const kept = new Set(albums.flatMap((a) => a.imageIds.filter((id) => images[id]))).size
+  const kept = [...new Set(albums.flatMap((a) => a.imageIds.filter((id) => images[id])))]
+  const clips = kept.filter((id) => isVideo(images[id])).length
   const summary = albums.length || projects.length
-    ? [say(albums.length, 'album'), say(kept, 'photo'), say(projects.length, 'collage')].join(' · ')
+    ? [
+        say(albums.length, 'album'), say(kept.length - clips, 'photo'), clips && say(clips, 'video'),
+        say(projects.length, 'collage'),
+      ].filter(Boolean).join(' · ')
     : 'Albums and collages'
 
   const makeAlbum = () => {

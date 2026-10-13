@@ -164,7 +164,8 @@ function Backup() {
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
   const [last, setLast] = useState(() => localStorage.getItem(LAST_BACKUP))
-  const list = Object.values(images)
+  // Only what is held on this device: a video that plays from its online copy has no file here.
+  const list = Object.values(images).filter((i) => i.blob)
   const size = list.reduce((n, i) => n + i.blob.size, 0)
 
   const run = async (fn) => {

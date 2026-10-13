@@ -9,6 +9,7 @@ import '@fontsource-variable/caveat'
 import '@fontsource/dm-mono'
 import './styles.css'
 import App from './App'
+import ErrorBoundary from './components/ErrorBoundary'
 import { startPersistence } from './lib/persist'
 import { registerSW } from 'virtual:pwa-register'
 
@@ -23,6 +24,8 @@ document.addEventListener('gesturestart', (e) => e.preventDefault())
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )
