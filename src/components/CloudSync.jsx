@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
-import { syncAlbums, useCloud } from '../lib/cloud'
-import { useStore } from '../lib/store'
+import { syncAlbums, useCloud, userName } from '../lib/cloud'
+import { renameUploader, useStore } from '../lib/store'
 import { syncNow } from '../lib/sync'
 
 // Runs quietly while the app is open. Shortly after anything changes it puts
@@ -14,6 +14,15 @@ export default function CloudSync() {
   const images = useStore((s) => s.images)
   const { session, uploader, loading, autoSync, canSync } = useCloud()
   const on = !!session && uploader && !loading
+
+  // A name changed on another device reaches this one with the account; make
+  // sure everything this person has added here carries it.
+  const name = userName(session)
+  useEffect(() => {
+    if (on) renameUploader(session.user.id, name)
+    // Only when the person or their name changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [on, session?.user.id, name])
 
   useEffect(() => {
     if (!on || !canSync) return

@@ -1,4 +1,4 @@
-import { cleanPhotos, ensurePhotos, getCloud, publicUrl, refreshPhotos, supabase } from './cloud'
+import { cleanPhotos, ensurePhotos, ensureThumbs, getCloud, publicUrl, refreshPhotos, supabase } from './cloud'
 import { previewOf } from './images'
 import { addImages, applyRemote, clearTombstone, getState, historyProjects, tombstones } from './store'
 
@@ -93,10 +93,46 @@ async function push(synced) {
   for (const t of tombs) clearTombstone(t.kind, t.id)
 }
 
+// Fetch the full file of photos this device only holds a small copy of, and
+// keep it. Resolves true when every one of `ids` is here in full.
+const fetching = new Map()
+export async function ensureLocal(ids) {
+  const waiting = (id) => {
+    const img = getState().images[id]
+    return !!img && !img.blob && img.kind !== 'video' && !!img.remote
+  }
+  const one = async (id) => {
+    const old = getState().images[id]
+    try {
+      const res = await fetch(old.remote)
+      if (!res.ok) return
+      const blob = new Blob([await res.blob()], { type: 'image/jpeg' })
+      const previewBlob = await previewOf(blob)
+      addImages([{
+        id, name: old.name, width: old.width, height: old.height, blob, previewBlob,
+        url: URL.createObjectURL(blob), previewUrl: URL.createObjectURL(previewBlob),
+      }])
+      // Give anything still showing the small copy a moment to switch over.
+      setTimeout(() => URL.revokeObjectURL(old.previewUrl), 5000)
+    } catch {
+      // Offline: it stays a small copy for now.
+    }
+  }
+  for (const id of ids.filter(waiting)) {
+    if (!fetching.has(id)) fetching.set(id, one(id).finally(() => fetching.delete(id)))
+    await fetching.get(id)
+  }
+  return !ids.some(waiting)
+}
+
 // Download online copies of photos this device refers to but does not hold.
+// A photo used in a collage or template comes in full, since it is needed to
+// build the image. A photo that is only in an album comes as a small copy,
+// and its full file is fetched when it is opened or put into a collage.
 async function fetchMissing() {
   const local = getState()
   const { photos } = getCloud()
+  const inCollage = new Set([...local.projects, ...local.presets].flatMap(photoIdsOf))
   const wanted = new Set()
   for (const list of Object.values(LISTS)) for (const doc of local[list]) for (const id of photoIdsOf(doc)) wanted.add(id)
   const todo = [...wanted].filter((id) => !local.images[id] && photos[id])
@@ -116,6 +152,16 @@ async function fetchMissing() {
         }])
         continue
       }
+      if (row.thumb && !inCollage.has(id)) {
+        const small = await fetch(publicUrl(row.thumb))
+        if (!small.ok) continue
+        const previewBlob = await small.blob()
+        addImages([{
+          id, remote: publicUrl(row.path), name: row.name, width: row.width, height: row.height, blob: null, previewBlob,
+          url: publicUrl(row.path), previewUrl: URL.createObjectURL(previewBlob),
+        }])
+        continue
+      }
       const res = await fetch(publicUrl(row.path))
       if (!res.ok) continue
       const blob = new Blob([await res.blob()], { type: 'image/jpeg' })
@@ -129,6 +175,8 @@ async function fetchMissing() {
     }
   }
   setStatus({ fetching: null })
+  // A photo that arrived small and has since gone into a collage.
+  await ensureLocal([...inCollage])
 }
 
 let running = false
@@ -151,6 +199,7 @@ export async function syncNow() {
     await push(synced)
     write('synced', synced)
     await fetchMissing()
+    await ensureThumbs(getState().images)
     const used = new Set()
     const local = getState()
     for (const doc of [...local.projects, ...local.albums, ...local.presets, ...historyProjects()]) {

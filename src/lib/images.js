@@ -2,6 +2,7 @@ import { uid } from './scene'
 
 const MAX_EDGE = 4000 // stored full-size copy, used for export
 const PREVIEW_EDGE = 1400 // lighter copy shown in the editor
+const THUMB_EDGE = 640 // small copy other devices show until the photo is needed in full
 
 function loadImage(url) {
   return new Promise((resolve, reject) => {
@@ -41,6 +42,16 @@ export async function previewOf(blob) {
     const img = await loadImage(url)
     if (Math.max(img.naturalWidth, img.naturalHeight) <= PREVIEW_EDGE) return blob
     return (await resize(img, PREVIEW_EDGE, blob.type === 'image/png' ? 'image/png' : 'image/jpeg')).blob
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+// The small copy of a stored photo that goes online beside it (see sync.js).
+export async function thumbOf(blob) {
+  const url = URL.createObjectURL(blob)
+  try {
+    return (await resize(await loadImage(url), THUMB_EDGE, 'image/jpeg')).blob
   } finally {
     URL.revokeObjectURL(url)
   }

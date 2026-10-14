@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { useSyncExternalStore } from 'react'
+import { thumbOf } from './images'
 
 // Everything online lives in one "library" that its members share: photos in
 // Supabase Storage with a registry row each (seamline_photos), links to them
@@ -27,6 +28,11 @@ const AUTO_SYNC = 'seamline:autoSync'
 let state = {
   configured: !!supabase, loading: !!supabase, session: null, uploader: false, shares: [], hearts: NO_HEARTS,
   library: null, photos: {}, canSync: false,
+  // What the database supports beyond the basics (see supabase/migrations):
+  // thumbs, notes, views, comments. Each stays off until its pieces exist there.
+  features: {},
+  comments: {}, // visitors' notes on the owner's links, by photo id
+  activityLoaded: false, // true once hearts, comments and views have been read
   recovering: false, // arrived from a password-reset email and must choose a new one
   autoSync: localStorage.getItem(AUTO_SYNC) !== 'off', syncing: null, syncError: null,
 }
@@ -40,6 +46,31 @@ const subscribe = (l) => {
   return () => listeners.delete(l)
 }
 export const useCloud = () => useSyncExternalStore(subscribe, () => state)
+
+// The signed-in person, for stamping on what they add. Their id goes with
+// the name so that a later change of name can find everything of theirs.
+export const me = () => (state.session ? { id: state.session.user.id, name: userName(state.session) } : '')
+
+// Save the name to show for this account. An empty name goes back to the default.
+export async function setUserName(name) {
+  const { data, error } = await supabase.auth.updateUser({ data: { seamline_name: name.trim() } })
+  if (error) throw new Error(error.message)
+  if (data?.user && state.session) set({ session: { ...state.session, user: data.user } })
+}
+
+// What to call the signed-in person: the name on their account if it has
+// one, otherwise the part of their email before the @.
+export function userName(session) {
+  const user = session?.user
+  if (!user) return ''
+  const meta = user.user_metadata ?? {}
+  // The name chosen in Seamline's settings comes first; it is kept apart from
+  // any name the account carries for other apps.
+  const given = meta.seamline_name || meta.full_name || meta.name || meta.display_name
+  if (given) return String(given).trim()
+  const local = (user.email ?? '').split('@')[0].replace(/[._-]+/g, ' ').replace(/\d+$/, '').trim()
+  return local ? local.replace(/\b\w/g, (ch) => ch.toUpperCase()) : (user.email ?? '')
+}
 export const getCloud = () => state
 export const onCloud = subscribe
 
@@ -49,13 +80,17 @@ const MEMBER = 'seamline:member'
 
 async function refresh(session) {
   if (!session) {
-    return set({ loading: false, session: null, uploader: false, shares: [], hearts: NO_HEARTS, library: null, photos: {}, canSync: false })
+    return set({
+      loading: false, session: null, uploader: false, shares: [], hearts: NO_HEARTS, library: null, photos: {}, canSync: false,
+      features: {}, comments: {},
+    })
   }
   set({ session })
-  const [{ data: isMember, error: memberError }, { data: shares }, lib] = await Promise.all([
+  const [{ data: isMember, error: memberError }, { data: shares }, lib, { data: features }] = await Promise.all([
     supabase.rpc('seamline_is_uploader'),
     supabase.from('seamline_shares').select('*').order('created_at', { ascending: false }),
     supabase.rpc('seamline_my_library'),
+    supabase.rpc('seamline_features'),
   ])
   let uploader = !!isMember
   if (memberError) uploader = localStorage.getItem(MEMBER) === session.user.id // offline: go by last time
@@ -65,10 +100,29 @@ async function refresh(session) {
   const canSync = !lib.error && !!lib.data
   set({
     loading: false, uploader, shares: shares ?? [],
-    library: canSync ? lib.data : session.user.id, canSync,
+    library: canSync ? lib.data : session.user.id, canSync, features: features ?? {},
   })
   if (canSync) await refreshPhotos()
   await refreshHearts()
+  await refreshComments()
+  set({ activityLoaded: true })
+}
+
+// Re-read the notes visitors have left on photos in the owner's links.
+export async function refreshComments() {
+  if (!supabase || !state.session || !state.features.comments) return
+  const { data } = await supabase
+    .from('seamline_comments').select('id, share_id, item_id, author, body, created_at').order('created_at')
+  if (!data) return
+  const comments = {}
+  for (const row of data) (comments[row.item_id] ??= []).push(row)
+  set({ comments })
+}
+
+export async function deleteComment(id) {
+  const { error } = await supabase.from('seamline_comments').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  await refreshComments()
 }
 
 // Re-read which photos are online, adopting any that older links put there
@@ -215,9 +269,14 @@ export const findShare = (shares, kind, sourceId) =>
 // True when the photos behind a link no longer match the local ones.
 // Photos that visitors added are not part of that comparison.
 export const visitorItems = (share) => (share?.items ?? []).filter((it) => it.visitor)
-export const outOfDate = (share, imageIds) => {
+// `captions` (by photo id) and `note` count too, when they are given.
+export const outOfDate = (share, imageIds, { captions = {}, note } = {}) => {
   const own = share.items.filter((it) => !it.visitor)
-  return own.length !== imageIds.length || own.some((it, i) => it.id !== imageIds[i])
+  return (
+    own.length !== imageIds.length ||
+    own.some((it, i) => it.id !== imageIds[i] || (it.caption ?? '') !== (captions[it.id] ?? '')) ||
+    (!!state.features.notes && note != null && (share.note ?? '') !== note)
+  )
 }
 
 // A JPEG copy sized for sharing. Originals on the device are never touched.
@@ -303,6 +362,37 @@ async function ensureVideo(image, onFraction) {
   }
 }
 
+// Put a small copy of a photo online beside the full one. Not being able to
+// is no reason to fail the upload it belongs to.
+async function putThumb(image, path) {
+  try {
+    const small = await thumbOf(image.previewBlob)
+    const thumb = path.replace(/\.jpg$/, '.t.jpg')
+    const { error } = await supabase.storage
+      .from(BUCKET).upload(thumb, small, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: true })
+    return error ? { thumb: null, bytes: 0 } : { thumb, bytes: small.size }
+  } catch {
+    return { thumb: null, bytes: 0 }
+  }
+}
+
+// Give photos that went online before small copies existed one each, a few at
+// a time. `images` are the photos on this device, by id.
+export async function ensureThumbs(images, limit = 25) {
+  if (!supabase || !state.canSync || !state.features.thumbs) return
+  const todo = Object.values(state.photos)
+    .filter((row) => !row.thumb && row.kind !== 'video' && !external(row.path) && images[row.id]?.blob)
+    .slice(0, limit)
+  for (const row of todo) {
+    const { thumb, bytes } = await putThumb(images[row.id], row.path)
+    if (!thumb) continue
+    const saved = await supabase
+      .from('seamline_photos').update({ thumb, bytes: Number(row.bytes) + bytes })
+      .eq('library', state.library).eq('id', row.id).select().single()
+    if (!saved.error) set({ photos: { ...state.photos, [row.id]: saved.data } })
+  }
+}
+
 // Put photos and videos online that are not there yet, and note each in the
 // registry. `images` are held on this device. Returns nothing; read the
 // results back with onlineItem. `onProgress` also hears, as a third value,
@@ -322,11 +412,15 @@ export async function ensurePhotos(images, onProgress = () => {}) {
     const { error } = await supabase.storage.from(BUCKET).upload(path, copy.blob, { contentType: 'image/jpeg', cacheControl: '31536000' })
     if (error) throw new Error(error.message)
     const base = (image.name ?? 'photo').replace(/\.[^.]+$/, '') || 'photo'
-    const row = { library: state.library, id: image.id, path, name: `${base}.jpg`, width: copy.width, height: copy.height, bytes: copy.blob.size }
+    const small = state.canSync && state.features.thumbs ? await putThumb(image, path) : { thumb: null, bytes: 0 }
+    const row = {
+      library: state.library, id: image.id, path, name: `${base}.jpg`, width: copy.width, height: copy.height,
+      bytes: copy.blob.size + small.bytes, ...(small.thumb ? { thumb: small.thumb } : null),
+    }
     if (state.canSync) {
       const saved = await supabase.from('seamline_photos').upsert(row).select().single()
       if (saved.error) {
-        await supabase.storage.from(BUCKET).remove([path]).catch(() => {})
+        await supabase.storage.from(BUCKET).remove([path, small.thumb].filter(Boolean)).catch(() => {})
         throw new Error(saved.error.message)
       }
     }
@@ -345,7 +439,7 @@ export async function cleanPhotos(usedIds) {
     (row) => !usedIds.has(row.id) && !linked.has(row.id) && row.created_at && Date.parse(row.created_at) < hourAgo,
   )
   if (!dead.length) return
-  await removeStored(dead.flatMap((row) => (row.poster ? [row.path, row.poster] : [row.path])))
+  await removeStored(dead.flatMap((row) => [row.path, row.poster, row.thumb].filter(Boolean)))
   await supabase.from('seamline_photos').delete().eq('library', state.library).in('id', dead.map((row) => row.id))
   const photos = { ...state.photos }
   for (const row of dead) delete photos[row.id]
@@ -371,7 +465,8 @@ export function syncShare(target, onProgress = () => {}) {
   return run
 }
 
-async function doSync({ kind, sourceId, title, images }, onProgress) {
+// `captions` (by photo id) ride along on each photo; `note` is the album's.
+async function doSync({ kind, sourceId, title, images, captions = {}, note }, onProgress) {
   // Read the links afresh: a visitor may have added photos since they were loaded.
   await refreshShares()
   const existing = findShare(state.shares, kind, sourceId)
@@ -397,9 +492,14 @@ async function doSync({ kind, sourceId, title, images }, onProgress) {
     }
 
     // In the order given, then whatever visitors have added.
-    const items = [...images.map((img) => made.get(img.id) ?? onlineItem(img.id)).filter(Boolean), ...fromVisitors]
+    const own = images.map((img) => {
+      const item = made.get(img.id) ?? onlineItem(img.id)
+      return item && captions[img.id] ? { ...item, caption: captions[img.id] } : item
+    })
+    const items = [...own.filter(Boolean), ...fromVisitors]
     const row = {
       kind, source_id: sourceId, title, items,
+      ...(state.features.notes && note != null ? { note } : null),
       bytes: items.reduce((n, it) => n + it.bytes, 0),
       updated_at: new Date().toISOString(),
     }
@@ -451,10 +551,11 @@ export async function syncAlbums(albums, images) {
       const photos = linkable(wanted, images)
       if (!photos.length || photos.length !== wanted.length) continue
       const share = findShare(state.shares, 'album', album.id)
-      if (share && share.title === album.name && !outOfDate(share, photos.map((ph) => ph.id))) continue
+      const extras = { captions: album.captions ?? {}, note: album.note ?? '' }
+      if (share && share.title === album.name && !outOfDate(share, photos.map((ph) => ph.id), extras)) continue
       set({ syncing: { id: album.id, done: 0, total: 0 }, syncError: null })
       await syncShare(
-        { kind: 'album', sourceId: album.id, title: album.name, images: photos },
+        { kind: 'album', sourceId: album.id, title: album.name, images: photos, ...extras },
         (done, total, fraction) => set({ syncing: { id: album.id, done, total, fraction } }),
       )
     }
@@ -468,6 +569,15 @@ export async function syncAlbums(albums, images) {
     syncAgain = null
     syncAlbums(...next)
   }
+}
+
+// "Not opened yet", "1 view · last opened 2 h ago".
+export function viewsText(share) {
+  if (!share.views) return 'Not opened yet'
+  const m = Math.round((Date.now() - new Date(share.last_viewed_at)) / 60000)
+  const when = m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 60 * 24 ? `${Math.round(m / 60)} h ago`
+    : new Date(share.last_viewed_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return `${share.views} view${share.views === 1 ? '' : 's'} · last opened ${when}`
 }
 
 // How long a link stays open. `days` of null means it never expires.
@@ -525,6 +635,37 @@ export async function fetchShare(token) {
   const { data, error } = await supabase.rpc('seamline_open_share', { share_token: token })
   if (error) throw new Error('This link could not be loaded right now. Try again in a minute.')
   return data?.[0] ?? null
+}
+
+// ---------- views, notes and comments, from the visitor's side ----------
+
+// Count one opening of a link: once per visit, and never the owner's own.
+export async function markViewed(token) {
+  const key = `seamline:viewed:${token}`
+  if (!supabase || sessionStorage.getItem(key)) return
+  sessionStorage.setItem(key, '1') // before anything slow, so two calls cannot both count
+  const { data } = await supabase.auth.getSession()
+  if (data?.session) return
+  await supabase.rpc('seamline_mark_view', { share_token: token })
+}
+
+// The album's note and this visitor's own comments, or null where the
+// database does not have them yet.
+export async function fetchShareExtras(token) {
+  const { data, error } = await supabase.rpc('seamline_share_extras', { share_token: token, visitor_id: visitorId() })
+  return error ? null : data
+}
+
+const VISITOR_NAME = 'seamline:visitorName'
+export const rememberedName = () => localStorage.getItem(VISITOR_NAME) ?? ''
+
+export async function addComment(token, itemId, author, body) {
+  localStorage.setItem(VISITOR_NAME, author)
+  const { data, error } = await supabase.rpc('seamline_add_comment', {
+    share_token: token, item: itemId, visitor_id: visitorId(), author, body,
+  })
+  if (error || !data) throw new Error('Could not send that note. Try again.')
+  return data
 }
 
 // ---------- favourites, from the visitor's side ----------

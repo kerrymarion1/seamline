@@ -4,10 +4,10 @@ import Icon from '../components/Icon'
 import { createBackup, restoreBackup } from '../lib/backup'
 import {
   expiryText, requestPasswordReset, setAutoSync, setNewPassword, shareUrl, signIn, signOut, stopShare, STORAGE_LIMIT,
-  storageUsed, useCloud, VIDEO_LIMIT, videoStorageUsed,
+  storageUsed, getCloud, setUserName, useCloud, userName, VIDEO_LIMIT, videoStorageUsed, viewsText,
 } from '../lib/cloud'
-import StripView from '../components/StripView'
-import { deletePreset, setImportAlbum, useStore } from '../lib/store'
+import { renameUploader, setImportAlbum, useStore } from '../lib/store'
+import { COLOURS, setColour, useColour } from '../lib/theme'
 import { getSyncStatus, onSyncStatus, syncNow } from '../lib/sync'
 
 const mb = (bytes) => (bytes < 1024 ** 2 ? `${Math.max(bytes ? 1 : 0, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`)
@@ -155,6 +155,60 @@ function SyncPanel({ cloud }) {
 const LAST_BACKUP = 'seamline:lastBackup'
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 
+// The app's accent colour, for this device.
+function Colour() {
+  const colour = useColour()
+  return (
+    <section className="panel">
+      <h2>Colour</h2>
+      <div className="colour-row">
+        {COLOURS.map((c) => (
+          <button key={c.id} className={colour === c.id ? 'on' : ''} onClick={() => setColour(c.id)} aria-pressed={colour === c.id}>
+            <span className={`swatch ${colour === c.id ? 'on' : ''}`} style={{ background: `linear-gradient(135deg, ${c.accent}, ${c.light})` }} />
+            {c.name}
+          </button>
+        ))}
+      </div>
+      <p className="note">Changes buttons, highlights and the logo on this device.</p>
+    </section>
+  )
+}
+
+// The name shown at the top of the front page and on what you add to albums.
+function YourName({ session }) {
+  const current = userName(session)
+  const [name, setName] = useState(current)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState(null)
+  const save = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    setMessage(null)
+    try {
+      await setUserName(name)
+      // Everything already added under the old name follows the new one.
+      renameUploader(session.user.id, userName(getCloud().session))
+      setMessage('Saved')
+    } catch (err) {
+      setMessage(err.message)
+    }
+    setBusy(false)
+  }
+  return (
+    <form className="name-form" onSubmit={save}>
+      <label className="label" htmlFor="seamline-name">Your name</label>
+      <div className="password-row">
+        <input
+          className="field" id="seamline-name" value={name} onChange={(e) => setName(e.target.value)}
+          placeholder="Your name" maxLength={40} autoComplete="name" enterKeyHint="done"
+        />
+        <button className="pill-btn" disabled={busy || name.trim() === current}>{busy ? 'Saving' : 'Save'}</button>
+      </div>
+      <p className="note">{message ?? 'Shown at the top of the front page and on the photos and videos you add.'}</p>
+    </form>
+  )
+}
+
 function Backup() {
   const projects = useStore((s) => s.projects)
   const albums = useStore((s) => s.albums)
@@ -248,43 +302,21 @@ function Backup() {
 }
 
 function Library() {
-  const presets = useStore((s) => s.presets)
   const albums = useStore((s) => s.albums)
   const importAlbum = useStore((s) => s.importAlbum)
   const known = importAlbum === 'auto' || importAlbum === 'off' || albums.some((a) => a.id === importAlbum)
   return (
-    <>
-      <section className="panel">
-        <h2>Photos added from your phone</h2>
-        <p className="hint">Photos you pick while editing can also be kept in an album, so they are there next time.</p>
-        <select className="field" value={known ? importAlbum : 'auto'} onChange={(e) => setImportAlbum(e.target.value)}>
-          <option value="auto">Keep them in "Imported"</option>
-          {albums.filter((a) => a.name !== 'Imported').map((a) => (
-            <option key={a.id} value={a.id}>Keep them in "{a.name}"</option>
-          ))}
-          <option value="off">Do not keep them in an album</option>
-        </select>
-      </section>
-
-      <section className="panel">
-        <h2>Your templates</h2>
-        {presets.length === 0 && (
-          <p className="hint">None yet. In a project, open Layouts and choose "Save this look as a template".</p>
-        )}
-        {presets.map((t) => (
-          <div key={t.id} className="share-row">
-            <span className="preset-art"><StripView project={t} scale={40 / t.frameH} /></span>
-            <div>
-              <h3>{t.name}</h3>
-              <p>{t.frames > 1 && `${t.frames} frames · `}{t.cells.length} spot{t.cells.length === 1 ? '' : 's'}</p>
-            </div>
-            <button className="icon-btn" onClick={() => deletePreset(t.id)} aria-label={`Delete template ${t.name}`}>
-              <Icon name="trash" size={20} />
-            </button>
-          </div>
+    <section className="panel">
+      <h2>Photos added from your phone</h2>
+      <p className="hint">Photos you pick while editing can also be kept in an album, so they are there next time.</p>
+      <select className="field" value={known ? importAlbum : 'auto'} onChange={(e) => setImportAlbum(e.target.value)}>
+        <option value="auto">Keep them in "Imported"</option>
+        {albums.filter((a) => a.name !== 'Imported').map((a) => (
+          <option key={a.id} value={a.id}>Keep them in "{a.name}"</option>
         ))}
-      </section>
-    </>
+        <option value="off">Do not keep them in an album</option>
+      </select>
+    </section>
   )
 }
 
@@ -314,6 +346,17 @@ export default function Settings() {
       </header>
 
       <main className="settings-body">
+        {cloud.session && !cloud.loading && !cloud.recovering && (
+          <section className="panel">
+            <h2>Account</h2>
+            <YourName session={cloud.session} />
+            <p className="hint">Signed in as {cloud.session.user.email}</p>
+            {!cloud.uploader && <p className="note warn">This account has not been given access to a library.</p>}
+            <p className="note">Signing out leaves what is already on this device in place.</p>
+            <button className="secondary block" onClick={signOut}>Sign out</button>
+          </section>
+        )}
+        <Colour />
         <Backup />
         <Library />
         {!cloud.configured ? (
@@ -329,14 +372,6 @@ export default function Settings() {
           <SignIn />
         ) : (
           <>
-            <section className="panel">
-              <h2>Account</h2>
-              <p className="hint">Signed in as {cloud.session.user.email}</p>
-              {!cloud.uploader && <p className="note warn">This account has not been given access to a library.</p>}
-              <p className="note">Signing out leaves what is already on this device in place.</p>
-              <button className="secondary block" onClick={signOut}>Sign out</button>
-            </section>
-
             <SyncPanel cloud={cloud} />
 
             <section className="panel">
@@ -380,6 +415,7 @@ export default function Settings() {
                     <p>
                       {s.kind === 'photo' ? 'Photo' : s.kind === 'carousel' ? (s.items.length > 1 ? `Collage, ${s.items.length} frames` : 'Collage') : `${s.items.length} photos`} · {mb(s.bytes)} · {expiryText(s)}
                       {cloud.hearts.byShare[s.id] > 0 && ` · ${cloud.hearts.byShare[s.id]} ♥`}
+                      {cloud.features.views && ` · ${viewsText(s)}`}
                     </p>
                   </div>
                   <button className="pill-btn" onClick={() => copy(s)}>{copied === s.id ? 'Copied' : 'Copy'}</button>

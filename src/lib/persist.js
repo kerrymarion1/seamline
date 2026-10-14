@@ -8,8 +8,9 @@ let saving = Promise.resolve()
 
 const toRow = ({ id, width, height, name, blob, previewBlob, kind, duration, remote }) => ({
   id, width, height, name, blob,
-  // Videos only. `remote` is the address of one that is not kept on this device.
-  ...(kind ? { kind, duration, remote } : null),
+  ...(kind ? { kind, duration } : null), // videos only
+  // The online address of a photo or video whose file is not kept on this device.
+  ...(remote ? { remote } : null),
   // Small photos use one blob for both; don't store it twice.
   previewBlob: previewBlob === blob ? null : previewBlob,
 })

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import {
   EXPIRY_CHOICES, expiryText, findShare, isExpired, isOnline, linkable, outOfDate, progressText, replaceLink, rememberedPin, setExpiry, setUploadPin, shareUrl,
-  stopShare, syncShare, useCloud,
+  stopShare, syncShare, useCloud, viewsText,
 } from '../lib/cloud'
 import { useStore } from '../lib/store'
 import Icon from './Icon'
@@ -10,7 +10,7 @@ import Sheet from './Sheet'
 
 // Sharing for an album, a photo or a collage: create, copy, send, update and
 // remove a public link to a page that shows it. The files are never sent.
-// target: { kind: 'album' | 'photo', sourceId, title, imageIds } for photos kept
+// target: { kind: 'album' | 'photo', sourceId, title, imageIds, captions, note } for photos kept
 // in the app, or { kind: 'carousel', sourceId, title, uploads, stale } for a
 // finished collage, where `uploads` are its exported images. Null when closed.
 export default function LinkSheet({ target, onClose }) {
@@ -30,7 +30,7 @@ export default function LinkSheet({ target, onClose }) {
   const share = target && findShare(cloud.shares, target.kind, target.sourceId)
   const url = share && shareUrl(share)
   const carousel = target?.kind === 'carousel'
-  const stale = share && (carousel ? target.stale(share) : outOfDate(share, target.imageIds))
+  const stale = share && (carousel ? target.stale(share) : outOfDate(share, target.imageIds, target))
   const n = (carousel ? target.uploads : target?.imageIds)?.length ?? 0
   const what = carousel ? (n === 1 ? 'this collage' : 'these frames') : n === 1 ? 'this photo' : 'these photos'
 
@@ -121,6 +121,7 @@ export default function LinkSheet({ target, onClose }) {
             <span>{url.replace(/^https?:\/\//, '')}</span>
             <button className="pill-btn" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
           </div>
+          {cloud.features.views && <p className="note">{viewsText(share)}</p>}
           {typeof navigator.share === 'function' && (
             <button className="primary block" onClick={send}>
               <Icon name="link" size={20} /> Share link

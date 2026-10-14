@@ -3,8 +3,12 @@ import Icon from '../components/Icon'
 import Logo from '../components/Logo'
 import PhotoPager from '../components/PhotoPager'
 import Sheet from '../components/Sheet'
-import { downloadUrl, fetchMyFavorites, fetchShare, publicUrl, setFavorite, useCloud, visitorUpload } from '../lib/cloud'
+import {
+  addComment, downloadUrl, fetchMyFavorites, fetchShare, fetchShareExtras, markViewed, publicUrl, rememberedName, setFavorite,
+  useCloud, visitorUpload,
+} from '../lib/cloud'
 import { clock, countText, isVideo } from '../lib/images'
+import { fadeIn, morph } from '../lib/motion'
 import { downloadZip } from '../lib/share'
 
 function Heart({ on, onToggle, className = '' }) {
@@ -40,6 +44,11 @@ export default function ShareView({ token }) {
   const [askPin, setAskPin] = useState(false)
   const [pinError, setPinError] = useState(null)
   const [adding, setAdding] = useState(null)
+  // The album's note and this visitor's own comments; null where not available.
+  const [extras, setExtras] = useState(null)
+  const [author, setAuthor] = useState(rememberedName)
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
 
   // Check the PIN before opening the photo picker, so a wrong one is caught first.
   const startAdding = async (candidate = pin) => {
@@ -88,7 +97,23 @@ export default function ShareView({ token }) {
 
   useEffect(() => {
     fetchMyFavorites(token).then((ids) => setLiked(new Set(ids))).catch(() => {})
+    fetchShareExtras(token).then(setExtras).catch(() => {})
+    markViewed(token).catch(() => {})
   }, [token])
+
+  const comment = async (item) => {
+    if (!draft.trim()) return
+    setSending(true)
+    setError(null)
+    try {
+      const made = await addComment(token, item.id, author.trim(), draft.trim())
+      setExtras((x) => ({ ...x, comments: [...x.comments, made] }))
+      setDraft('')
+    } catch (e) {
+      setError(e.message)
+    }
+    setSending(false)
+  }
 
   // Show the change at once; put it back if saving fails.
   const toggle = (item) => {
@@ -123,6 +148,9 @@ export default function ShareView({ token }) {
   }
 
   const { items } = share
+  const tileOf = (path) => document.querySelector(`.photo[data-id="${CSS.escape(path)}"]`)
+  const open = (path) => morph(() => setViewing(path), { from: () => tileOf(path) })
+  const close = () => morph(() => setViewing(null), { to: () => tileOf(viewing) })
   const single = share.kind === 'photo' || (items.length === 1 && !share.allow_uploads)
   const carousel = share.kind === 'carousel' && !single
   const viewed = items.find((it) => it.path === viewing)
@@ -166,12 +194,13 @@ export default function ShareView({ token }) {
           />
         )}
         {!single && <p>{carousel ? `${index + 1} of ${items.length} · swipe to see the rest` : countText(items)}</p>}
+        {extras?.note && <p className="share-note">{extras.note}</p>}
       </header>
 
       {single && isVideo(items[0]) ? (
         <video className="single-photo" src={publicUrl(items[0].path)} poster={publicUrl(items[0].poster)} controls playsInline preload="metadata" />
       ) : single ? (
-        <img className="single-photo" src={publicUrl(items[0].path)} alt={items[0].name} />
+        <img className="single-photo" src={publicUrl(items[0].path)} alt={items[0].caption || items[0].name} />
       ) : carousel ? (
         <div className="shared-carousel">
           <div
@@ -192,10 +221,10 @@ export default function ShareView({ token }) {
         </div>
       ) : (
         <div className="photo-grid">
-          {items.map((it) => (
-            <div key={it.path} className="photo">
-              <button className="photo-open" onClick={() => setViewing(it.path)} aria-label={`Open ${it.name}`}>
-                <img src={publicUrl(isVideo(it) ? it.poster : it.path)} alt={it.name} loading="lazy" decoding="async" draggable={false} />
+          {items.map((it, i) => (
+            <div key={it.path} data-id={it.path} className="photo" style={{ '--i': Math.min(i, 17) }}>
+              <button className="photo-open" onClick={() => open(it.path)} aria-label={`Open ${it.name}`}>
+                <img className="fade" onLoad={fadeIn} onError={fadeIn} src={publicUrl(isVideo(it) ? it.poster : it.path)} alt={it.name} loading="lazy" decoding="async" draggable={false} />
                 {isVideo(it) && <span className="clip"><Icon name="play" size={13} /> {clock(it.duration)}</span>}
               </button>
               <Heart className="corner" on={liked.has(it.id)} onToggle={() => toggle(it)} />
@@ -203,6 +232,8 @@ export default function ShareView({ token }) {
           ))}
         </div>
       )}
+
+      {single && items[0].caption && <p className="caption">{items[0].caption}</p>}
 
       <footer className="shareview-foot">
         {share.allow_uploads && (
@@ -256,7 +287,7 @@ export default function ShareView({ token }) {
       {viewed && (
         <div className="viewer">
           <header className="topbar">
-            <button className="icon-btn" onClick={() => setViewing(null)} aria-label="Close photo">
+            <button className="icon-btn" onClick={close} aria-label="Close photo">
               <Icon name="close" />
             </button>
             <div className="preview-title">{items.indexOf(viewed) + 1} of {items.length}</div>
@@ -269,6 +300,38 @@ export default function ShareView({ token }) {
             index={items.indexOf(viewed)}
             onIndex={(i) => setViewing(items[i].path)}
           />
+          <div className="viewer-notes">
+            {viewed.caption && <p className="caption">{viewed.caption}</p>}
+            {extras && (
+              <>
+                {extras.comments.filter((c) => c.item_id === viewed.id).length > 0 && (
+                  <ul className="comment-list">
+                    {extras.comments.filter((c) => c.item_id === viewed.id).map((c) => (
+                      <li key={c.id}><p><b>{c.author || 'You'}</b> {c.body}</p></li>
+                    ))}
+                  </ul>
+                )}
+                <form
+                  className="comment-form"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    comment(viewed)
+                  }}
+                >
+                  <input
+                    className="caption-input name" value={author} onChange={(e) => setAuthor(e.target.value)}
+                    placeholder="Your name" maxLength={60} autoComplete="name" aria-label="Your name"
+                  />
+                  <input
+                    className="caption-input" value={draft} onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Leave a note about this photo" maxLength={600} enterKeyHint="send" aria-label="Note"
+                  />
+                  <button className="pill-btn" disabled={sending || !draft.trim()}>{sending ? 'Sending' : 'Send'}</button>
+                </form>
+                {error && <p className="preview-error" role="alert">{error}</p>}
+              </>
+            )}
+          </div>
           <footer className="preview-actions">
             <a className="primary block" href={downloadUrl(viewed)}>
               <Icon name="download" size={20} /> Download

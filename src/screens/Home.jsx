@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import Logo from '../components/Logo'
@@ -6,9 +6,12 @@ import Sheet from '../components/Sheet'
 import StripView from '../components/StripView'
 import { FormatPicker, Stepper, TemplateThumb } from '../editor/panels'
 import { MAX_SPOTS, templatesFor } from '../lib/cells'
+import { greeting, newsSince, rememberNow } from '../lib/activity'
+import { useCloud, userName } from '../lib/cloud'
 import { countText, isVideo } from '../lib/images'
+import { fadeIn, morph } from '../lib/motion'
 import { FRAME_W, frameH, FORMATS } from '../lib/scene'
-import { createAlbum, createProject, deleteProject, duplicateProject, fillEmptySpots, useStore } from '../lib/store'
+import { lastUpload, createAlbum, createProject, deleteProject, duplicateProject, fillEmptySpots, useStore } from '../lib/store'
 
 // A collage's thumbnail is fitted inside this box.
 const THUMB_W = 124
@@ -22,25 +25,62 @@ function ago(t) {
   return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
+const COVER_SECONDS = 4.5
+
+// The large picture on the leading album: it moves slowly through the album's
+// photos, each fading in over the last. `urls` are the pictures to show in turn.
+function CoverCycle({ urls }) {
+  const [step, setStep] = useState(0)
+  const moving = urls.length > 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches
+  useEffect(() => {
+    if (!moving) return
+    const t = setInterval(() => !document.hidden && setStep((s) => s + 1), COVER_SECONDS * 1000)
+    return () => clearInterval(t)
+  }, [moving])
+  const now = urls[step % urls.length]
+  const before = step > 0 ? urls[(step - 1) % urls.length] : null
+  return (
+    <span className="cover-main">
+      {before && <img key={`was-${step}`} src={before} alt="" draggable={false} />}
+      <img key={step} className={moving ? 'drift' : undefined} src={now} alt="" draggable={false} />
+    </span>
+  )
+}
+
 // The newest album leads as one wide cover; the rest follow in a grid.
 function AlbumCard({ album, images, featured, index }) {
   const ids = album.imageIds.filter((id) => images[id])
+  // The leading cover keeps two photos at the side and cycles the rest in the large spot.
+  const cycle = featured && ids.length > 0 ? [ids[0], ...ids.slice(3, 9)].map((id) => images[id].previewUrl) : null
   return (
     <button
       className={`album-card ${featured ? 'featured' : ''}`}
       style={{ '--i': Math.min(index, 8) }}
-      onClick={() => navigate(`/album/${album.id}`)}
+      data-album={album.id}
+      // The card zooms out to become the album's own screen.
+      onClick={(e) => {
+        const card = e.currentTarget
+        morph(() => navigate(`/album/${album.id}`, { animate: false }), {
+          name: 'album', from: () => card, to: () => document.querySelector('.screen.album'),
+        })
+      }}
     >
       <span className="album-cover">
-        {ids.slice(0, featured ? 3 : 4).map((id) => (
-          <img key={id} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
+        {cycle && <CoverCycle key={cycle.join()} urls={cycle} />}
+        {ids.slice(cycle ? 1 : 0, featured ? 3 : 4).map((id) => (
+          <img key={id} className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
         ))}
         {ids.length === 0 && <Icon name="photo" size={featured ? 36 : 28} />}
       </span>
       <div className="album-caption">
+        {featured && <span className="eyebrow">Latest</span>}
         <h3>{album.name}</h3>
-        <p>{countText(ids.map((id) => images[id]))}</p>
+        <p>
+          {countText(ids.map((id) => images[id]))}
+          {featured && ids.length > 0 && ` · added ${ago(lastUpload(album))}`}
+        </p>
       </div>
+      {featured && <span className="open-pill" aria-hidden="true">Open <Icon name="back" size={14} /></span>}
     </button>
   )
 }
@@ -72,6 +112,8 @@ export default function Home() {
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
   const saveFailed = useStore((s) => s.saveFailed)
+  const cloud = useCloud()
+  const { session } = cloud
   const [namingAlbum, setNamingAlbum] = useState(false)
   const [albumName, setAlbumName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -114,6 +156,18 @@ export default function Home() {
       ].filter(Boolean).join(' · ')
     : 'Albums and collages'
 
+  const signedInAs = userName(session)
+  // What visitors have done since the app was last opened here.
+  const news = cloud.activityLoaded ? newsSince(cloud, albums) : []
+  useEffect(() => {
+    if (cloud.activityLoaded) rememberNow(cloud)
+  }, [cloud])
+  const hello = signedInAs ? `${greeting()}, ${signedInAs.split(' ')[0]}` : greeting()
+  // The album something was added to most recently leads; the rest follow in the same order.
+  const latestFirst = [...albums].sort((a, b) => lastUpload(b) - lastUpload(a))
+  const heroId = latestFirst[0]?.imageIds.find((id) => images[id])
+  const heroUrl = heroId && images[heroId].previewUrl
+
   const makeAlbum = () => {
     const a = createAlbum(albumName)
     setNamingAlbum(false)
@@ -123,15 +177,29 @@ export default function Home() {
 
   return (
     <div className="screen home ambient">
+      <div className="hero-wash" style={heroUrl ? { backgroundImage: `url("${heroUrl}")` } : undefined} aria-hidden="true" />
       <header className="home-head">
-        <div>
-          <Logo />
-          <p className="home-sub">{summary}</p>
-        </div>
-        <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="Settings">
-          <Icon name="gear" size={22} />
+        <Logo />
+        {/* Who is signed in; the whole thing opens Settings. */}
+        <button className="who" onClick={() => navigate('/settings')} aria-label={signedInAs ? `Settings, signed in as ${signedInAs}` : 'Settings'}>
+          {signedInAs && <i aria-hidden="true">{signedInAs[0].toUpperCase()}</i>}
+          {signedInAs && <span>{signedInAs}</span>}
+          <Icon name="gear" size={20} />
         </button>
       </header>
+      <section className="home-intro">
+        <p className="greeting">{hello}</p>
+        {news.length > 0 ? (
+          <div className="news">
+            <i className="pulse" aria-hidden="true" />
+            {news.map((n) => (
+              <button key={n.key} disabled={!n.albumId} onClick={() => navigate(`/album/${n.albumId}`)}>{n.text}</button>
+            ))}
+          </div>
+        ) : (
+          <p className="home-sub">{summary}</p>
+        )}
+      </section>
       {saveFailed && (
         <p className="banner" role="alert">
           Changes are not being saved on this device. Storage may be full or blocked (private browsing).
@@ -148,28 +216,18 @@ export default function Home() {
               </button>
             )}
           </div>
-          <Albums albums={albums} images={images} onNew={() => setNamingAlbum(true)} />
+          <Albums albums={latestFirst} images={images} onNew={() => setNamingAlbum(true)} />
         </section>
 
         <section>
           <div className="section-head">
             <h2>Collages{projects.length > 0 && <span className="count">{projects.length}</span>}</h2>
-            {projects.length > 0 && (
-              <button className="pill-btn" onClick={() => setCreating(true)}>
-                <Icon name="plus" size={16} /> New
-              </button>
-            )}
+            <button className="pill-btn" onClick={() => setCreating(true)}>
+              <Icon name="plus" size={16} /> New
+            </button>
           </div>
-          {projects.length === 0 ? (
-            <div className="invite">
-              <div className="collage-art" aria-hidden="true"><i /><i /><i /></div>
-              <h3>Several photos, one page</h3>
-              <p>Pick a layout, drop your photos into it and save the page as a single image.</p>
-              <button className="pill-btn" onClick={() => setCreating(true)}>
-                <Icon name="plus" size={16} /> New collage
-              </button>
-            </div>
-          ) : (
+          {/* With none yet, the New button above is all there is; no empty box. */}
+          {projects.length === 0 ? null : (
             <div className="shelf">
               {projects.map((p) => (
                 <article key={p.id} className="card">

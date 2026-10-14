@@ -330,11 +330,86 @@ export function deleteAlbum(id) {
 }
 
 // Newest photos first.
-export const addToAlbum = (id, imageIds) =>
-  patchAlbum(id, (a) => ({ ...a, imageIds: [...imageIds.filter((i) => !a.imageIds.includes(i)), ...a.imageIds] }))
+// `by` is whoever is adding them: { id, name } for a signed-in person, or
+// just a name. It is kept per photo in the album's `addedBy`, which travels
+// with the album to the other devices.
+export const addToAlbum = (id, imageIds, by = '') =>
+  patchAlbum(id, (a) => {
+    const fresh = imageIds.filter((i) => !a.imageIds.includes(i))
+    const addedBy = by ? { ...a.addedBy, ...Object.fromEntries(fresh.map((i) => [i, by])) } : a.addedBy
+    // When something was last added: this alone decides the album's place on the front page.
+    return { ...a, imageIds: [...fresh, ...a.imageIds], ...(addedBy ? { addedBy } : null), ...(fresh.length ? { uploadedAt: Date.now() } : null) }
+  })
 
 export const removeFromAlbum = (id, imageIds) =>
-  patchAlbum(id, (a) => ({ ...a, imageIds: a.imageIds.filter((i) => !imageIds.includes(i)) }))
+  patchAlbum(id, (a) => {
+    const next = { ...a, imageIds: a.imageIds.filter((i) => !imageIds.includes(i)) }
+    if (a.addedBy) next.addedBy = Object.fromEntries(Object.entries(a.addedBy).filter(([i]) => !imageIds.includes(i)))
+    return next
+  })
+
+// When a photo or video was last added to an album. Albums from before this
+// was recorded go by their newest item, then by when they were made. Removing,
+// renaming, sorting and the like never change it.
+export const lastUpload = (album) =>
+  album.uploadedAt ?? (Math.max(0, ...album.imageIds.map(addedAt)) || album.createdAt || 0)
+
+// The name to show for an `addedBy` entry.
+export const uploaderName = (by) => (typeof by === 'string' ? by : by?.name) ?? ''
+
+// Someone has a new name: put it on everything they have added, in every
+// album. Entries from before people were told apart only carry a name; one
+// that matches is taken to be theirs. Albums that need no change are left alone.
+export function renameUploader(id, name) {
+  if (!id || !name) return
+  const mine = (by) => (typeof by === 'string' ? by === name : by?.id === id)
+  const stale = (by) => mine(by) && (typeof by === 'string' || by.name !== name)
+  for (const album of state.albums) {
+    if (!Object.values(album.addedBy ?? {}).some(stale)) continue
+    patchAlbum(album.id, (a) => ({
+      ...a,
+      addedBy: Object.fromEntries(Object.entries(a.addedBy).map(([i, by]) => [i, mine(by) ? { id, name } : by])),
+    }))
+  }
+}
+
+// An id starts with the moment it was made, so it doubles as "when added".
+const addedAt = (id) => parseInt(id.slice(0, -6), 36) || 0
+
+// Put an album's photos in order once. The order is kept, and shown on its
+// shared page; photos added afterwards still go to the front.
+export function sortAlbum(id, mode) {
+  const name = (i) => (state.images[i]?.name ?? '').toLowerCase()
+  const by = {
+    newest: (x, y) => addedAt(y) - addedAt(x),
+    oldest: (x, y) => addedAt(x) - addedAt(y),
+    name: (x, y) => name(x).localeCompare(name(y), undefined, { numeric: true }) || addedAt(x) - addedAt(y),
+  }[mode]
+  patchAlbum(id, (a) => ({ ...a, imageIds: [...a.imageIds].sort(by) }))
+}
+
+// Move photos, keeping their own order, to sit in front of `before`
+// ('start' for the very front, nothing for the end).
+export const moveInAlbum = (id, moving, before) =>
+  patchAlbum(id, (a) => {
+    const picked = a.imageIds.filter((i) => moving.includes(i))
+    const rest = a.imageIds.filter((i) => !moving.includes(i))
+    const found = rest.indexOf(before)
+    const at = before === 'start' ? 0 : found < 0 ? rest.length : found
+    return { ...a, imageIds: [...rest.slice(0, at), ...picked, ...rest.slice(at)] }
+  })
+
+// A line of text under one photo, shown on shared pages too. Empty clears it.
+export const setCaption = (id, imageId, text) =>
+  patchAlbum(id, (a) => {
+    const captions = { ...a.captions }
+    if (text) captions[imageId] = text
+    else delete captions[imageId]
+    return { ...a, captions }
+  })
+
+// A few words about the album, shown at the top of its shared page.
+export const setAlbumNote = (id, note) => patchAlbum(id, (a) => ({ ...a, note }))
 
 // Add projects, albums and templates from a backup that are not already here.
 export function mergeBackup({ projects = [], albums = [], presets = [] }) {
@@ -398,9 +473,9 @@ export function setImportAlbum(value) {
 
 // File freshly imported photos into the chosen album, creating "Imported"
 // the first time when the setting is automatic.
-export function fileImports(imageIds) {
+export function fileImports(imageIds, by = '') {
   if (!imageIds.length || state.importAlbum === 'off') return
   let album = state.albums.find((a) => a.id === state.importAlbum)
   if (!album) album = state.albums.find((a) => a.name === 'Imported') ?? createAlbum('Imported')
-  addToAlbum(album.id, imageIds)
+  addToAlbum(album.id, imageIds, by)
 }

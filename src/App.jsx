@@ -5,6 +5,7 @@ import CloudSync from './components/CloudSync'
 import Logo from './components/Logo'
 import SharedInbox from './components/SharedInbox'
 import { useCloud } from './lib/cloud'
+import { transition } from './lib/motion'
 import { useStore } from './lib/store'
 import Album from './screens/Album'
 import Home from './screens/Home'
@@ -20,9 +21,18 @@ const subscribe = (cb) => {
   return () => window.removeEventListener('popstate', cb)
 }
 
-export function navigate(to, { replace = false } = {}) {
-  window.history[replace ? 'replaceState' : 'pushState'](null, '', to)
-  window.dispatchEvent(new PopStateEvent('popstate'))
+// The front page is the top level; everything else is one step in.
+const depth = (path) => (path === '/' || path === '/albums' ? 0 : 1)
+
+// `animate: false` is for callers that run their own animation around the move.
+export function navigate(to, { replace = false, animate = true } = {}) {
+  const move = () => {
+    window.history[replace ? 'replaceState' : 'pushState'](null, '', to)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }
+  if (!animate) return move()
+  const step = depth(to) - depth(window.location.pathname)
+  transition(move, step > 0 ? 'forward' : step < 0 ? 'back' : 'fade')
 }
 
 // Bumps whenever a webfont finishes loading so measured text is re-laid out.

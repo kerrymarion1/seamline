@@ -15,6 +15,8 @@ import {
   addImages, addLayers, canRedo, canUndo, clearHistory, duplicateLayer, redo, undo, updateLayer, moveLayer, removeCell, removeLayer, swapCells, updateCells, fileImports,
   updateProject, useProject, useStore,
 } from '../lib/store'
+import { me } from '../lib/cloud'
+import { ensureLocal, photoIdsOf } from '../lib/sync'
 
 // Height of the on-screen keyboard, also published as --kb so fixed sheets
 // can sit above it (iOS does not resize the layout viewport for the keyboard).
@@ -76,6 +78,15 @@ export default function Editor({ projectId }) {
   useEffect(() => {
     if (!project) navigate('/', { replace: true })
   }, [project])
+
+  // A photo that reached this device as a small copy is fetched in full once
+  // it is in a collage, so the editor and the finished image are sharp.
+  const small = project ? photoIdsOf(project).filter((id) => images[id] && !images[id].blob) : []
+  useEffect(() => {
+    if (small.length) ensureLocal(small)
+    // Only when the set of small copies changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [small.join()])
 
   // Undo history lasts for one editing session.
   useEffect(() => () => clearHistory(projectId), [projectId])
@@ -155,7 +166,7 @@ export default function Editor({ projectId }) {
       }
     }
     addImages(records)
-    fileImports(records.map((r) => r.id))
+    fileImports(records.map((r) => r.id), me())
     placePhotos(records)
     setNotice(failed ? { text: `${failed} photo${failed > 1 ? 's' : ''} could not be read` } : null)
   }

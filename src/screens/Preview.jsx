@@ -5,6 +5,7 @@ import { renderFrames } from '../lib/render'
 import { frameH } from '../lib/scene'
 import { canShareFiles, downloadFile, downloadZip, shareFiles, toFiles } from '../lib/share'
 import { getState } from '../lib/store'
+import { ensureLocal, photoIdsOf } from '../lib/sync'
 
 // Full-screen preview of the finished collage. What you see here is the
 // actual JPEG that gets shared (older projects with several frames show each).
@@ -19,7 +20,12 @@ export default function Preview({ project, onClose }) {
 
   useEffect(() => {
     let cancelled = false
-    renderFrames(project, getState().images, (p) => !cancelled && setProgress(p))
+    // Photos this device only holds small copies of are fetched in full first.
+    ensureLocal(photoIdsOf(project))
+      .then((ok) => {
+        if (!ok) throw new Error('Some photos could not be downloaded. Check your connection and try again.')
+        return renderFrames(project, getState().images, (p) => !cancelled && setProgress(p))
+      })
       .then((blobs) => !cancelled && setFiles(toFiles(blobs, project.name)))
       .catch((e) => !cancelled && setError(e.message || 'Could not render the frames'))
     return () => {

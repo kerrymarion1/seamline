@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { navigate } from '../App'
+import { me } from '../lib/cloud'
 import { importMedia, isVideoFile } from '../lib/images'
 import { clearShared, pendingShared } from '../lib/shared'
 import { addImages, addToAlbum, createAlbum, useStore } from '../lib/store'
 import Icon from './Icon'
 import Sheet from './Sheet'
+
+const LAST_ALBUM = 'seamline:lastSharedAlbum'
 
 // Asks which album should receive photos and videos shared in from another app
 // (for example Lightroom's Share button on Android).
@@ -29,6 +32,7 @@ export default function SharedInbox() {
 
   async function addTo(album) {
     const target = album ?? createAlbum('Shared photos')
+    localStorage.setItem(LAST_ALBUM, target.id)
     const records = []
     for (const [i, file] of files.entries()) {
       setProgress(`Importing ${i + 1} of ${files.length}`)
@@ -39,13 +43,16 @@ export default function SharedInbox() {
       }
     }
     addImages(records)
-    addToAlbum(target.id, records.map((r) => r.id))
+    addToAlbum(target.id, records.map((r) => r.id), me())
     await clearShared()
     setProgress(null)
     setFiles([])
     navigate(`/album/${target.id}`)
   }
 
+  // The album used last time leads the list, one tap away.
+  const lastId = localStorage.getItem(LAST_ALBUM)
+  const ordered = [...albums].sort((a, b) => (b.id === lastId) - (a.id === lastId))
   const n = files.length
   const noun = files.every(isVideoFile) ? 'video' : files.some(isVideoFile) ? 'item' : 'photo'
   return (
@@ -58,11 +65,11 @@ export default function SharedInbox() {
         <>
           <p className="hint">Choose the album to put them in.</p>
           <ul className="layer-list">
-            {albums.map((a) => (
+            {ordered.map((a) => (
               <li key={a.id}>
-                <button className="layer-pick album-pick" onClick={() => addTo(a)}>
+                <button className={`layer-pick album-pick ${a.id === lastId ? 'last-used' : ''}`} onClick={() => addTo(a)}>
                   <span className="layer-name">{a.name}</span>
-                  <span className="hint">{a.imageIds.length}</span>
+                  <span className="hint">{a.id === lastId ? 'Used last time · ' : ''}{a.imageIds.length}</span>
                 </button>
               </li>
             ))}
