@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { navigate } from '../App'
 import { me } from '../lib/cloud'
 import { importMedia, isVideoFile } from '../lib/images'
+import { announceUpload } from '../lib/push'
 import { clearShared, pendingShared } from '../lib/shared'
 import { addImages, addToAlbum, createAlbum, useStore } from '../lib/store'
 import Icon from './Icon'
@@ -31,7 +32,7 @@ export default function SharedInbox() {
   }
 
   async function addTo(album) {
-    const target = album ?? createAlbum('Shared photos')
+    const target = album ?? createAlbum('Shared photos', me()?.id)
     localStorage.setItem(LAST_ALBUM, target.id)
     const records = []
     for (const [i, file] of files.entries()) {
@@ -44,6 +45,7 @@ export default function SharedInbox() {
     }
     addImages(records)
     addToAlbum(target.id, records.map((r) => r.id), me())
+    announceUpload(target, records)
     await clearShared()
     setProgress(null)
     setFiles([])

@@ -10,7 +10,7 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error) {
-    console.error('Seamline crashed', error)
+    console.error('Hugpix crashed', error)
   }
 
   render() {

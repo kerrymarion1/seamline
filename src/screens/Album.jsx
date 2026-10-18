@@ -1,19 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
+import Avatar from '../components/Avatar'
 import LinkSheet from '../components/LinkSheet'
+import PeoplePicker from '../components/PeoplePicker'
 import PhotoPager from '../components/PhotoPager'
 import {
-  adoptVisitorItems, canLink, deleteComment, findShare, me, progressText, publicUrl, refreshComments, refreshHearts,
-  refreshShares, removeVisitorItem, stopShare, useCloud, visitorItems,
+  adoptVisitorItems, canLink, deleteComment, fetchMedia, findShare, me, progressText, publicUrl, refreshComments,
+  refreshHearts, refreshShares, removeVisitorItem, setPinned, setRights, stopShare, useCloud, usePinned, visitorItems,
 } from '../lib/cloud'
 import Sheet from '../components/Sheet'
-import { clock, importFile, importMedia, isVideo } from '../lib/images'
+import { clock, countText, importFile, importMedia, isVideo } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
+import { personIn, usePeople } from '../lib/people'
+import { announceUpload } from '../lib/push'
+import { addPhotoComment, fetchAlbumSocial, removePhotoComment, setHeart, watchAlbumSocial } from '../lib/social'
+import { syncNow } from '../lib/sync'
+import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
-  addImages, addToAlbum, deleteAlbum, uploaderName, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumNote, setCaption, sortAlbum,
-  useAlbum, useStore,
+  addImages, addToAlbum, deleteAlbum, uploaderName, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumNote, setAlbumPeople, setCaption,
+  sortAlbum, useAlbum, useStore,
 } from '../lib/store'
 
 const SORTS = [
@@ -27,7 +34,13 @@ const SORTS = [
 export default function Album({ albumId }) {
   const album = useAlbum(albumId)
   const images = useStore((s) => s.images)
-  const { hearts, comments, features, shares, syncing, syncError } = useCloud()
+  // A guest sees every album and adds to it; links are a member's. Albums the
+  // guest made are theirs to change; on everyone else's they are `limited`.
+  const { hearts, comments, features, shares, syncing, syncError, admin, guest, session } = useCloud()
+  const limited = guest && album?.createdBy !== session?.user.id
+  // The photo pinned to lead the front page, for the season showing now.
+  const pin = usePinned()
+  const season = useActiveSeason()
   const fileInput = useRef(null)
   const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState([])
@@ -39,9 +52,53 @@ export default function Album({ albumId }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busy, setBusy] = useState(false)
   const [linking, setLinking] = useState(null) // { kind, sourceId, title, imageIds, captions, note }
+  const [pending, setPending] = useState([]) // chosen, waiting for "Add"
+  // Who sees this album: everyone, or (secret) only the people chosen.
+  const [choosingPeople, setChoosingPeople] = useState(false)
+  const people = usePeople()
+  const [secretOn, setSecretOn] = useState(false)
+  const [chosen, setChosen] = useState([])
 
+  // Hearts and comments from the family, live while the album is open.
+  const [social, setSocial] = useState({ hearts: [], comments: [] })
+  const [saying, setSaying] = useState('')
   useEffect(() => {
-    if (!album) navigate('/albums', { replace: true })
+    if (!features.social) return
+    let live = true
+    const load = () => fetchAlbumSocial(albumId).then((s) => live && setSocial(s)).catch(() => {})
+    load()
+    const stop = watchAlbumSocial(albumId, load)
+    const t = setInterval(() => !document.hidden && load(), 30000)
+    return () => {
+      live = false
+      stop()
+      clearInterval(t)
+    }
+  }, [albumId, features.social])
+
+  // Opened from a notification about one photo (?photo=): show that photo.
+  const askedPhoto = useRef(new URLSearchParams(window.location.search).get('photo'))
+  useEffect(() => {
+    const photo = askedPhoto.current
+    if (!photo || !album?.imageIds.includes(photo) || !images[photo]) return
+    askedPhoto.current = null
+    setViewing(photo)
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [album, images])
+
+  // An album that was here and is gone (deleted) goes back to the albums at
+  // once. One not on this device yet, such as one just made elsewhere and
+  // opened from a notification, gets a sync and a few seconds to arrive.
+  const seen = useRef(!!album)
+  useEffect(() => {
+    if (album) {
+      seen.current = true
+      return
+    }
+    if (seen.current) return navigate('/albums', { replace: true })
+    syncNow()
+    const t = setTimeout(() => navigate('/albums', { replace: true }), 10000)
+    return () => clearTimeout(t)
   }, [album])
 
   // Pick up any favourites and notes visitors have left since the app was opened.
@@ -57,9 +114,22 @@ export default function Album({ albumId }) {
     return () => clearTimeout(t)
   }, [notice])
 
-  if (!album) return null
+  if (!album) {
+    return seen.current ? null : (
+      <div className="screen">
+        <p className="hint centre"><i className="spinner inline" /> Getting this album</p>
+      </div>
+    )
+  }
   const ids = album.imageIds.filter((id) => images[id])
-  const liked = ids.filter((id) => hearts.byItem[id] > 0)
+  // The family's hearts (who) and comments, by photo.
+  const famHearts = {}
+  for (const h of social.hearts) (famHearts[h.photo] ??= []).push(h.user_id)
+  const famNotes = {}
+  for (const c of social.comments) (famNotes[c.photo] ??= []).push(c)
+  const heartCount = (id) => (hearts.byItem[id] ?? 0) + (famHearts[id]?.length ?? 0)
+  const noteCount = (id) => (comments[id]?.length ?? 0) + (famNotes[id]?.length ?? 0)
+  const liked = ids.filter((id) => heartCount(id) > 0)
   const onlyLiked = favourites && liked.length > 0
   const shown = onlyLiked ? liked : ids
   // What a link can show: everything, or only the photos where videos cannot go online.
@@ -68,29 +138,110 @@ export default function Album({ albumId }) {
   const captions = album.captions ?? {}
   const addedBy = album.addedBy ?? {}
   const said = comments[viewing] ?? []
+  // A secret album never gets a link or the front-page pin: both would show
+  // its photos to everyone.
+  const secret = !!album.secret
+  const myId = session?.user.id
+  const nameOf = (id) => people.find((p) => p.id === id)?.name ?? 'Someone'
+  const openPeople = () => {
+    setSecretOn(secret)
+    setChosen(album.members ?? (myId ? [myId] : []))
+    setChoosingPeople(true)
+  }
+  const savePeople = () => {
+    // You stay in it yourself; only the admin can be outside a secret album.
+    const members = secretOn ? [...new Set([...(admin || !myId ? [] : [myId]), ...chosen])] : null
+    setAlbumPeople(album.id, members)
+    // A link would show it to anyone: going secret switches it off.
+    if (members && share) stopShare(share).catch(() => {})
+    setChoosingPeople(false)
+    setNotice({
+      text: members ? `Secret: only ${members.length === 1 ? 'you' : `these ${members.length} people`} can see it` : 'Everyone can see this album now',
+    })
+  }
 
-  async function addPhotos(files) {
+  // The family's heart and comments on the photo being looked at.
+  const heartedBy = famHearts[viewing] ?? []
+  const iHeart = heartedBy.includes(myId)
+  const firstOf = (id) => (id === myId ? 'You' : (personIn(people, id)?.name ?? 'Someone').split(' ')[0])
+  const heartNames = (() => {
+    const names = [...(iHeart ? [myId] : []), ...heartedBy.filter((id) => id !== myId)].map(firstOf)
+    if (names.length <= 2) return names.join(' and ')
+    return `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`
+  })()
+  const toggleHeart = () => {
+    const photo = viewing
+    const next = !iHeart
+    setSocial((s) => ({
+      ...s,
+      hearts: next ? [...s.hearts, { photo, user_id: myId }] : s.hearts.filter((h) => !(h.photo === photo && h.user_id === myId)),
+    }))
+    setHeart(album, photo, next).catch((e) => {
+      setNotice({ text: e.message })
+      fetchAlbumSocial(album.id).then(setSocial).catch(() => {})
+    })
+  }
+  const postComment = async (e) => {
+    e.preventDefault()
+    const text = saying
+    if (!text.trim()) return
+    setSaying('')
+    try {
+      const added = await addPhotoComment(album, viewing, text)
+      if (added) setSocial((s) => (s.comments.some((c) => c.id === added.id) ? s : { ...s, comments: [...s.comments, added] }))
+    } catch (err) {
+      setSaying(text)
+      setNotice({ text: err.message })
+    }
+  }
+  const dropComment = (c) =>
+    removePhotoComment(c.id)
+      .then(() => setSocial((s) => ({ ...s, comments: s.comments.filter((x) => x.id !== c.id) })))
+      .catch((e) => setNotice({ text: e.message }))
+
+  // Chosen photos and videos wait in a sheet first, where any can be taken
+  // off or more chosen; only "Add" puts them in the album.
+  async function choosePhotos(files) {
     if (!files.length) return
     const records = []
     let failed = 0
     for (const [i, file] of files.entries()) {
-      setNotice({ busy: true, text: `Importing ${i + 1} of ${files.length}` })
+      setNotice({ busy: true, text: `Getting ${i + 1} of ${files.length} ready` })
       try {
         records.push(await importMedia(file))
       } catch {
         failed++
       }
     }
-    addImages(records)
-    addToAlbum(album.id, records.map((r) => r.id), me())
+    setPending((p) => [...p, ...records])
     setNotice(failed ? { text: `${failed} file${failed > 1 ? 's' : ''} could not be read` } : null)
+  }
+  const dropPending = (records) =>
+    records.forEach((r) => {
+      URL.revokeObjectURL(r.url)
+      if (r.previewUrl !== r.url) URL.revokeObjectURL(r.previewUrl)
+    })
+  const unpick = (record) => {
+    dropPending([record])
+    setPending((p) => p.filter((r) => r !== record))
+  }
+  const cancelPending = () => {
+    dropPending(pending)
+    setPending([])
+  }
+  const submitPending = () => {
+    addImages(pending)
+    addToAlbum(album.id, pending.map((r) => r.id), me())
+    announceUpload(album, pending)
+    setNotice({ text: `Added ${countText(pending)} to ${album.name}` })
+    setPending([])
   }
 
   // A photo's file: the one on this device, or its online copy where this
   // device only holds a small one.
   async function fileOf(image) {
     if (image.blob) return imageFile(image)
-    const res = await fetch(image.remote)
+    const res = await fetchMedia(image.remote)
     if (!res.ok) throw new Error('A photo could not be downloaded')
     const base = (image.name ?? 'photo').replace(/\.[^.]+$/, '') || 'photo'
     return new File([await res.blob()], `${base}.jpg`, { type: 'image/jpeg' })
@@ -98,6 +249,7 @@ export default function Album({ albumId }) {
 
   async function save(imageIds) {
     setBusy(true)
+    setNotice({ busy: true, text: imageIds.length > 1 ? `Saving ${imageIds.length}` : 'Saving' })
     try {
       // Videos are too large to zip in memory; each is saved as its own file.
       const chosen = imageIds.map((id) => images[id])
@@ -108,7 +260,8 @@ export default function Album({ albumId }) {
         if (clip.blob) downloadFile(imageFile(clip))
         else window.open(clip.remote, '_blank') // not kept on this device: fetch the online copy
       }
-      setNotice({ text: stills.length > 1 ? 'Saved as a zip in Downloads' : 'Saved to Downloads' })
+      // Phones put it in the Downloads folder (Files app, or Downloads in the gallery).
+      setNotice({ text: stills.length > 1 ? 'Saved as a zip in your Downloads folder' : 'Saved to your Downloads folder' })
     } catch (e) {
       setNotice({ text: e.message || 'Could not save the photos' })
     }
@@ -120,7 +273,20 @@ export default function Album({ albumId }) {
     setLinking({
       kind: 'photo', sourceId: viewing, title: (viewed.name ?? 'Photo').replace(/\.[^.]+$/, ''), imageIds: [viewing], captions,
     })
-  const canLinkViewed = canLink(viewed)
+  const canLinkViewed = !guest && !secret && canLink(viewed)
+  const pinnedHere = pin?.album === album.id && pin?.image === viewing
+  const seasonName = SEASONS.find((s) => s.id === season)?.name
+  // The pin is the whole library's: everyone's front page follows it.
+  const canPin = !guest && !secret && features.pins
+  const togglePin = () =>
+    (pinnedHere ? setPinned(null) : setPinned(album.id, viewing))
+      .then(() =>
+        setNotice({
+          text: pinnedHere
+            ? 'Unpinned. The newest album leads again, for everyone.'
+            : `Pinned to everyone's front page${seasonName ? ` for ${seasonName}` : ''}`,
+        }))
+      .catch((e) => setNotice({ text: e.message }))
   // A few chosen photos get a page of their own, separate from the album's.
   const linkPicked = () => {
     const chosen = photoIds.filter((id) => picked.includes(id))
@@ -145,11 +311,11 @@ export default function Album({ albumId }) {
       const idMap = {}
       for (const [i, item] of added.entries()) {
         setNotice({ busy: true, text: `Saving ${i + 1} of ${added.length}` })
-        const res = await fetch(publicUrl(item.path))
+        const res = await fetchMedia(publicUrl(item.path))
         if (!res.ok) throw new Error('A photo could not be downloaded')
         const record = await importFile(new File([await res.blob()], item.name, { type: 'image/jpeg' }))
         addImages([record])
-        addToAlbum(album.id, [record.id], 'A visitor')
+        addToAlbum(album.id, [record.id], item.by ?? 'A visitor')
         idMap[item.id] = record.id
       }
       await adoptVisitorItems(share, idMap)
@@ -161,6 +327,14 @@ export default function Album({ albumId }) {
   }
 
   const dropAdded = (item) => removeVisitorItem(share, item).catch((e) => setNotice({ text: e.message }))
+  // Who the waiting photos are from, once each.
+  const adders = [...new Map(added.filter((it) => it.by?.id).map((it) => [it.by.id, it.by])).values()]
+
+  // The admin stops someone adding photos, or leaving notes, on every link.
+  const block = (person, rights, done) =>
+    setRights(person.id, rights)
+      .then(() => setNotice({ text: done }))
+      .catch((e) => setNotice({ text: e.message }))
 
   const stopSelecting = () => {
     setSelecting(false)
@@ -213,6 +387,7 @@ export default function Album({ albumId }) {
         <input
           className="title-input"
           value={album.name}
+          readOnly={limited}
           onChange={(e) => renameAlbum(album.id, e.target.value)}
           onBlur={(e) => !e.target.value.trim() && renameAlbum(album.id, 'Untitled album')}
           aria-label="Album name"
@@ -225,7 +400,12 @@ export default function Album({ albumId }) {
             {selecting ? 'Cancel' : 'Select'}
           </button>
         )}
-        {photoIds.length > 0 && !selecting && (
+        {!selecting && !limited && features.secret && (
+          <button className={`icon-btn ${secret ? 'active' : ''}`} onClick={openPeople} aria-label="Who can see this album">
+            <Icon name="lock" size={20} />
+          </button>
+        )}
+        {photoIds.length > 0 && !selecting && !guest && !secret && (
           <button
             className="icon-btn"
             onClick={() =>
@@ -236,12 +416,21 @@ export default function Album({ albumId }) {
             <Icon name="link" size={20} />
           </button>
         )}
-        {!selecting && (
+        {!selecting && !limited && (
           <button className="icon-btn" onClick={() => setConfirmDelete(true)} aria-label="Delete album">
             <Icon name="trash" size={20} />
           </button>
         )}
       </header>
+
+      {secret && (
+        <button className="secret-bar" onClick={limited ? undefined : openPeople} disabled={limited}>
+          <Icon name="lock" size={14} />
+          <span>
+            Secret · {(album.members ?? []).map((id) => (id === myId ? 'you' : nameOf(id).split(' ')[0])).join(', ')}
+          </span>
+        </button>
+      )}
 
       {ids.length === 0 && added.length === 0 ? (
         <div className="empty">
@@ -261,7 +450,8 @@ export default function Album({ albumId }) {
           )}
           {syncError && !syncing && <p className="sync-note error">Could not put this album online: {syncError}</p>}
           {moving && <p className="sync-note">Tap the photo these should go in front of, or choose below.</p>}
-          {features.notes && !selecting && (
+          {features.notes && !selecting && guest && album.note && <p className="album-note">{album.note}</p>}
+          {features.notes && !selecting && !guest && (
             <input
               className="album-note"
               value={album.note ?? ''}
@@ -282,17 +472,35 @@ export default function Album({ albumId }) {
                   </button>
                 </>
               )}
-              <button className="chip small sort-btn" onClick={() => setSorting(true)}>
-                <Icon name="sort" size={16} /> Sort
-              </button>
+              {!limited && (
+                <button className="chip small sort-btn" onClick={() => setSorting(true)}>
+                  <Icon name="sort" size={16} /> Sort
+                </button>
+              )}
             </div>
           )}
           {added.length > 0 && (
             <section className="visitor-box">
               <div className="row">
-                <div className="label">{added.length} added by visitors</div>
+                <div>
+                  <div className="label">{added.length} added through the link</div>
+                  {adders.length > 0 && <div className="hint">by {adders.map((p) => p.name).join(', ')}</div>}
+                </div>
                 <button className="pill-btn" disabled={busy} onClick={keepAdded}>Keep in album</button>
               </div>
+              {admin && adders.length > 0 && (
+                <div className="chips">
+                  {adders.map((p) => (
+                    <button
+                      key={p.id}
+                      className="chip small"
+                      onClick={() => block(p, { uploads: false }, `${p.name} can no longer add photos`)}
+                    >
+                      Stop {p.name.split(' ')[0]} adding
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="visitor-strip">
                 {added.map((item) => (
                   <div key={item.id} className="visitor-thumb">
@@ -313,13 +521,13 @@ export default function Album({ albumId }) {
                   {isVideo(images[id]) && (
                     <span className="clip"><Icon name="play" size={13} /> {clock(images[id].duration)}</span>
                   )}
-                  {hearts.byItem[id] > 0 && (
-                    <span className="hearts"><Icon name="heart" size={13} /> {hearts.byItem[id]}</span>
+                  {heartCount(id) > 0 && (
+                    <span className="hearts"><Icon name="heart" size={13} /> {heartCount(id)}</span>
                   )}
-                  {(addedBy[id] || comments[id]?.length > 0) && (
+                  {(addedBy[id] || noteCount(id) > 0) && (
                     <span className="tile-tags">
                       {addedBy[id] && <span className="by">{uploaderName(addedBy[id])}</span>}
-                      {comments[id]?.length > 0 && <span className="said"><Icon name="comment" size={13} /> {comments[id].length}</span>}
+                      {noteCount(id) > 0 && <span className="said"><Icon name="comment" size={13} /> {noteCount(id)}</span>}
                     </span>
                   )}
                 </button>
@@ -353,23 +561,29 @@ export default function Album({ albumId }) {
             </div>
           ) : (
             <div className="tools show">
-              <button className="tool" disabled={!picked.some((id) => photoIds.includes(id))} onClick={linkPicked}>
-                <Icon name="link" />
-                <span>Share link</span>
-              </button>
+              {!guest && !secret && (
+                <button className="tool" disabled={!picked.some((id) => photoIds.includes(id))} onClick={linkPicked}>
+                  <Icon name="link" />
+                  <span>Share link</span>
+                </button>
+              )}
               <button className="tool" disabled={!picked.length || busy} onClick={() => save(picked)}>
                 <Icon name="download" />
                 <span>Save {picked.length || ''}</span>
               </button>
-              {/* Moving only makes sense with the whole album in view. */}
-              <button className="tool" disabled={!picked.length || picked.length === ids.length || onlyLiked} onClick={() => setMoving(true)}>
-                <Icon name="move" />
-                <span>Move</span>
-              </button>
-              <button className="tool danger" disabled={!picked.length} onClick={() => remove(picked)}>
-                <Icon name="trash" />
-                <span>Remove</span>
-              </button>
+              {!limited && (
+                <>
+                  {/* Moving only makes sense with the whole album in view. */}
+                  <button className="tool" disabled={!picked.length || picked.length === ids.length || onlyLiked} onClick={() => setMoving(true)}>
+                    <Icon name="move" />
+                    <span>Move</span>
+                  </button>
+                  <button className="tool danger" disabled={!picked.length} onClick={() => remove(picked)}>
+                    <Icon name="trash" />
+                    <span>Remove</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
         </nav>
@@ -385,9 +599,13 @@ export default function Album({ albumId }) {
               {viewed.width} × {viewed.height}{isVideo(viewed) && ` · ${clock(viewed.duration)}`}
               {hearts.byItem[viewing] > 0 && <span className="hearts inline"><Icon name="heart" size={13} /> {hearts.byItem[viewing]}</span>}
             </div>
-            <button className="icon-btn" onClick={() => remove([viewing])} aria-label="Remove from album">
-              <Icon name="trash" size={20} />
-            </button>
+            {limited ? (
+              <span className="topbar-spacer" />
+            ) : (
+              <button className="icon-btn" onClick={() => remove([viewing])} aria-label="Remove from album">
+                <Icon name="trash" size={20} />
+              </button>
+            )}
           </header>
           <PhotoPager
             slides={shown.map((id) => ({ key: id, src: images[id].url, poster: images[id].previewUrl, video: isVideo(images[id]) }))}
@@ -396,31 +614,78 @@ export default function Album({ albumId }) {
           />
           <div className="viewer-notes">
             {addedBy[viewing] && <p className="note centre">Added by {uploaderName(addedBy[viewing])}</p>}
+            {features.social && (
+              <div className="family-react">
+                <button className={`heart-toggle ${iHeart ? 'on' : ''}`} onClick={toggleHeart} aria-pressed={iHeart} aria-label={iHeart ? 'Take your heart back' : 'Heart this photo'}>
+                  <Icon name="heart" size={20} />
+                  {heartedBy.length > 0 && <span>{heartedBy.length}</span>}
+                </button>
+                {heartNames && <span className="note">{heartNames} {heartedBy.length === 1 && !iHeart ? 'loves' : 'love'} this</span>}
+              </div>
+            )}
+            {famNotes[viewing]?.length > 0 && (
+              <ul className="comment-list family">
+                {famNotes[viewing].map((c) => (
+                  <li key={c.id}>
+                    <Avatar person={personIn(people, c.user_id)} size={26} />
+                    <p><b>{firstOf(c.user_id)}</b> {c.body}</p>
+                    {(c.user_id === myId || admin) && (
+                      <button className="icon-btn" onClick={() => dropComment(c)} aria-label="Delete this comment">
+                        <Icon name="close" size={16} />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {features.social && (
+              <form className="comment-form" onSubmit={postComment}>
+                <input
+                  className="caption-input" value={saying} onChange={(e) => setSaying(e.target.value)}
+                  placeholder="Add a comment" maxLength={1000} enterKeyHint="send" aria-label="Comment"
+                />
+              </form>
+            )}
+            {said.length > 0 && <p className="note">From the shared link</p>}
             {said.length > 0 && (
               <ul className="comment-list">
                 {said.map((c) => (
                   <li key={c.id}>
                     <p><b>{c.author || 'A visitor'}</b> {c.body}</p>
-                    <button
-                      className="icon-btn"
-                      onClick={() => deleteComment(c.id).catch((e) => setNotice({ text: e.message }))}
-                      aria-label="Delete this note"
-                    >
-                      <Icon name="close" size={16} />
-                    </button>
+                    {admin && c.user_id && (
+                      <button
+                        className="pill-btn"
+                        onClick={() => block({ id: c.user_id }, { comments: false }, `${c.author || 'They'} can no longer leave notes`)}
+                      >
+                        Block
+                      </button>
+                    )}
+                    {!guest && (
+                      <button
+                        className="icon-btn"
+                        onClick={() => deleteComment(c.id).catch((e) => setNotice({ text: e.message }))}
+                        aria-label="Delete this note"
+                      >
+                        <Icon name="close" size={16} />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
-            <input
-              className="caption-input"
-              value={captions[viewing] ?? ''}
-              onChange={(e) => setCaption(album.id, viewing, e.target.value)}
-              placeholder="Add a caption"
-              maxLength={200}
-              enterKeyHint="done"
-              aria-label="Caption"
-            />
+            {limited ? (
+              captions[viewing] && <p className="caption">{captions[viewing]}</p>
+            ) : (
+              <input
+                className="caption-input"
+                value={captions[viewing] ?? ''}
+                onChange={(e) => setCaption(album.id, viewing, e.target.value)}
+                placeholder="Add a caption"
+                maxLength={200}
+                enterKeyHint="done"
+                aria-label="Caption"
+              />
+            )}
           </div>
           <footer className="preview-actions">
             {!canLinkViewed ? (
@@ -434,6 +699,12 @@ export default function Album({ albumId }) {
                 </button>
                 <button className="text-btn" disabled={busy} onClick={() => save([viewing])}>Save to phone</button>
               </>
+            )}
+            {/* Lead everyone's front page with this photo, for the season showing now. */}
+            {canPin && (
+              <button className="text-btn" onClick={togglePin}>
+                {pinnedHere ? 'Unpin from the front page' : `Pin to the front page${seasonName ? ` for ${seasonName}` : ''}`}
+              </button>
             )}
           </footer>
         </div>
@@ -463,6 +734,48 @@ export default function Album({ albumId }) {
         <p className="note">To place photos by hand, tap Select, choose them, then Move.</p>
       </Sheet>
 
+      <Sheet open={pending.length > 0} onClose={cancelPending} title={`Add to ${album.name}`} modal>
+        <div className="pending-grid">
+          {pending.map((r) => (
+            <span key={r.id} className="pending-thumb">
+              <img src={r.previewUrl} alt="" draggable={false} />
+              {isVideo(r) && <span className="clip"><Icon name="play" size={12} /> {clock(r.duration)}</span>}
+              <button onClick={() => unpick(r)} aria-label="Take this one off"><Icon name="close" size={14} /></button>
+            </span>
+          ))}
+          <button className="pending-more" onClick={() => fileInput.current.click()} aria-label="Choose more">
+            <Icon name="plus" size={22} />
+          </button>
+        </div>
+        {secret && <p className="note">This album is secret: only its people will see these.</p>}
+        <button className="primary block" onClick={submitPending}>
+          Add {countText(pending)} to {album.name}
+        </button>
+      </Sheet>
+
+      <Sheet open={choosingPeople} onClose={() => setChoosingPeople(false)} title="Who can see this album" modal>
+        <div className="chips" role="radiogroup" aria-label="Who can see it">
+          <button role="radio" aria-checked={!secretOn} className={`chip small ${secretOn ? '' : 'on'}`} onClick={() => setSecretOn(false)}>
+            Everyone
+          </button>
+          <button role="radio" aria-checked={secretOn} className={`chip small ${secretOn ? 'on' : ''}`} onClick={() => setSecretOn(true)}>
+            <Icon name="lock" size={14} /> Only these people
+          </button>
+        </div>
+        {secretOn ? (
+          <>
+            <PeoplePicker people={people} value={chosen} onChange={setChosen} locked={admin ? [] : [myId]} placeholder="Add someone: type a name" />
+            <p className="note">
+              Only the people here can see this album, add to it and hear about it{admin ? '' : ", and Hugpix's admin can see it too"}.
+              Secret albums can't have share links{share ? '; this one’s link stops working' : ''}.
+            </p>
+          </>
+        ) : (
+          <p className="note">Everyone in Hugpix can see this album.</p>
+        )}
+        <button className="primary block" onClick={savePeople}>Save</button>
+      </Sheet>
+
       <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete album?" modal>
         <p className="hint">
           “{album.name}” and its {ids.length} photo{ids.length === 1 ? '' : 's'} will be removed from the app.
@@ -489,7 +802,7 @@ export default function Album({ albumId }) {
         onChange={(e) => {
           const files = [...e.target.files]
           e.target.value = ''
-          addPhotos(files)
+          choosePhotos(files)
         }}
       />
     </div>

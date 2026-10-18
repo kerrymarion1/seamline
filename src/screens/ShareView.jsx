@@ -4,12 +4,13 @@ import Logo from '../components/Logo'
 import PhotoPager from '../components/PhotoPager'
 import Sheet from '../components/Sheet'
 import {
-  addComment, downloadUrl, fetchMyFavorites, fetchShare, fetchShareExtras, markViewed, publicUrl, rememberedName, setFavorite,
-  useCloud, visitorUpload,
+  addComment, downloadUrl, fetchMedia, fetchMyFavorites, fetchShare, fetchShareExtras, markViewed, publicUrl, rememberLink, requestUploads,
+  setFavorite, signOut, useCloud, visitorUpload,
 } from '../lib/cloud'
 import { clock, countText, isVideo } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
 import { downloadZip } from '../lib/share'
+import { SignIn } from './SignIn'
 
 function Heart({ on, onToggle, className = '' }) {
   return (
@@ -27,10 +28,12 @@ function Heart({ on, onToggle, className = '' }) {
   )
 }
 
-// The page a visitor lands on from a shared link. No sign-in, no editor:
-// just the photos and videos, full size on tap, with download buttons.
+// The page a visitor lands on from a shared link. No editor: just the photos
+// and videos, full size on tap, with download buttons. Anyone can look and
+// heart; adding photos and leaving notes need signing in, and the library's
+// say-so (see seamline_rights).
 export default function ShareView({ token }) {
-  const { session } = useCloud()
+  const { session, uploader } = useCloud()
   const [share, setShare] = useState(undefined) // undefined = loading, null = not found
   const [error, setError] = useState(null)
   const [viewing, setViewing] = useState(null)
@@ -39,37 +42,45 @@ export default function ShareView({ token }) {
   const scroller = useRef(null)
   const [liked, setLiked] = useState(() => new Set())
   const fileInput = useRef(null)
-  const PIN_KEY = `seamline:pin:${token}`
-  const [pin, setPin] = useState(() => sessionStorage.getItem(PIN_KEY) ?? '')
-  const [askPin, setAskPin] = useState(false)
-  const [pinError, setPinError] = useState(null)
+  const [signingIn, setSigningIn] = useState(false)
   const [adding, setAdding] = useState(null)
-  // The album's note and this visitor's own comments; null where not available.
+  // The album's note, what this person may do, and their own comments; null where not available.
   const [extras, setExtras] = useState(null)
-  const [author, setAuthor] = useState(rememberedName)
+  const rights = extras?.rights
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
 
-  // Check the PIN before opening the photo picker, so a wrong one is caught first.
-  const startAdding = async (candidate = pin) => {
-    if (!candidate) return setAskPin(true)
-    // Already checked in this visit: open the photo picker straight away.
-    if (sessionStorage.getItem(PIN_KEY) === candidate) return fileInput.current.click()
-    setPinError(null)
-    setAdding('Checking PIN')
-    try {
-      await visitorUpload(token, candidate, null)
-      sessionStorage.setItem(PIN_KEY, candidate)
-      setPin(candidate)
-      setAskPin(false)
-      fileInput.current.click()
-    } catch (e) {
-      sessionStorage.removeItem(PIN_KEY)
-      setPinError(e.message)
-      setAskPin(true)
+  // Signed out: sign in. Not allowed yet: ask the album's owner, once.
+  const startAdding = async () => {
+    setError(null)
+    if (!session) return setSigningIn(true)
+    if (rights && !rights.upload) {
+      if (extras.requested) return
+      setAdding('Asking')
+      try {
+        const answer = await requestUploads(token)
+        if (answer === 'allowed') {
+          setExtras(await fetchShareExtras(token))
+          fileInput.current.click()
+        } else if (answer === 'pending') {
+          setExtras((x) => ({ ...x, requested: true }))
+        } else {
+          setError('This album is not taking photos right now.')
+        }
+      } catch (e) {
+        setError(e.message)
+      }
+      setAdding(null)
+      return
     }
-    setAdding(null)
+    fileInput.current.click()
   }
+  const waiting = session && rights && !rights.upload && extras?.requested
+  const addLabel = !session
+    ? 'Sign in to add your photos'
+    : rights && !rights.upload
+      ? waiting ? 'Asked · waiting for approval' : 'Ask to add photos'
+      : 'Add your photos'
 
   const addFiles = async (files) => {
     setError(null)
@@ -77,11 +88,11 @@ export default function ShareView({ token }) {
     for (const [i, file] of files.entries()) {
       setAdding(`Adding ${i + 1} of ${files.length}`)
       try {
-        const item = await visitorUpload(token, pin, file)
+        const item = await visitorUpload(token, file)
         if (item) setShare((sh) => ({ ...sh, items: [...sh.items, item] }))
       } catch (e) {
         failed = e.message
-        if (e.wrongPin) break
+        if (e.refused) break
       }
     }
     setAdding(null)
@@ -97,16 +108,22 @@ export default function ShareView({ token }) {
 
   useEffect(() => {
     fetchMyFavorites(token).then((ids) => setLiked(new Set(ids))).catch(() => {})
-    fetchShareExtras(token).then(setExtras).catch(() => {})
     markViewed(token).catch(() => {})
   }, [token])
+
+  // What this person may do changes as they sign in or out.
+  const userId = session?.user.id
+  useEffect(() => {
+    fetchShareExtras(token).then(setExtras).catch(() => {})
+    if (userId) setSigningIn(false)
+  }, [token, userId])
 
   const comment = async (item) => {
     if (!draft.trim()) return
     setSending(true)
     setError(null)
     try {
-      const made = await addComment(token, item.id, author.trim(), draft.trim())
+      const made = await addComment(token, item.id, draft.trim())
       setExtras((x) => ({ ...x, comments: [...x.comments, made] }))
       setDraft('')
     } catch (e) {
@@ -132,10 +149,11 @@ export default function ShareView({ token }) {
   }
 
   useEffect(() => {
-    if (share?.title) document.title = `${share.title} · Seamline`
-  }, [share])
+    if (share?.title) document.title = `${share.title} · Hugpix`
+    if (share) rememberLink(token, share.title)
+  }, [share, token])
 
-  if (share === undefined) return <div className="splash"><Logo as="div" /></div>
+  if (share === undefined) return <div className="splash"><Logo as="div" loop /></div>
   if (!share || (share.items.length === 0 && !share.allow_uploads)) {
     return (
       <div className="screen">
@@ -164,7 +182,7 @@ export default function ShareView({ token }) {
       const files = []
       for (const [i, it] of stills.entries()) {
         setZipping(`Fetching ${i + 1} of ${stills.length}`)
-        const res = await fetch(publicUrl(it.path))
+        const res = await fetchMedia(publicUrl(it.path))
         if (!res.ok) throw new Error('A photo could not be downloaded')
         // Keep names unique inside the zip.
         files.push(new File([await res.blob()], `${String(i + 1).padStart(2, '0')}-${it.name}`, { type: 'image/jpeg' }))
@@ -180,9 +198,10 @@ export default function ShareView({ token }) {
     <div className="screen shareview">
       {/* A way out of the page: into the app, at the albums when signed in. */}
       <nav className="shareview-nav">
-        <a className="pill-btn" href={session ? '/albums' : '/'}>
-          <Icon name="back" size={16} /> {session ? 'All albums' : 'Open Seamline'}
+        <a className="pill-btn" href={uploader ? '/albums' : '/'}>
+          <Icon name="back" size={16} /> {uploader ? 'All albums' : 'Open Hugpix'}
         </a>
+        {session && !uploader && <button className="pill-btn" onClick={signOut}>Sign out</button>}
       </nav>
       <header className="shareview-head">
         <h1>{share.title || 'Shared photos'}</h1>
@@ -237,12 +256,12 @@ export default function ShareView({ token }) {
 
       <footer className="shareview-foot">
         {share.allow_uploads && (
-          <button className="secondary add-photos" onClick={() => startAdding()} disabled={!!adding}>
-            <Icon name="plus" size={20} /> {adding ?? 'Add your photos'}
+          <button className="secondary add-photos" onClick={startAdding} disabled={!!adding || !!waiting}>
+            {!waiting && <Icon name="plus" size={20} />} {adding ?? addLabel}
           </button>
         )}
         {error && <p className="preview-error" role="alert">{error}</p>}
-        Made with <a href="/">Seamline</a>
+        Made with <a href="/">Hugpix</a>
       </footer>
 
       {single ? (
@@ -255,21 +274,8 @@ export default function ShareView({ token }) {
         </button>
       ) : null}
 
-      <Sheet open={askPin} onClose={() => setAskPin(false)} title="Enter the PIN" modal>
-        <p className="hint">Ask the person who shared this album for its PIN to add your own photos.</p>
-        <input
-          className="field pin-field"
-          inputMode="numeric"
-          maxLength={8}
-          placeholder="PIN"
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-          onKeyDown={(e) => e.key === 'Enter' && pin.length >= 4 && startAdding(pin)}
-        />
-        {pinError && <p className="preview-error" role="alert">{pinError}</p>}
-        <button className="primary block" disabled={pin.length < 4 || !!adding} onClick={() => startAdding(pin)}>
-          {adding ?? 'Continue'}
-        </button>
+      <Sheet open={signingIn && !session} onClose={() => setSigningIn(false)} title="Sign in" modal>
+        <SignIn intro="Sign in to add your photos or leave a note. Anyone can look without signing in." />
       </Sheet>
       <input
         ref={fileInput}
@@ -311,23 +317,25 @@ export default function ShareView({ token }) {
                     ))}
                   </ul>
                 )}
-                <form
-                  className="comment-form"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    comment(viewed)
-                  }}
-                >
-                  <input
-                    className="caption-input name" value={author} onChange={(e) => setAuthor(e.target.value)}
-                    placeholder="Your name" maxLength={60} autoComplete="name" aria-label="Your name"
-                  />
-                  <input
-                    className="caption-input" value={draft} onChange={(e) => setDraft(e.target.value)}
-                    placeholder="Leave a note about this photo" maxLength={600} enterKeyHint="send" aria-label="Note"
-                  />
-                  <button className="pill-btn" disabled={sending || !draft.trim()}>{sending ? 'Sending' : 'Send'}</button>
-                </form>
+                {!session ? (
+                  <button className="pill-btn" onClick={() => setSigningIn(true)}>Sign in to leave a note</button>
+                ) : rights && !rights.comment ? (
+                  <p className="note">You can no longer leave notes on this album.</p>
+                ) : (
+                  <form
+                    className="comment-form"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      comment(viewed)
+                    }}
+                  >
+                    <input
+                      className="caption-input" value={draft} onChange={(e) => setDraft(e.target.value)}
+                      placeholder="Leave a note about this photo" maxLength={600} enterKeyHint="send" aria-label="Note"
+                    />
+                    <button className="pill-btn" disabled={sending || !draft.trim()}>{sending ? 'Sending' : 'Send'}</button>
+                  </form>
+                )}
                 {error && <p className="preview-error" role="alert">{error}</p>}
               </>
             )}

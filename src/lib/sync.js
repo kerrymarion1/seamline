@@ -1,4 +1,4 @@
-import { cleanPhotos, ensurePhotos, ensureThumbs, getCloud, publicUrl, refreshPhotos, supabase } from './cloud'
+import { cleanPhotos, ensurePhotos, ensureThumbs, fetchMedia, getCloud, publicUrl, refreshPhotos, releasePhotos, supabase } from './cloud'
 import { previewOf } from './images'
 import { addImages, applyRemote, clearTombstone, getState, historyProjects, tombstones } from './store'
 
@@ -69,28 +69,62 @@ async function pull(synced) {
   if (data.length) write('cursor', data.at(-1).synced_at)
 }
 
+// Secret albums this device holds that the server no longer shows us: we
+// were taken out of them. They leave this device without being deleted
+// anywhere else. Ones made here and not yet sent are left alone.
+async function dropHidden(synced) {
+  if (!getCloud().features.secret) return
+  const held = getState().albums.filter((a) => a.secret && synced[`album:${a.id}`])
+  if (!held.length) return
+  const { data, error } = await supabase
+    .from('seamline_docs').select('id').eq('kind', 'album').eq('deleted', false).eq('data->>secret', 'true')
+  if (error) return
+  const visible = new Set(data.map((row) => row.id))
+  const gone = held.filter((a) => !visible.has(a.id))
+  if (!gone.length) return
+  applyRemote({ removed: gone.map((a) => ({ kind: 'album', id: a.id })) })
+  for (const a of gone) delete synced[`album:${a.id}`]
+}
+
 async function push(synced) {
-  const { library } = getCloud()
+  const { library, guest } = getCloud()
   const local = getState()
   const rows = []
   for (const [kind, list] of Object.entries(LISTS)) {
+    // A guest only adds to albums and makes their own; the database keeps
+    // nothing else they send, so nothing else is sent.
+    if (guest && kind !== 'album') continue
     for (const doc of local[list]) {
       const stamp = stampOf(doc)
       if (stamp <= (synced[`${kind}:${doc.id}`] ?? 0)) continue
-      // Its photos must be online before another device is told about it.
-      await ensurePhotos(photoIdsOf(doc).map((id) => local.images[id]).filter(Boolean))
+      // Its photos must be online before another device is told about it. A
+      // secret album's are marked as its own, so only its people see them;
+      // photos used anywhere else are everyone's again.
+      const secret = kind === 'album' && doc.secret ? doc.id : null
+      const ids = photoIdsOf(doc)
+      await ensurePhotos(ids.map((id) => local.images[id]).filter(Boolean), undefined, { album: secret })
+      if (!secret) await releasePhotos(ids)
       rows.push({ library, kind, id: doc.id, data: doc, deleted: false, updated_at: new Date(stamp).toISOString(), stamp })
     }
   }
-  const tombs = tombstones()
+  // A guest can delete only albums they made; the database ignores the rest.
+  const tombs = guest ? tombstones().filter((t) => t.kind === 'album') : tombstones()
   for (const t of tombs) {
     rows.push({ library, kind: t.kind, id: t.id, data: {}, deleted: true, updated_at: new Date(t.at).toISOString(), stamp: t.at })
   }
   if (!rows.length) return
-  const { error } = await supabase.from('seamline_docs').upsert(rows.map(({ stamp, ...row }) => row))
-  if (error) throw new Error(error.message)
-  for (const row of rows) synced[`${row.kind}:${row.id}`] = row.stamp
-  for (const t of tombs) clearTombstone(t.kind, t.id)
+  const send = (list) => supabase.from('seamline_docs').upsert(list.map(({ stamp, ...row }) => row))
+  let sent = rows
+  const { error } = await send(rows)
+  if (error) {
+    // One refused change (a secret album we were just taken out of) must not
+    // hold up the rest: send them one by one and keep what goes through.
+    sent = []
+    for (const row of rows) if (!(await send([row])).error) sent.push(row)
+    if (!sent.length) throw new Error(error.message)
+  }
+  for (const row of sent) synced[`${row.kind}:${row.id}`] = row.stamp
+  for (const row of sent) if (row.deleted) clearTombstone(row.kind, row.id)
 }
 
 // Fetch the full file of photos this device only holds a small copy of, and
@@ -104,7 +138,7 @@ export async function ensureLocal(ids) {
   const one = async (id) => {
     const old = getState().images[id]
     try {
-      const res = await fetch(old.remote)
+      const res = await fetchMedia(old.remote)
       if (!res.ok) return
       const blob = new Blob([await res.blob()], { type: 'image/jpeg' })
       const previewBlob = await previewOf(blob)
@@ -142,7 +176,7 @@ async function fetchMissing() {
     try {
       if (row.kind === 'video') {
         // Only the still is downloaded; the video plays from its online copy.
-        const still = await fetch(publicUrl(row.poster))
+        const still = await fetchMedia(publicUrl(row.poster))
         if (!still.ok) continue
         const previewBlob = await still.blob()
         addImages([{
@@ -153,7 +187,7 @@ async function fetchMissing() {
         continue
       }
       if (row.thumb && !inCollage.has(id)) {
-        const small = await fetch(publicUrl(row.thumb))
+        const small = await fetchMedia(publicUrl(row.thumb))
         if (!small.ok) continue
         const previewBlob = await small.blob()
         addImages([{
@@ -162,7 +196,7 @@ async function fetchMissing() {
         }])
         continue
       }
-      const res = await fetch(publicUrl(row.path))
+      const res = await fetchMedia(publicUrl(row.path))
       if (!res.ok) continue
       const blob = new Blob([await res.blob()], { type: 'image/jpeg' })
       const previewBlob = await previewOf(blob)
@@ -196,6 +230,7 @@ export async function syncNow() {
     const synced = read('synced', {})
     await refreshPhotos()
     await pull(synced)
+    await dropHidden(synced)
     await push(synced)
     write('synced', synced)
     await fetchMissing()
@@ -205,7 +240,7 @@ export async function syncNow() {
     for (const doc of [...local.projects, ...local.albums, ...local.presets, ...historyProjects()]) {
       for (const id of photoIdsOf(doc)) used.add(id)
     }
-    await cleanPhotos(used)
+    await cleanPhotos(used, new Set(local.albums.map((a) => a.id)))
     setStatus({ state: 'idle', lastSync: Date.now() })
   } catch (err) {
     setStatus({ state: 'idle', error: err.message || 'Could not sync' })

@@ -1,69 +1,45 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
+import {
+  AlbumName, AlbumsInvite, ago, CoverCycle, Dock, Editorial, leadOf, Mosaic, News, openAlbum, Stack, Who,
+} from '../components/HomeLayouts'
 import Icon from '../components/Icon'
 import Logo from '../components/Logo'
+import NotifyNudge from '../components/NotifyNudge'
+import PeoplePicker from '../components/PeoplePicker'
+import SeasonDecor from '../components/SeasonDecor'
 import Sheet from '../components/Sheet'
 import StripView from '../components/StripView'
 import { FormatPicker, Stepper, TemplateThumb } from '../editor/panels'
 import { MAX_SPOTS, templatesFor } from '../lib/cells'
 import { greeting, newsSince, rememberNow } from '../lib/activity'
-import { useCloud, userName } from '../lib/cloud'
+import { useCloud, usePinned, userName } from '../lib/cloud'
+import { usePeople } from '../lib/people'
+import { announceAlbum } from '../lib/push'
 import { countText, isVideo } from '../lib/images'
-import { fadeIn, morph } from '../lib/motion'
+import { fadeIn } from '../lib/motion'
 import { FRAME_W, frameH, FORMATS } from '../lib/scene'
+import { useActiveSeason, useLayout } from '../lib/theme'
 import { lastUpload, createAlbum, createProject, deleteProject, duplicateProject, fillEmptySpots, useStore } from '../lib/store'
 
 // A collage's thumbnail is fitted inside this box.
 const THUMB_W = 124
 const THUMB_H = 140
 
-function ago(t) {
-  const m = Math.round((Date.now() - t) / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m} min ago`
-  if (m < 60 * 24) return `${Math.round(m / 60)} h ago`
-  return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-}
-
-const COVER_SECONDS = 4.5
-
-// The large picture on the leading album: it moves slowly through the album's
-// photos, each fading in over the last. `urls` are the pictures to show in turn.
-function CoverCycle({ urls }) {
-  const [step, setStep] = useState(0)
-  const moving = urls.length > 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches
-  useEffect(() => {
-    if (!moving) return
-    const t = setInterval(() => !document.hidden && setStep((s) => s + 1), COVER_SECONDS * 1000)
-    return () => clearInterval(t)
-  }, [moving])
-  const now = urls[step % urls.length]
-  const before = step > 0 ? urls[(step - 1) % urls.length] : null
-  return (
-    <span className="cover-main">
-      {before && <img key={`was-${step}`} src={before} alt="" draggable={false} />}
-      <img key={step} className={moving ? 'drift' : undefined} src={now} alt="" draggable={false} />
-    </span>
-  )
-}
-
-// The newest album leads as one wide cover; the rest follow in a grid.
-function AlbumCard({ album, images, featured, index }) {
-  const ids = album.imageIds.filter((id) => images[id])
-  // The leading cover keeps two photos at the side and cycles the rest in the large spot.
-  const cycle = featured && ids.length > 0 ? [ids[0], ...ids.slice(3, 9)].map((id) => images[id].previewUrl) : null
+// The Classic layout: the newest album leads as one wide cover; the rest follow in a grid.
+function AlbumCard({ album, images, featured, index, pinned }) {
+  // The leading cover keeps two photos at the side and cycles the rest in the
+  // large spot, or holds the pinned photo there.
+  const lead = featured ? leadOf(album, images, pinned) : null
+  const ids = lead ? lead.ids : album.imageIds.filter((id) => images[id])
+  const cycle = lead?.cycle ?? null
   return (
     <button
       className={`album-card ${featured ? 'featured' : ''}`}
       style={{ '--i': Math.min(index, 8) }}
       data-album={album.id}
       // The card zooms out to become the album's own screen.
-      onClick={(e) => {
-        const card = e.currentTarget
-        morph(() => navigate(`/album/${album.id}`, { animate: false }), {
-          name: 'album', from: () => card, to: () => document.querySelector('.screen.album'),
-        })
-      }}
+      onClick={(e) => openAlbum(album, e.currentTarget)}
     >
       <span className="album-cover">
         {cycle && <CoverCycle key={cycle.join()} urls={cycle} />}
@@ -73,8 +49,8 @@ function AlbumCard({ album, images, featured, index }) {
         {ids.length === 0 && <Icon name="photo" size={featured ? 36 : 28} />}
       </span>
       <div className="album-caption">
-        {featured && <span className="eyebrow">Latest</span>}
-        <h3>{album.name}</h3>
+        {featured && <span className="eyebrow">{pinned && ids[0] === pinned ? 'Pinned' : 'Latest'}</span>}
+        <h3><AlbumName album={album} /></h3>
         <p>
           {countText(ids.map((id) => images[id]))}
           {featured && ids.length > 0 && ` · added ${ago(lastUpload(album))}`}
@@ -85,23 +61,12 @@ function AlbumCard({ album, images, featured, index }) {
   )
 }
 
-function Albums({ albums, images, onNew }) {
-  if (!albums.length) {
-    return (
-      <div className="invite">
-        <div className="pool-art" aria-hidden="true"><i /><i /><i /><i /></div>
-        <h3>Keep a pool of photos</h3>
-        <p>Albums hold photos inside the app, ready to drop into any collage or save back to your phone.</p>
-        <button className="primary" onClick={onNew}>
-          <Icon name="plus" size={20} /> New album
-        </button>
-      </div>
-    )
-  }
+function Albums({ albums, images, onNew, pinned }) {
+  if (!albums.length) return <AlbumsInvite onNew={onNew} />
   return (
     <div className="album-grid">
       {albums.map((a, i) => (
-        <AlbumCard key={a.id} album={a} images={images} featured={i === 0} index={i} />
+        <AlbumCard key={a.id} album={a} images={images} featured={i === 0} index={i} pinned={pinned} />
       ))}
     </div>
   )
@@ -114,9 +79,12 @@ export default function Home() {
   const saveFailed = useStore((s) => s.saveFailed)
   const cloud = useCloud()
   const { session } = cloud
+  const layout = useLayout()
+  useActiveSeason() // redraws with the season's greeting when it changes
   const [namingAlbum, setNamingAlbum] = useState(false)
   const [albumName, setAlbumName] = useState('')
   const [creating, setCreating] = useState(false)
+  const [choosing, setChoosing] = useState(false) // the dock's New: album or collage
   const [name, setName] = useState('')
   const frames = 1 // a collage is a single page
   const [format, setFormat] = useState(FORMATS[0])
@@ -149,77 +117,132 @@ export default function Home() {
   const say = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
   const kept = [...new Set(albums.flatMap((a) => a.imageIds.filter((id) => images[id])))]
   const clips = kept.filter((id) => isVideo(images[id])).length
-  const summary = albums.length || projects.length
+  const stats = albums.length || projects.length
     ? [
         say(albums.length, 'album'), say(kept.length - clips, 'photo'), clips && say(clips, 'video'),
         say(projects.length, 'collage'),
-      ].filter(Boolean).join(' · ')
-    : 'Albums and collages'
+      ].filter(Boolean)
+    : ['Albums and collages']
+  const summary = stats.join(' · ')
 
   const signedInAs = userName(session)
+  const first = signedInAs ? signedInAs.split(' ')[0] : ''
   // What visitors have done since the app was last opened here.
-  const news = cloud.activityLoaded ? newsSince(cloud, albums) : []
+  // People waiting for the admin's approval lead, whenever there are any.
+  const { requests } = cloud
+  const asking = requests.length === 0 ? [] : [{
+    key: 'requests',
+    to: '/settings',
+    text: requests.length === 1
+      ? `${(requests[0].name || requests[0].email).split(' ')[0]} is waiting for approval`
+      : `${requests.length} people are waiting for approval`,
+  }]
+  const news = [...asking, ...(cloud.activityLoaded ? newsSince(cloud, albums, images) : [])]
   useEffect(() => {
     if (cloud.activityLoaded) rememberNow(cloud)
   }, [cloud])
-  const hello = signedInAs ? `${greeting()}, ${signedInAs.split(' ')[0]}` : greeting()
-  // The album something was added to most recently leads; the rest follow in the same order.
-  const latestFirst = [...albums].sort((a, b) => lastUpload(b) - lastUpload(a))
-  const heroId = latestFirst[0]?.imageIds.find((id) => images[id])
+  const hello = first ? `${greeting()}, ${first}` : greeting()
+  // The album something was added to most recently leads; the rest follow in
+  // the same order. A pinned photo's album leads instead, while that photo is
+  // still in it.
+  const pin = usePinned()
+  const pinnedAlbum = pin && images[pin.image] && albums.find((a) => a.id === pin.album && a.imageIds.includes(pin.image))
+  const pinned = pinnedAlbum ? pin.image : null
+  const byLatest = [...albums].sort((a, b) => lastUpload(b) - lastUpload(a))
+  const latestFirst = pinnedAlbum ? [pinnedAlbum, ...byLatest.filter((a) => a !== pinnedAlbum)] : byLatest
+  const heroId = pinned ?? latestFirst[0]?.imageIds.find((id) => images[id])
   const heroUrl = heroId && images[heroId].previewUrl
 
+  // A new album is everyone's, or secret: only the people chosen (and the
+  // admin) ever see it.
+  const [secret, setSecret] = useState(false)
+  const [chosenPeople, setChosenPeople] = useState([])
+  const people = usePeople()
+  const me = session?.user.id
+
   const makeAlbum = () => {
-    const a = createAlbum(albumName)
+    const a = createAlbum(albumName, me, secret ? [me, ...chosenPeople.filter((id) => id !== me)] : null)
+    // Everyone else hears about it, or just its own people when it is secret.
+    // (The share sheet's new albums don't: the photos added to them straight
+    // away are told instead.)
+    announceAlbum(a)
     setNamingAlbum(false)
     setAlbumName('')
+    setSecret(false)
+    setChosenPeople([])
     navigate(`/album/${a.id}`)
   }
 
+  // A guest sees the albums, adds to them and makes their own; no collages.
+  const { guest } = cloud
+  // Stack and Mosaic have a dock at the foot that jumps between the albums and
+  // the collages further down, and shows which of the two is in view.
+  const docked = !guest && (layout === 'stack' || layout === 'mosaic')
+  const body = useRef(null)
+  const shelf = useRef(null)
+  const [inView, setInView] = useState('albums')
+  const onScroll = () => {
+    const b = body.current
+    const top = b.getBoundingClientRect().top
+    const atEnd = b.scrollTop > 0 && b.scrollTop + b.clientHeight >= b.scrollHeight - 4
+    const past = b.scrollTop > 0 && shelf.current.getBoundingClientRect().top < top + b.clientHeight / 2
+    setInView(atEnd || past ? 'collages' : 'albums')
+  }
+  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+  const toCollages = () => shelf.current.scrollIntoView({ behavior, block: 'start' })
+  const toAlbums = () => body.current.scrollTo({ top: 0, behavior })
+
+  const shared = {
+    albums: latestFirst, images, who: signedInAs, greet: greeting(), first, news, pinned,
+    onNewAlbum: () => setNamingAlbum(true),
+  }
+
   return (
-    <div className="screen home ambient">
-      <div className="hero-wash" style={heroUrl ? { backgroundImage: `url("${heroUrl}")` } : undefined} aria-hidden="true" />
-      <header className="home-head">
-        <Logo />
-        {/* Who is signed in; the whole thing opens Settings. */}
-        <button className="who" onClick={() => navigate('/settings')} aria-label={signedInAs ? `Settings, signed in as ${signedInAs}` : 'Settings'}>
-          {signedInAs && <i aria-hidden="true">{signedInAs[0].toUpperCase()}</i>}
-          {signedInAs && <span>{signedInAs}</span>}
-          <Icon name="gear" size={20} />
-        </button>
-      </header>
-      <section className="home-intro">
-        <p className="greeting">{hello}</p>
-        {news.length > 0 ? (
-          <div className="news">
-            <i className="pulse" aria-hidden="true" />
-            {news.map((n) => (
-              <button key={n.key} disabled={!n.albumId} onClick={() => navigate(`/album/${n.albumId}`)}>{n.text}</button>
-            ))}
-          </div>
-        ) : (
-          <p className="home-sub">{summary}</p>
-        )}
-      </section>
+    <div className={`screen home ambient home-${layout}`}>
+      <SeasonDecor />
+      {layout === 'classic' && (
+        <>
+          <div className="hero-wash" style={heroUrl ? { backgroundImage: `url("${heroUrl}")` } : undefined} aria-hidden="true" />
+          <header className="home-head">
+            <Logo />
+            <Who name={signedInAs} />
+          </header>
+          <section className="home-intro">
+            <p className="greeting">{hello}</p>
+            {news.length > 0 ? <News news={news} /> : <p className="home-sub">{summary}</p>}
+          </section>
+        </>
+      )}
       {saveFailed && (
         <p className="banner" role="alert">
           Changes are not being saved on this device. Storage may be full or blocked (private browsing).
         </p>
       )}
 
-      <main className="home-body">
-        <section>
-          <div className="section-head">
-            <h2>Albums{albums.length > 0 && <span className="count">{albums.length}</span>}</h2>
-            {albums.length > 0 && (
-              <button className="pill-btn" onClick={() => setNamingAlbum(true)}>
-                <Icon name="plus" size={16} /> New
-              </button>
+      <main className="home-body" ref={body} onScroll={docked ? onScroll : undefined}>
+        {layout === 'classic' ? (
+          <section>
+            <div className="section-head">
+              <h2>Albums{albums.length > 0 && <span className="count">{albums.length}</span>}</h2>
+              {albums.length > 0 && (
+                <button className="pill-btn" onClick={() => setNamingAlbum(true)}>
+                  <Icon name="plus" size={16} /> New
+                </button>
+              )}
+            </div>
+            <Albums albums={latestFirst} images={images} onNew={shared.onNewAlbum} pinned={pinned} />
+          </section>
+        ) : (
+          <div className="home-layout">
+            {layout === 'editorial' && <Editorial {...shared} stats={stats} onCollages={guest ? null : toCollages} />}
+            {layout === 'stack' && <Stack {...shared} summary={summary} />}
+            {layout === 'mosaic' && (
+              <Mosaic {...shared} collageCount={guest ? 0 : projects.length} onCollages={toCollages} />
             )}
           </div>
-          <Albums albums={latestFirst} images={images} onNew={() => setNamingAlbum(true)} />
-        </section>
+        )}
 
-        <section>
+        {!guest && <section ref={shelf} className="collages">
           <div className="section-head">
             <h2>Collages{projects.length > 0 && <span className="count">{projects.length}</span>}</h2>
             <button className="pill-btn" onClick={() => setCreating(true)}>
@@ -252,8 +275,29 @@ export default function Home() {
               ))}
             </div>
           )}
-        </section>
+        </section>}
       </main>
+
+      {docked && (
+        <Dock on={inView} onAlbums={toAlbums} onCollages={toCollages} onNew={() => setChoosing(true)} icons={layout === 'mosaic'} />
+      )}
+      {/* New here, or notifications still off on this device: ask once in a while. */}
+      <NotifyNudge raised={docked} />
+
+      <Sheet open={choosing} onClose={() => setChoosing(false)} title="New" modal>
+        <div className="new-choice">
+          <button onClick={() => { setChoosing(false); setNamingAlbum(true) }}>
+            <Icon name="photo" size={26} />
+            <b>Album</b>
+            <span>A pool of photos and videos</span>
+          </button>
+          <button onClick={() => { setChoosing(false); setCreating(true) }}>
+            <Icon name="layout" size={26} />
+            <b>Collage</b>
+            <span>Photos laid out on one page</span>
+          </button>
+        </div>
+      </Sheet>
 
       <Sheet open={creating} onClose={() => setCreating(false)} title="New collage" modal>
         <input
@@ -323,9 +367,32 @@ export default function Home() {
           onChange={(e) => setAlbumName(e.target.value)}
           placeholder="Album name"
           enterKeyHint="done"
-          onKeyDown={(e) => e.key === 'Enter' && makeAlbum()}
+          onKeyDown={(e) => e.key === 'Enter' && !secret && makeAlbum()}
         />
-        <button className="primary block" onClick={makeAlbum}>Create album</button>
+        {cloud.features.secret && (
+          <>
+            <div className="chips" role="radiogroup" aria-label="Who can see it">
+              <button role="radio" aria-checked={!secret} className={`chip small ${secret ? '' : 'on'}`} onClick={() => setSecret(false)}>
+                Everyone
+              </button>
+              <button role="radio" aria-checked={secret} className={`chip small ${secret ? 'on' : ''}`} onClick={() => setSecret(true)}>
+                <Icon name="lock" size={14} /> Only people I choose
+              </button>
+            </div>
+            {secret && (
+              <>
+                <PeoplePicker
+                  people={people.filter((p) => p.id !== me)}
+                  value={chosenPeople}
+                  onChange={setChosenPeople}
+                  placeholder="Who's in it? Type a name"
+                />
+                <p className="note">A secret album: only you and the people you choose can see it, add to it or hear about it.</p>
+              </>
+            )}
+          </>
+        )}
+        <button className="primary block" onClick={makeAlbum}>{secret ? 'Create secret album' : 'Create album'}</button>
       </Sheet>
 
       <Sheet open={!!doomed} onClose={() => setDoomed(null)} title="Delete collage?" modal>

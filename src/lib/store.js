@@ -316,13 +316,27 @@ function patchAlbum(id, fn) {
   setState((s) => ({ ...s, albums: s.albums.map((a) => (a.id === id ? { ...fn(a), updatedAt: Date.now() } : a)) }))
 }
 
-export function createAlbum(name) {
-  const album = { id: uid(), name: name?.trim() || 'Untitled album', imageIds: [], createdAt: Date.now(), updatedAt: Date.now() }
+// `createdBy` is the signed-in account making it: a guest may change only the
+// albums they made (the database sets and checks it too). `members` makes it
+// a secret album, seen only by those accounts (and the admin).
+export function createAlbum(name, createdBy = '', members = null) {
+  const album = {
+    id: uid(), name: name?.trim() || 'Untitled album', imageIds: [], createdAt: Date.now(), updatedAt: Date.now(),
+    ...(createdBy ? { createdBy } : null),
+    ...(members ? { secret: true, members } : null),
+  }
   setState((s) => ({ ...s, albums: [album, ...s.albums] }))
   return album
 }
 
 export const renameAlbum = (id, name) => patchAlbum(id, (a) => ({ ...a, name }))
+
+// Who sees an album: everyone (members null), or only these accounts.
+export const setAlbumPeople = (id, members) =>
+  patchAlbum(id, (a) => {
+    const { secret, members: _, ...rest } = a
+    return members ? { ...rest, secret: true, members } : rest
+  })
 
 export function deleteAlbum(id) {
   entomb('album', id)
@@ -374,7 +388,7 @@ export function renameUploader(id, name) {
 }
 
 // An id starts with the moment it was made, so it doubles as "when added".
-const addedAt = (id) => parseInt(id.slice(0, -6), 36) || 0
+export const addedAt = (id) => parseInt(id.slice(0, -6), 36) || 0
 
 // Put an album's photos in order once. The order is kept, and shown on its
 // shared page; photos added afterwards still go to the front.
@@ -472,10 +486,11 @@ export function setImportAlbum(value) {
 }
 
 // File freshly imported photos into the chosen album, creating "Imported"
-// the first time when the setting is automatic.
+// the first time when the setting is automatic. Returns the album, if any.
 export function fileImports(imageIds, by = '') {
-  if (!imageIds.length || state.importAlbum === 'off') return
+  if (!imageIds.length || state.importAlbum === 'off') return null
   let album = state.albums.find((a) => a.id === state.importAlbum)
   if (!album) album = state.albums.find((a) => a.name === 'Imported') ?? createAlbum('Imported')
   addToAlbum(album.id, imageIds, by)
+  return album
 }
