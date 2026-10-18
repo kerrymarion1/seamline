@@ -104,13 +104,13 @@ export function Who({ name }) {
     <span className="who-wrap">
     {features.social && (
       <button className="who-chat" onClick={() => navigate('/news')} aria-label={fresh ? `What's new, ${fresh} new` : "What's new"}>
-        <Icon name="photos" size={20} />
+        <Icon name="photos" size={18} />
         {count(fresh)}
       </button>
     )}
     {features.messages && (
       <button className="who-chat" onClick={() => navigate('/messages')} aria-label={unread ? `Messages, ${unread} unread` : 'Messages'}>
-        <Icon name="comment" size={20} />
+        <Icon name="comment" size={18} />
         {count(unread)}
       </button>
     )}

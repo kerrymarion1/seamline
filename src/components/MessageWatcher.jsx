@@ -8,12 +8,17 @@ import { pushStatus } from '../lib/push'
 import Icon from './Icon'
 
 // While the app is open, a new message from someone else is never missed: a
-// banner drops in with who and what (a tap opens the chat), and, when this
-// device doesn't have notifications on, a chime plays as well. With them on,
-// the phone's own notification already makes the sound, so the app doesn't
-// chime on top of it. Chats arrive the moment they change where the database
-// sends live updates, and are looked at again every so often anyway. When
-// the app is closed, the notification alone tells them.
+// banner drops in with who and what (a tap opens the chat), except where the
+// count of unread chats or the chats themselves are on screen already; and,
+// when this device doesn't have notifications on, a chime plays as well.
+// With them on, the phone's own notification already makes the sound, so
+// the app doesn't chime on top of it. Chats arrive the moment they change
+// where the database sends live updates, and are looked at again every so
+// often anyway. When the app is closed, the notification alone tells them.
+
+// The pages showing the count of unread chats (the front page) or the chats.
+const COUNTED = ['/', '/albums', '/messages']
+
 export default function MessageWatcher() {
   const chats = useChats()
   const { session, features } = useCloud()
@@ -58,7 +63,8 @@ export default function MessageWatcher() {
     if (!fresh.length || document.hidden) return
     if (!pushOn) chime()
     const chat = fresh[0]
-    if (window.location.pathname !== `/messages/${chat.id}`) setBanner(chat)
+    const here = window.location.pathname
+    if (!COUNTED.includes(here) && here !== `/messages/${chat.id}`) setBanner(chat)
     // Only `chats` moving on is news; the rest is read as it stands then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chats])

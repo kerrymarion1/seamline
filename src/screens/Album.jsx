@@ -5,7 +5,7 @@ import Avatar from '../components/Avatar'
 import LinkSheet from '../components/LinkSheet'
 import PeoplePicker from '../components/PeoplePicker'
 import PhotoPager from '../components/PhotoPager'
-import { reactedText, ReactionRow } from '../components/Reactions'
+import { ReactionRow } from '../components/Reactions'
 import {
   adoptVisitorItems, canLink, deleteComment, fetchMedia, findShare, me, progressText, publicUrl, refreshComments,
   refreshHearts, refreshShares, removeVisitorItem, setPinned, setRights, stopShare, useCloud, usePinned, visitorItems,
@@ -63,6 +63,9 @@ export default function Album({ albumId }) {
   // Hearts and comments from the family, live while the album is open.
   const [social, setSocial] = useState({ hearts: [], comments: [] })
   const [saying, setSaying] = useState('')
+  // A comment or the caption being written, for one photo: { kind, photo }.
+  const [writing, setWriting] = useState(null)
+  const writingHere = writing?.photo === viewing ? writing.kind : null
   useEffect(() => {
     if (!features.social) return
     let live = true
@@ -593,13 +596,16 @@ export default function Album({ albumId }) {
               {viewed.width} × {viewed.height}{isVideo(viewed) && ` · ${clock(viewed.duration)}`}
               {hearts.byItem[viewing] > 0 && <span className="hearts inline"><Icon name="heart" size={13} /> {hearts.byItem[viewing]}</span>}
             </div>
-            {limited ? (
-              <span className="topbar-spacer" />
-            ) : (
-              <button className="icon-btn" onClick={() => remove([viewing])} aria-label="Remove from album">
-                <Icon name="trash" size={20} />
+            <span className="viewer-tools">
+              <button className="icon-btn" disabled={busy} onClick={() => save([viewing])} aria-label="Save to phone">
+                <Icon name="download" size={20} />
               </button>
-            )}
+              {!limited && (
+                <button className="icon-btn" onClick={() => remove([viewing])} aria-label="Remove from album">
+                  <Icon name="trash" size={20} />
+                </button>
+              )}
+            </span>
           </header>
           <PhotoPager
             slides={shown.map((id) => ({ key: id, src: images[id].url, poster: images[id].previewUrl, video: isVideo(images[id]) }))}
@@ -608,10 +614,17 @@ export default function Album({ albumId }) {
           />
           <div className="viewer-notes">
             {addedBy[viewing] && <p className="note centre">Added by {uploaderName(addedBy[viewing])}</p>}
+            {/* The caption, when there is one: a tap edits it. */}
+            {captions[viewing] && writingHere !== 'caption' && (
+              limited ? (
+                <p className="caption">{captions[viewing]}</p>
+              ) : (
+                <button className="caption" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>{captions[viewing]}</button>
+              )
+            )}
             {features.social && (
               <div className="family-react">
                 <ReactionRow reactions={reactedHere} me={myId} onPick={react} />
-                {reactedHere.length > 0 && <span className="note">{reactedText(reactedHere, myId, firstOf)} reacted</span>}
               </div>
             )}
             {famNotes[viewing]?.length > 0 && (
@@ -629,13 +642,48 @@ export default function Album({ albumId }) {
                 ))}
               </ul>
             )}
-            {features.social && (
+            {/* Writing a comment or a caption: small buttons until tapped, so the photo keeps the room. */}
+            {writingHere === 'comment' ? (
               <form className="comment-form" onSubmit={postComment}>
                 <input
                   className="caption-input" value={saying} onChange={(e) => setSaying(e.target.value)}
-                  placeholder="Add a comment" maxLength={1000} enterKeyHint="send" aria-label="Comment"
+                  onBlur={() => !saying.trim() && setWriting(null)}
+                  placeholder="Add a comment" maxLength={1000} enterKeyHint="send" aria-label="Comment" autoFocus
                 />
               </form>
+            ) : writingHere === 'caption' ? (
+              <input
+                className="caption-input"
+                value={captions[viewing] ?? ''}
+                onChange={(e) => setCaption(album.id, viewing, e.target.value)}
+                onBlur={() => setWriting(null)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                placeholder="Add a caption"
+                maxLength={200}
+                enterKeyHint="done"
+                aria-label="Caption"
+                autoFocus
+              />
+            ) : (
+              (features.social || canLinkViewed || (!limited && !captions[viewing])) && (
+                <div className="viewer-write">
+                  {features.social && (
+                    <button className="chip small" onClick={() => setWriting({ kind: 'comment', photo: viewing })}>
+                      <Icon name="comment" size={15} /> Comment
+                    </button>
+                  )}
+                  {!limited && !captions[viewing] && (
+                    <button className="chip small" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>
+                      <Icon name="edit" size={15} /> Caption
+                    </button>
+                  )}
+                  {canLinkViewed && (
+                    <button className="chip small share" onClick={linkPhoto}>
+                      <Icon name="link" size={15} /> Share link
+                    </button>
+                  )}
+                </div>
+              )
             )}
             {said.length > 0 && <p className="note">From the shared link</p>}
             {said.length > 0 && (
@@ -664,40 +712,15 @@ export default function Album({ albumId }) {
                 ))}
               </ul>
             )}
-            {limited ? (
-              captions[viewing] && <p className="caption">{captions[viewing]}</p>
-            ) : (
-              <input
-                className="caption-input"
-                value={captions[viewing] ?? ''}
-                onChange={(e) => setCaption(album.id, viewing, e.target.value)}
-                placeholder="Add a caption"
-                maxLength={200}
-                enterKeyHint="done"
-                aria-label="Caption"
-              />
-            )}
           </div>
-          <footer className="preview-actions">
-            {!canLinkViewed ? (
-              <button className="primary block" disabled={busy} onClick={() => save([viewing])}>
-                <Icon name="download" size={20} /> Save to phone
-              </button>
-            ) : (
-              <>
-                <button className="primary block" onClick={linkPhoto}>
-                  <Icon name="link" size={20} /> Share link
-                </button>
-                <button className="text-btn" disabled={busy} onClick={() => save([viewing])}>Save to phone</button>
-              </>
-            )}
-            {/* Lead everyone's front page with this photo, for the season showing now. */}
-            {canPin && (
+          {/* Lead everyone's front page with this photo, for the season showing now. */}
+          {canPin && (
+            <footer className="preview-actions">
               <button className="text-btn" onClick={togglePin}>
                 {pinnedHere ? 'Unpin from the front page' : `Pin to the front page${seasonName ? ` for ${seasonName}` : ''}`}
               </button>
-            )}
-          </footer>
+            </footer>
+          )}
         </div>
       )}
 

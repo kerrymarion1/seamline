@@ -228,6 +228,28 @@ function Chat({ chatId, people }) {
   const line = useRef(null)
   const reloadReactions = useRef(() => {})
 
+  // The open reactions sit under their message; scrolled into sight when
+  // that is the last one.
+  useEffect(() => {
+    if (reactingTo) list.current?.querySelector('.bubble.reacting .reaction-row')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [reactingTo])
+
+  // The open reactions close at a tap anywhere else, or Escape. (A tap on
+  // their own message is left to it: that closes them too.)
+  useEffect(() => {
+    if (!reactingTo) return
+    const away = (e) => {
+      if (!e.target.closest('.bubble.reacting')) setReactingTo(null)
+    }
+    const key = (e) => e.key === 'Escape' && setReactingTo(null)
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', key)
+    }
+  }, [reactingTo])
+
   // The latest messages, then each new one the moment it is sent (with a
   // slower look every so often in case the live line drops), who has read
   // what, and who is typing.
@@ -430,9 +452,6 @@ function Chat({ chatId, people }) {
                   setReactingTo((r) => (r === m.id ? null : m.id))
                 }}
               >
-                {reactingTo === m.id && (
-                  <ReactionRow reactions={reactions.filter((r) => r.message === m.id)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact />
-                )}
                 {showName && (
                   <b className="bubble-who"><Avatar person={personIn(people, m.sender)} size={18} /> {first(nameOf(m.sender))}</b>
                 )}
@@ -451,6 +470,9 @@ function Chat({ chatId, people }) {
                   me={me}
                   onPick={(emoji) => canReact && reactTo(m, emoji)}
                 />
+                {reactingTo === m.id && (
+                  <ReactionRow reactions={reactions.filter((r) => r.message === m.id)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact />
+                )}
               </div>
             </Fragment>
           )

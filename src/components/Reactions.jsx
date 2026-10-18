@@ -52,11 +52,3 @@ export function ReactionChips({ reactions, me, onPick }) {
     </div>
   )
 }
-
-// Who reacted, in words: "You and Mia", "Mia, Sam and 2 more".
-export function reactedText(reactions, me, firstOf) {
-  const ids = [...reactions.filter((r) => r.user_id === me), ...reactions.filter((r) => r.user_id !== me)].map((r) => r.user_id)
-  const names = ids.map(firstOf)
-  if (names.length <= 2) return names.join(' and ')
-  return `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`
-}

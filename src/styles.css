@@ -1460,6 +1460,22 @@ select.field { appearance: none; -webkit-appearance: none; }
   overflow-y: auto;
 }
 .viewer-notes:empty { display: none; }
+/* In an album the photo fills most of the screen, with who added it and the
+   reactions just beneath; comments, the caption and what can be done with
+   it follow, and scroll up into view. */
+.viewer { padding-top: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; }
+.viewer > .topbar { position: sticky; top: 0; z-index: 2; height: calc(56px + var(--safe-t)); padding-top: var(--safe-t); background: var(--bg); }
+.viewer > .viewer-body { flex: 1 0 auto; min-height: max(280px, calc(100svh - var(--safe-t) - 168px)); }
+.viewer > .viewer-notes { flex: none; max-height: none; overflow: visible; }
+/* Top right: save to phone, and remove. The title stays centred over two. */
+.viewer-tools { flex: none; display: flex; }
+.viewer > .topbar:has(.viewer-tools > :nth-child(2)) .preview-title { padding-left: 40px; }
+/* Comment and caption: small buttons until tapped. */
+.viewer-write { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.viewer-write .chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; color: var(--text-2); font-size: 13px; }
+.viewer-write .chip.share { color: var(--accent); }
+.viewer-notes button.caption { align-self: center; max-width: 100%; padding: 2px 8px; border-radius: 8px; overflow-wrap: anywhere; }
+.viewer-notes button.caption:active { background: var(--surface-2); }
 .caption { color: var(--text); font-size: 15px; text-align: center; }
 .comment-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .comment-list li {
@@ -1617,7 +1633,7 @@ img.fade.in { opacity: 1; }
   .who .who-bell { animation: none; }
 }
 .who svg { flex: none; width: 18px; height: 18px; }
-.who:not(:has(i)) { padding: 0 12px; }
+.who:not(:has(i, img)) { padding: 0 12px; }
 @media (hover: hover) {
   .who:hover { border-color: rgb(var(--accent-rgb) / 0.6); }
 }
@@ -3036,17 +3052,17 @@ img.fade.in { opacity: 1; }
 
 /* ---------- the way to Messages, beside who is signed in ---------- */
 
-.who-wrap { display: inline-flex; flex: none; align-items: center; gap: 8px; max-width: 62%; }
+.who-wrap { display: inline-flex; flex: 0 1 auto; min-width: 0; align-items: center; gap: 5px; }
 .who-wrap .who { max-width: none; min-width: 0; flex: 0 1 auto; }
 .who-chat {
   position: relative;
   flex: none;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--edge);
-  border-radius: 20px;
+  border-radius: 18px;
   background: var(--surface);
   color: var(--text-2);
 }
@@ -3066,6 +3082,17 @@ img.fade.in { opacity: 1; }
   font-weight: 800;
   line-height: 18px;
   text-align: center;
+}
+/* Phones: the name gets the room. The gear goes (the pill still opens
+   Settings), and the wordmark is a little smaller. */
+@media (max-width: 479px) {
+  .who > svg { display: none; }
+  .who { gap: 7px; padding-right: 12px; }
+  .home-head { gap: 8px; }
+  .home-head .logo { font-size: 32px; }
+  .mo-head { left: 10px; right: 10px; gap: 8px; }
+  .mo-brand { padding: 5px 11px 6px; }
+  .mo-brand .logo { font-size: 28px; }
 }
 
 /* ---------- secret albums ---------- */
@@ -3113,7 +3140,13 @@ img.avatar { background: var(--surface-2); }
 
 /* ---------- hearts and comments on a photo, from the family ---------- */
 
-.family-react { display: flex; align-items: center; justify-content: center; gap: 10px; }
+/* The six in one row across, who reacted underneath. */
+.family-react { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.family-react .reaction-row { flex-wrap: nowrap; width: 100%; max-width: 300px; }
+.family-react .reaction-row button { flex: 1 1 0; min-width: 0; height: 32px; justify-content: center; padding: 0 3px; border-radius: 16px; }
+.family-react .reaction-row .emoji { width: 18px; height: 18px; }
+.family-react .reaction-row small { font-size: 11px; }
+.family-react .note { font-size: 12px; }
 .heart-toggle {
   display: inline-flex;
   align-items: center;
@@ -3156,11 +3189,11 @@ img.avatar { background: var(--surface-2); }
 .reaction-row button.on .reaction-emoji { animation: heart-pop 0.4s var(--spring); }
 .reaction-emoji { display: inline-flex; font-size: 20px; line-height: 1; }
 .emoji { display: inline-block; flex: none; object-fit: contain; vertical-align: -4px; }
-/* Over a message: a floating bar just above it. */
+/* Under a message: a floating bar just below it. */
 .bubble { position: relative; }
 .bubble .reaction-row.compact {
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   left: 0;
   z-index: 3;
   flex-wrap: nowrap;
