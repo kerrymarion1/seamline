@@ -6,8 +6,10 @@
 //   { album, name, photos, videos }      someone added photos or videos to one
 //     (either with `members` when the album is secret)
 //   { chat, text, photo }                someone sent a message
-//   { album, name, photo, heart: true }  someone hearted a photo in an album
+//   { album, name, photo, reaction }     someone reacted to a photo in an album
+//     (older apps send heart: true for ❤️)
 //   { album, name, photo, comment }      someone commented on one
+//   { chat, message, reaction }          someone reacted to a message
 //
 // An album is everyone's news unless it is secret: then only the people in
 // it hear. A message is heard only by the people in its chat. A heart goes
@@ -27,6 +29,7 @@ const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
 const count = (n: unknown) => Math.max(0, Math.min(10000, Math.round(Number(n) || 0)));
+const REACTIONS = ["❤️", "😂", "😮", "😢", "👍", "🎉"];
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -42,6 +45,7 @@ Deno.serve(async (req: Request) => {
   let body: {
     album?: string; name?: string; photos?: number; videos?: number; made?: boolean; members?: unknown[];
     chat?: string; text?: string; photo?: boolean | string; heart?: boolean; comment?: string;
+    message?: string; reaction?: string;
   };
   try {
     body = await req.json();
@@ -56,6 +60,23 @@ Deno.serve(async (req: Request) => {
     if (!/^[0-9a-f-]{36}$/.test(chatId)) return reply({ error: "Bad request" }, 400);
     const { data: chat } = await admin.from("seamline_chats").select("id, library, members, title").eq("id", chatId).maybeSingle();
     if (!chat || chat.library !== library || !chat.members.includes(auth.user.id)) return reply({ error: "Not in that chat." }, 403);
+
+    // A reaction to a message: only whoever sent it hears.
+    if (body.message) {
+      const messageId = String(body.message);
+      const emoji = String(body.reaction ?? "");
+      if (!/^[0-9a-f-]{36}$/.test(messageId) || !REACTIONS.includes(emoji)) return reply({ error: "Bad request" }, 400);
+      const { data: message } = await admin.from("seamline_messages").select("sender, body, photo").eq("id", messageId).eq("chat", chat.id).maybeSingle();
+      if (!message || message.sender === auth.user.id) return reply({ ok: true });
+      const what = message.body ? `“${String(message.body).replace(/\s+/g, " ").trim().slice(0, 60)}”` : "your photo";
+      await notifyLibrary(admin, library, {
+        title: chat.members.length > 2 ? (chat.title || "Group chat") : nameOf(auth.user),
+        body: `${firstName(auth.user)} ${emoji} ${message.body ? `your message ${what}` : what}`,
+        url: `/messages/${chat.id}`,
+        tag: `chat-${chat.id}-react`,
+      }, auth.user.id, [String(message.sender)]);
+      return reply({ ok: true });
+    }
     const text = String(body.text ?? "").replace(/\s+/g, " ").trim().slice(0, 140);
     const said = text || (body.photo ? "Sent a photo" : "");
     if (!said) return reply({ error: "Bad request" }, 400);
@@ -69,8 +90,9 @@ Deno.serve(async (req: Request) => {
     return reply({ ok: true });
   }
 
-  // A heart or a comment on one photo in an album the caller can see.
-  if (typeof body.photo === "string" && (body.heart === true || typeof body.comment === "string")) {
+  // A reaction or a comment on one photo in an album the caller can see.
+  const reaction = REACTIONS.includes(String(body.reaction ?? "")) ? String(body.reaction) : body.heart === true ? "❤️" : "";
+  if (typeof body.photo === "string" && (reaction || typeof body.comment === "string")) {
     const albumId = String(body.album ?? "");
     const photo = body.photo;
     if (!/^[\w-]{1,64}$/.test(albumId) || !/^[\w-]{1,64}$/.test(photo)) return reply({ error: "Bad request" }, 400);
@@ -98,7 +120,9 @@ Deno.serve(async (req: Request) => {
     if (only.length) {
       await notifyLibrary(admin, library, {
         title: String(data.name ?? body.name ?? "An album").slice(0, 80),
-        body: said ? `${firstName(auth.user)}: ${said}` : `${firstName(auth.user)} loved your photo`,
+        body: said
+          ? `${firstName(auth.user)}: ${said}`
+          : reaction === "❤️" ? `${firstName(auth.user)} loved your photo` : `${firstName(auth.user)} reacted ${reaction} to your photo`,
         url: `/album/${albumId}?photo=${encodeURIComponent(photo)}`,
         tag: `photo-${albumId}-${photo}`,
       }, auth.user.id, only);

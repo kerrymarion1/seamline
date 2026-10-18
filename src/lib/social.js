@@ -9,30 +9,38 @@ import { getCloud, supabase } from './cloud'
 const on = () => !!supabase && !!getCloud().features.social
 const library = () => getCloud().library
 
-// Everything for one album: { hearts: [{ photo, user_id }], comments: [...] }.
+// The six ways to react, to a photo or a message. Each person has one at a
+// time on each, which they can change or take back.
+export const REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🎉']
+
+// Everything for one album: { hearts: [{ photo, user_id, emoji }], comments }.
+// (`hearts` are all the reactions; before there were six they were all ❤️.)
 export async function fetchAlbumSocial(albumId) {
   if (!on()) return { hearts: [], comments: [] }
+  const columns = getCloud().features.reactions ? 'photo, user_id, emoji, created_at' : 'photo, user_id, created_at'
   const [hearts, comments] = await Promise.all([
-    supabase.from('seamline_reactions').select('photo, user_id, created_at').eq('album', albumId),
+    supabase.from('seamline_reactions').select(columns).eq('album', albumId),
     supabase.from('seamline_photo_comments').select('*').eq('album', albumId).order('created_at'),
   ])
-  return { hearts: hearts.data ?? [], comments: comments.data ?? [] }
+  return { hearts: (hearts.data ?? []).map((h) => ({ emoji: '❤️', ...h })), comments: comments.data ?? [] }
 }
 
 const tell = (body) => {
   if (getCloud().features.push) supabase.functions.invoke('seamline-notify', { body }).catch(() => {})
 }
 
-export async function setHeart(album, photo, hearted) {
-  if (hearted) {
-    const { error } = await supabase.from('seamline_reactions').insert({ library: library(), album: album.id, photo })
-    if (error && error.code !== '23505') throw new Error(error.message) // 23505: hearted already
-    if (!error) tell({ album: album.id, name: album.name, photo, heart: true })
-  } else {
-    const { error } = await supabase.from('seamline_reactions').delete()
-      .eq('album', album.id).eq('photo', photo).eq('user_id', getCloud().session.user.id)
+// React to a photo with `emoji`, change to another, or (null) take it back.
+export async function setReaction(album, photo, emoji) {
+  const me = getCloud().session.user.id
+  if (!emoji) {
+    const { error } = await supabase.from('seamline_reactions').delete().eq('album', album.id).eq('photo', photo).eq('user_id', me)
     if (error) throw new Error(error.message)
+    return
   }
+  const row = { library: library(), album: album.id, photo, user_id: me, ...(getCloud().features.reactions ? { emoji } : null) }
+  const { error } = await supabase.from('seamline_reactions').upsert(row, { onConflict: 'library,album,photo,user_id' })
+  if (error) throw new Error(error.message)
+  tell({ album: album.id, name: album.name, photo, reaction: emoji, heart: emoji === '❤️' })
 }
 
 export async function addPhotoComment(album, photo, text) {

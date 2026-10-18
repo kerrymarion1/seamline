@@ -560,7 +560,7 @@ export default function Welcome() {
       </section>
 
       <footer className="wl-foot">
-        <p>Hugpix · photo albums and collages, shared with family and friends.</p>
+        <p>Hugpix · photo albums, shared with family and friends.</p>
         <p className="wl-credit">Produced by <span>Kerry Marion</span></p>
       </footer>
     </div>

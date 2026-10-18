@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { navigate } from '../App'
 import {
-  AlbumName, AlbumsInvite, ago, CoverCycle, Dock, Editorial, leadOf, Mosaic, News, openAlbum, Stack, Who,
+  AlbumName, AlbumsInvite, ago, CoverCycle, Editorial, leadOf, Mosaic, News, openAlbum, Stack, Who,
 } from '../components/HomeLayouts'
 import Icon from '../components/Icon'
 import Logo from '../components/Logo'
@@ -9,22 +9,14 @@ import NotifyNudge from '../components/NotifyNudge'
 import PeoplePicker from '../components/PeoplePicker'
 import SeasonDecor from '../components/SeasonDecor'
 import Sheet from '../components/Sheet'
-import StripView from '../components/StripView'
-import { FormatPicker, Stepper, TemplateThumb } from '../editor/panels'
-import { MAX_SPOTS, templatesFor } from '../lib/cells'
 import { greeting, newsSince, rememberNow } from '../lib/activity'
 import { useCloud, usePinned, userName } from '../lib/cloud'
-import { usePeople } from '../lib/people'
-import { announceAlbum } from '../lib/push'
 import { countText, isVideo } from '../lib/images'
 import { fadeIn } from '../lib/motion'
-import { FRAME_W, frameH, FORMATS } from '../lib/scene'
+import { usePeople } from '../lib/people'
+import { announceAlbum } from '../lib/push'
 import { useActiveSeason, useLayout } from '../lib/theme'
-import { lastUpload, createAlbum, createProject, deleteProject, duplicateProject, fillEmptySpots, useStore } from '../lib/store'
-
-// A collage's thumbnail is fitted inside this box.
-const THUMB_W = 124
-const THUMB_H = 140
+import { addedAt, createAlbum, lastUpload, uploaderName, useStore } from '../lib/store'
 
 // The Classic layout: the newest album leads as one wide cover; the rest follow in a grid.
 function AlbumCard({ album, images, featured, index, pinned }) {
@@ -72,8 +64,44 @@ function Albums({ albums, images, onNew, pinned }) {
   )
 }
 
+// The end of the page: the latest photos and videos from every album, newest
+// first, each with who added it and where. A tap opens it in its album.
+function NewestPhotos({ albums, images }) {
+  const seen = new Set()
+  const newest = []
+  for (const album of albums) {
+    for (const id of album.imageIds) {
+      if (!images[id] || seen.has(id)) continue
+      seen.add(id)
+      newest.push({ id, album, at: addedAt(id) })
+    }
+  }
+  newest.sort((a, b) => b.at - a.at)
+  const shown = newest.slice(0, 24)
+  if (!shown.length) return null
+  return (
+    <section className="newest">
+      <div className="section-head"><h2>Newest photos</h2></div>
+      <div className="newest-row">
+        {shown.map(({ id, album }) => {
+          const by = uploaderName(album.addedBy?.[id]).split(' ')[0]
+          return (
+            <button key={id} className="newest-tile" onClick={() => navigate(`/album/${album.id}?photo=${encodeURIComponent(id)}`)}>
+              <img className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
+              {isVideo(images[id]) && <span className="newest-clip"><Icon name="play" size={12} /></span>}
+              <span className="newest-label">
+                {by && <b>{by}</b>}
+                <small><AlbumName album={album} /></small>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 export default function Home() {
-  const projects = useStore((s) => s.projects)
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
   const saveFailed = useStore((s) => s.saveFailed)
@@ -83,46 +111,14 @@ export default function Home() {
   useActiveSeason() // redraws with the season's greeting when it changes
   const [namingAlbum, setNamingAlbum] = useState(false)
   const [albumName, setAlbumName] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [choosing, setChoosing] = useState(false) // the dock's New: album or collage
-  const [name, setName] = useState('')
-  const frames = 1 // a collage is a single page
-  const [format, setFormat] = useState(FORMATS[0])
-  const presets = useStore((s) => s.presets)
-  const [fillFrom, setFillFrom] = useState(null) // album whose photos fill the new layout
-  const isPhoto = (id) => images[id] && !isVideo(images[id])
-  const fillable = albums.filter((a) => a.imageIds.some(isPhoto))
-  // Four photos until the number is set by hand.
-  const [photos, setPhotos] = useState(null)
-  const [template, setTemplate] = useState(null)
-  const count = photos ?? 4
-  const templates = templatesFor(frames, count)
-  // A layout picked for other numbers may not exist for these ones.
-  const chosen = templates.find((t) => t.id === template)
-  const [doomed, setDoomed] = useState(null)
 
-  const create = (preset) => {
-    const p = createProject({ name, format: format.id, template: chosen?.id, count, preset })
-    const source = fillable.find((a) => a.id === fillFrom)
-    if (source) fillEmptySpots(p.id, source.imageIds.filter(isPhoto))
-    setFillFrom(null)
-    setCreating(false)
-    setName('')
-    setPhotos(null)
-    setTemplate(null)
-    navigate(`/p/${p.id}`)
-  }
-
-  // "3 albums · 41 photos · 2 collages", under the logo.
+  // "3 albums · 41 photos · 2 videos", under the logo.
   const say = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
   const kept = [...new Set(albums.flatMap((a) => a.imageIds.filter((id) => images[id])))]
   const clips = kept.filter((id) => isVideo(images[id])).length
-  const stats = albums.length || projects.length
-    ? [
-        say(albums.length, 'album'), say(kept.length - clips, 'photo'), clips && say(clips, 'video'),
-        say(projects.length, 'collage'),
-      ].filter(Boolean)
-    : ['Albums and collages']
+  const stats = albums.length
+    ? [say(albums.length, 'album'), say(kept.length - clips, 'photo'), clips && say(clips, 'video')].filter(Boolean)
+    : ['Albums of family photos']
   const summary = stats.join(' · ')
 
   const signedInAs = userName(session)
@@ -173,25 +169,6 @@ export default function Home() {
     navigate(`/album/${a.id}`)
   }
 
-  // A guest sees the albums, adds to them and makes their own; no collages.
-  const { guest } = cloud
-  // Stack and Mosaic have a dock at the foot that jumps between the albums and
-  // the collages further down, and shows which of the two is in view.
-  const docked = !guest && (layout === 'stack' || layout === 'mosaic')
-  const body = useRef(null)
-  const shelf = useRef(null)
-  const [inView, setInView] = useState('albums')
-  const onScroll = () => {
-    const b = body.current
-    const top = b.getBoundingClientRect().top
-    const atEnd = b.scrollTop > 0 && b.scrollTop + b.clientHeight >= b.scrollHeight - 4
-    const past = b.scrollTop > 0 && shelf.current.getBoundingClientRect().top < top + b.clientHeight / 2
-    setInView(atEnd || past ? 'collages' : 'albums')
-  }
-  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
-  const toCollages = () => shelf.current.scrollIntoView({ behavior, block: 'start' })
-  const toAlbums = () => body.current.scrollTo({ top: 0, behavior })
-
   const shared = {
     albums: latestFirst, images, who: signedInAs, greet: greeting(), first, news, pinned,
     onNewAlbum: () => setNamingAlbum(true),
@@ -219,7 +196,7 @@ export default function Home() {
         </p>
       )}
 
-      <main className="home-body" ref={body} onScroll={docked ? onScroll : undefined}>
+      <main className="home-body">
         {layout === 'classic' ? (
           <section>
             <div className="section-head">
@@ -234,131 +211,17 @@ export default function Home() {
           </section>
         ) : (
           <div className="home-layout">
-            {layout === 'editorial' && <Editorial {...shared} stats={stats} onCollages={guest ? null : toCollages} />}
+            {layout === 'editorial' && <Editorial {...shared} stats={stats} />}
             {layout === 'stack' && <Stack {...shared} summary={summary} />}
-            {layout === 'mosaic' && (
-              <Mosaic {...shared} collageCount={guest ? 0 : projects.length} onCollages={toCollages} />
-            )}
+            {layout === 'mosaic' && <Mosaic {...shared} />}
           </div>
         )}
 
-        {!guest && <section ref={shelf} className="collages">
-          <div className="section-head">
-            <h2>Collages{projects.length > 0 && <span className="count">{projects.length}</span>}</h2>
-            <button className="pill-btn" onClick={() => setCreating(true)}>
-              <Icon name="plus" size={16} /> New
-            </button>
-          </div>
-          {/* With none yet, the New button above is all there is; no empty box. */}
-          {projects.length === 0 ? null : (
-            <div className="shelf">
-              {projects.map((p) => (
-                <article key={p.id} className="card">
-                  <button className="card-open" onClick={() => navigate(`/p/${p.id}`)} aria-label={`Open ${p.name}`}>
-                    <div className="card-thumb" style={{ height: THUMB_H }}>
-                      <StripView project={p} scale={Math.min(THUMB_W / FRAME_W, THUMB_H / frameH(p))} />
-                    </div>
-                  </button>
-                  <div className="card-meta">
-                    <div>
-                      <h3>{p.name}</h3>
-                      <p>{p.frames > 1 && `${p.frames} frames · `}{ago(p.updatedAt)}</p>
-                    </div>
-                    <button className="icon-btn" onClick={() => duplicateProject(p.id)} aria-label={`Duplicate ${p.name}`}>
-                      <Icon name="copy" size={20} />
-                    </button>
-                    <button className="icon-btn" onClick={() => setDoomed(p)} aria-label={`Delete ${p.name}`}>
-                      <Icon name="trash" size={20} />
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>}
+        <NewestPhotos albums={latestFirst} images={images} />
       </main>
 
-      {docked && (
-        <Dock on={inView} onAlbums={toAlbums} onCollages={toCollages} onNew={() => setChoosing(true)} icons={layout === 'mosaic'} />
-      )}
       {/* New here, or notifications still off on this device: ask once in a while. */}
-      <NotifyNudge raised={docked} />
-
-      <Sheet open={choosing} onClose={() => setChoosing(false)} title="New" modal>
-        <div className="new-choice">
-          <button onClick={() => { setChoosing(false); setNamingAlbum(true) }}>
-            <Icon name="photo" size={26} />
-            <b>Album</b>
-            <span>A pool of photos and videos</span>
-          </button>
-          <button onClick={() => { setChoosing(false); setCreating(true) }}>
-            <Icon name="layout" size={26} />
-            <b>Collage</b>
-            <span>Photos laid out on one page</span>
-          </button>
-        </div>
-      </Sheet>
-
-      <Sheet open={creating} onClose={() => setCreating(false)} title="New collage" modal>
-        <input
-          className="field"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Name (optional)"
-          enterKeyHint="done"
-        />
-        <div className="row">
-          <div className="label">Shape</div>
-          <FormatPicker value={format.h} onChange={setFormat} />
-        </div>
-        <div className="row">
-          <div>
-            <div className="label">Photos</div>
-            <div className="hint">Spots in the layout</div>
-          </div>
-          <Stepper value={count} min={1} max={MAX_SPOTS} onChange={setPhotos} />
-        </div>
-        <div className="label">Layout</div>
-        <div className="templates">
-          <button className={`tpl ${chosen ? '' : 'on'}`} onClick={() => setTemplate(null)}>
-            <span className="tpl-art none" style={{ width: 40, height: 50 }} />
-            <span>Freeform</span>
-          </button>
-          {templates.map((t) => (
-            <button key={t.id} className={`tpl ${chosen === t ? 'on' : ''}`} onClick={() => setTemplate(t.id)}>
-              <TemplateThumb template={t} frames={frames} count={count} ratio={format.h / 1080} />
-              <span>{t.name}</span>
-            </button>
-          ))}
-        </div>
-        {fillable.length > 0 && (
-          <>
-            <div className="label">Fill from album</div>
-            <div className="chips">
-              <button className={`chip ${fillFrom ? '' : 'on'}`} onClick={() => setFillFrom(null)}>Empty</button>
-              {fillable.map((a) => (
-                <button key={a.id} className={`chip ${fillFrom === a.id ? 'on' : ''}`} onClick={() => setFillFrom(a.id)}>
-                  {a.name}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-        {presets.length > 0 && (
-          <>
-            <div className="label">Or start from your template</div>
-            <div className="templates">
-              {presets.map((t) => (
-                <button key={t.id} className="tpl" onClick={() => create(t)}>
-                  <span className="preset-art"><StripView project={t} scale={50 / t.frameH} /></span>
-                  <span>{t.name}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-        <button className="primary block" onClick={() => create()}>Create</button>
-      </Sheet>
+      <NotifyNudge />
 
       <Sheet open={namingAlbum} onClose={() => setNamingAlbum(false)} title="New album" modal>
         <input
@@ -393,19 +256,6 @@ export default function Home() {
           </>
         )}
         <button className="primary block" onClick={makeAlbum}>{secret ? 'Create secret album' : 'Create album'}</button>
-      </Sheet>
-
-      <Sheet open={!!doomed} onClose={() => setDoomed(null)} title="Delete collage?" modal>
-        <p className="hint">“{doomed?.name}” will be removed from this device. This cannot be undone.</p>
-        <button
-          className="primary block danger"
-          onClick={() => {
-            deleteProject(doomed.id)
-            setDoomed(null)
-          }}
-        >
-          Delete
-        </button>
       </Sheet>
     </div>
   )

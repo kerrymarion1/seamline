@@ -5,6 +5,7 @@ import Avatar from '../components/Avatar'
 import LinkSheet from '../components/LinkSheet'
 import PeoplePicker from '../components/PeoplePicker'
 import PhotoPager from '../components/PhotoPager'
+import { reactedText, ReactionRow } from '../components/Reactions'
 import {
   adoptVisitorItems, canLink, deleteComment, fetchMedia, findShare, me, progressText, publicUrl, refreshComments,
   refreshHearts, refreshShares, removeVisitorItem, setPinned, setRights, stopShare, useCloud, usePinned, visitorItems,
@@ -14,7 +15,7 @@ import { clock, countText, importFile, importMedia, isVideo } from '../lib/image
 import { fadeIn, morph } from '../lib/motion'
 import { personIn, usePeople } from '../lib/people'
 import { announceUpload } from '../lib/push'
-import { addPhotoComment, fetchAlbumSocial, removePhotoComment, setHeart, watchAlbumSocial } from '../lib/social'
+import { addPhotoComment, fetchAlbumSocial, removePhotoComment, setReaction, watchAlbumSocial } from '../lib/social'
 import { syncNow } from '../lib/sync'
 import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
@@ -160,23 +161,16 @@ export default function Album({ albumId }) {
     })
   }
 
-  // The family's heart and comments on the photo being looked at.
-  const heartedBy = famHearts[viewing] ?? []
-  const iHeart = heartedBy.includes(myId)
+  // The family's reactions and comments on the photo being looked at.
+  const reactedHere = social.hearts.filter((h) => h.photo === viewing)
   const firstOf = (id) => (id === myId ? 'You' : (personIn(people, id)?.name ?? 'Someone').split(' ')[0])
-  const heartNames = (() => {
-    const names = [...(iHeart ? [myId] : []), ...heartedBy.filter((id) => id !== myId)].map(firstOf)
-    if (names.length <= 2) return names.join(' and ')
-    return `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`
-  })()
-  const toggleHeart = () => {
+  const react = (emoji) => {
     const photo = viewing
-    const next = !iHeart
     setSocial((s) => ({
       ...s,
-      hearts: next ? [...s.hearts, { photo, user_id: myId }] : s.hearts.filter((h) => !(h.photo === photo && h.user_id === myId)),
+      hearts: [...s.hearts.filter((h) => !(h.photo === photo && h.user_id === myId)), ...(emoji ? [{ photo, user_id: myId, emoji }] : [])],
     }))
-    setHeart(album, photo, next).catch((e) => {
+    setReaction(album, photo, emoji).catch((e) => {
       setNotice({ text: e.message })
       fetchAlbumSocial(album.id).then(setSocial).catch(() => {})
     })
@@ -435,7 +429,7 @@ export default function Album({ albumId }) {
       {ids.length === 0 && added.length === 0 ? (
         <div className="empty">
           <h2>An empty pool</h2>
-          <p>Add photos here once and reuse them in any collage. Videos can be kept here too.</p>
+          <p>Add photos and videos here for everyone to see.</p>
           <button className="primary" onClick={() => fileInput.current.click()}>
             <Icon name="plus" size={20} /> Add photos or videos
           </button>
@@ -616,11 +610,8 @@ export default function Album({ albumId }) {
             {addedBy[viewing] && <p className="note centre">Added by {uploaderName(addedBy[viewing])}</p>}
             {features.social && (
               <div className="family-react">
-                <button className={`heart-toggle ${iHeart ? 'on' : ''}`} onClick={toggleHeart} aria-pressed={iHeart} aria-label={iHeart ? 'Take your heart back' : 'Heart this photo'}>
-                  <Icon name="heart" size={20} />
-                  {heartedBy.length > 0 && <span>{heartedBy.length}</span>}
-                </button>
-                {heartNames && <span className="note">{heartNames} {heartedBy.length === 1 && !iHeart ? 'loves' : 'love'} this</span>}
+                <ReactionRow reactions={reactedHere} me={myId} onPick={react} />
+                {reactedHere.length > 0 && <span className="note">{reactedText(reactedHere, myId, firstOf)} reacted</span>}
               </div>
             )}
             {famNotes[viewing]?.length > 0 && (

@@ -481,24 +481,6 @@ h1, h2, h3, p {
 .invite p { max-width: 300px; color: var(--text-2); }
 .invite button { margin-top: 10px; }
 
-/* Collages sit in a grid like the albums: nothing on the page scrolls sideways. */
-.shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
-.shelf .card { min-width: 0; border: 1px solid var(--edge); transition: border-color 0.2s; }
-.shelf .card-open { padding: 12px 12px 0; }
-.shelf .card-thumb {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-/* The name gets the full width; duplicate and delete sit beneath it. */
-.shelf .card-meta { flex-wrap: wrap; padding: 10px 6px 6px 14px; }
-.shelf .card-meta > div { flex: 1 1 100%; }
-.shelf .card-meta h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shelf .card-meta .icon-btn { width: 40px; height: 40px; }
-.shelf .card-meta .icon-btn:first-of-type { margin-left: auto; }
 .card {
   flex: none;
   overflow: hidden;
@@ -1040,7 +1022,7 @@ h1, h2, h3, p {
 }
 .album-card:active { transform: scale(0.98); }
 @media (hover: hover) {
-  .album-card:hover, .shelf .card:hover { border-color: rgb(var(--accent-rgb) / 0.6); }
+  .album-card:hover { border-color: rgb(var(--accent-rgb) / 0.6); }
   .album-card:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35); }
 }
 .album-caption { padding: 0 8px; }
@@ -1841,7 +1823,7 @@ img.fade.in { opacity: 1; }
 .gate-links .secondary { justify-content: flex-start; padding: 0 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* Front page: the card asking to turn on notifications, sliding up from the
-   foot (above the dock where there is one). */
+   foot. */
 .nudge {
   position: fixed;
   left: 12px;
@@ -1917,66 +1899,62 @@ img.fade.in { opacity: 1; }
 .print-pic .cover-main, .mo-hero .cover-main { display: block; width: 100%; height: 100%; }
 
 /* Back and forward share one arrow, turned round. */
-.fan-lead .primary svg, .ed-ghost svg, .mo-go svg { transform: scaleX(-1); }
+.fan-lead .primary svg, .ed-ghost svg { transform: scaleX(-1); }
 
-/* Stack, and Mosaic: a dock floats at the foot of the page, so the page ends above it. */
-.home-stack .home-body, .home-mosaic .home-body { padding-bottom: calc(var(--safe-b) + 112px); }
-.dock {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--safe-b) + 22px);
-  z-index: 10;
+/* The end of the front page: the newest photos from every album, in a row
+   that scrolls sideways. */
+.newest-row {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-  border: 1px solid var(--edge);
-  border-radius: 32px;
-  background: rgb(34 34 38 / 0.86);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
-  transform: translateX(-50%);
-  animation: dock-in 0.5s var(--spring) 0.2s both;
+  gap: 10px;
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 0 16px;
+  scrollbar-width: none;
 }
-@keyframes dock-in {
-  from { opacity: 0; transform: translate(-50%, 24px); }
+.newest-row::-webkit-scrollbar { display: none; }
+.newest-tile {
+  position: relative;
+  flex: none;
+  width: 132px;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface-2);
+  scroll-snap-align: start;
+  transition: transform 0.15s var(--spring);
 }
-.dock button {
-  height: 48px;
-  min-width: 48px;
-  padding: 0 18px;
-  display: grid;
-  place-items: center;
-  border-radius: 24px;
-  color: var(--text-2);
-  font-size: 14px;
-  font-weight: 600;
-  transition: background 0.2s, color 0.2s, transform 0.15s var(--spring);
-}
-.dock.icons button { padding: 0; }
-.dock button.on { background: var(--surface-3); color: var(--text); }
-.dock .dock-new { margin-left: 2px; padding: 0; background: var(--accent); color: var(--on-accent); }
-.dock button:active { transform: scale(0.94); }
-
-/* The dock's New: an album or a collage. */
-.new-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.new-choice button {
+.newest-tile:active { transform: scale(0.97); }
+.newest-tile > img { width: 100%; height: 100%; object-fit: cover; }
+.newest-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  padding: 16px;
-  border: 1px solid var(--edge);
-  border-radius: 20px;
-  background: var(--surface-2);
+  gap: 1px;
+  padding: 26px 9px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  color: #fff;
   text-align: left;
-  transition: transform 0.15s var(--spring), border-color 0.2s;
 }
-.new-choice button:active { transform: scale(0.97); }
-.new-choice svg { margin-bottom: 8px; color: var(--accent); }
-.new-choice b { font-size: 16px; }
-.new-choice span { color: var(--text-2); font-size: 13px; }
+.newest-label b, .newest-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.newest-label b { font-size: 13px; font-weight: 600; }
+.newest-label small { color: #d6d3cc; font-size: 11.5px; }
+.newest-clip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
 
 /* ----- Stack: the latest album dealt out as a fan of prints ----- */
 
@@ -2191,7 +2169,7 @@ img.fade.in { opacity: 1; }
   font-weight: 600;
 }
 .ed-ghost:active { background: var(--surface-2); }
-.home-editorial .collages .section-head h2 {
+.home-editorial .newest .section-head h2 {
   background: none;
   color: var(--text);
   font: 400 34px/1 'Instrument Serif', serif;
@@ -2201,7 +2179,7 @@ img.fade.in { opacity: 1; }
 /* ----- Mosaic: every album a photo tile, edge to edge ----- */
 
 .home-mosaic .home-body { padding-top: 6px; padding-left: 6px; padding-right: 6px; }
-.home-mosaic .collages { padding: 0 10px; }
+.home-mosaic .newest { padding: 0 10px; }
 .mosaic { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: dense; gap: 6px; }
 @media (min-width: 700px) {
   .mosaic { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -2344,17 +2322,6 @@ img.fade.in { opacity: 1; }
 .mo-label b, .mo-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mo-label b { font-size: 14px; font-weight: 600; }
 .mo-label small { color: #c9c6bf; font-size: 12px; }
-.mo-collages {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: space-between;
-  padding: 16px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: var(--on-accent);
-}
-.mo-big { font: 400 66px/0.8 'Instrument Serif', serif; }
-.mo-go { display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 700; }
 .mo-new {
   display: flex;
   flex-direction: column;
@@ -2371,7 +2338,7 @@ img.fade.in { opacity: 1; }
 .mo-news .news { margin-top: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .print, .print-tile, .ed-hello > *, .ed-list li, .mo-tile, .mo-hello > *, .dock { animation: none; }
+  .print, .print-tile, .ed-hello > *, .ed-list li, .mo-tile, .mo-hello > * { animation: none; }
 }
 
 /* ----- Settings: the front page choice, each with a sketch of its page ----- */
@@ -3165,6 +3132,88 @@ img.avatar { background: var(--surface-2); }
 @keyframes heart-pop { 40% { scale: 1.35; } }
 .comment-list.family li { align-items: flex-start; padding-left: 8px; }
 .comment-list.family .avatar { margin-top: 1px; }
+
+/* ---------- reactions: six to choose from (see components/Reactions.jsx) ---------- */
+
+.reaction-row { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; }
+.reaction-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 40px;
+  min-width: 44px;
+  padding: 0 9px;
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-weight: 700;
+  font-size: 13px;
+  transition: background 0.2s, transform 0.15s var(--spring);
+}
+.reaction-row button:active { transform: scale(0.88); }
+.reaction-row button.has { background: var(--surface-2); color: var(--text); }
+.reaction-row button.on { background: rgb(var(--accent-rgb) / 0.22); box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--text); }
+.reaction-row button.on .reaction-emoji { animation: heart-pop 0.4s var(--spring); }
+.reaction-emoji { display: inline-flex; font-size: 20px; line-height: 1; }
+.emoji { display: inline-block; flex: none; object-fit: contain; vertical-align: -4px; }
+/* Over a message: a floating bar just above it. */
+.bubble { position: relative; }
+.bubble .reaction-row.compact {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 3;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--edge);
+  border-radius: 24px;
+  background: var(--surface-3);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  animation: wl-fade-up 0.25s var(--spring) both;
+}
+.bubble.mine .reaction-row.compact { left: auto; right: 0; }
+.bubble .reaction-row.compact button { height: 36px; min-width: 36px; padding: 0 6px; background: none; }
+.bubble .reaction-row.compact button.on { background: rgb(var(--accent-rgb) / 0.25); box-shadow: none; }
+.bubble .reaction-row.compact small { display: none; }
+.bubble.reacting { z-index: 2; }
+.reaction-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.reaction-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.18);
+  font-size: 13px;
+}
+.bubble:not(.mine) .reaction-chips button { background: var(--surface-3); }
+.reaction-chips button.on { box-shadow: inset 0 0 0 1.5px currentColor; }
+.reaction-chips small { font-size: 11px; font-weight: 700; }
+
+/* ---------- what's new (see screens/News.jsx) ---------- */
+
+.news .topbar .preview-title { flex: 1; }
+.news-list { flex: 1; overflow-y: auto; padding: 0 12px calc(var(--safe-b) + 24px); }
+.news-day { margin: 18px 6px 6px; color: var(--text-2); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.news-item { position: relative; display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 12px 10px; border-radius: 16px; text-align: left; }
+.news-item:active { background: var(--surface); }
+.news-item.new { background: rgb(var(--accent-rgb) / 0.06); }
+.news-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.news-text { font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+.news-text b { font-weight: 700; }
+.news-main small { color: var(--text-2); font-size: 12.5px; }
+.news-pics { display: flex; gap: 4px; margin-top: 6px; }
+.news-pics img, .news-pics i {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.news-pics i { display: grid; place-items: center; color: var(--text-2); font-size: 13px; font-style: normal; font-weight: 700; }
+.news-dot { position: absolute; top: 18px; right: 12px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
 
 /* ---------- messages: who, typing, seen, photos from albums ---------- */
 

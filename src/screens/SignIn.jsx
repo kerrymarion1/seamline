@@ -78,7 +78,7 @@ export function SignIn({ intro }) {
           ? `${invited && code === invited
               ? 'You have been invited. Any email address works; we will send a link to confirm it.'
               : 'Any email address works, with the invite code you were given. We will send a link to confirm the address.'} Already use Plait? You have an account: sign in with it instead.`
-          : intro ?? 'Sign in with your Hugpix or Plait account. Signing in keeps your albums and collages in step on every device and lets you share links.'}
+          : intro ?? 'Sign in with your Hugpix or Plait account. Signing in keeps your albums in step on every device and lets you share links.'}
       </p>
       {creating && (
         <input

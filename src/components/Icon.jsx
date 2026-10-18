@@ -106,6 +106,15 @@ const paths = {
       <path d="M3.5 7.5v9M20.5 7.5v9" />
     </>
   ),
+  // What's new: a stack of photos.
+  photos: (
+    <>
+      <rect x="7" y="7" width="13" height="12" rx="2.5" />
+      <path d="M4 15.5V6.5A2.5 2.5 0 016.5 4H16" />
+      <circle cx="11.5" cy="11" r="1.3" />
+      <path d="M7.5 17l3.5-3 3 2.5 2-1.5 3.5 3" />
+    </>
+  ),
 }
 
 export default function Icon({ name, size = 24 }) {

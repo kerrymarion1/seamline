@@ -16,6 +16,7 @@ import Gate from './screens/Gate'
 // fetched the first time it is opened, so the app starts sooner.
 const Editor = lazy(() => import('./screens/Editor'))
 const Messages = lazy(() => import('./screens/Messages'))
+const News = lazy(() => import('./screens/News'))
 const Settings = lazy(() => import('./screens/Settings'))
 const ShareView = lazy(() => import('./screens/ShareView'))
 const Welcome = lazy(() => import('./screens/Welcome'))
@@ -23,7 +24,7 @@ const splash = <div className="splash"><Logo as="div" loop /></div>
 
 // Minimal path router: "/" and "/albums" home, "/album/:id" one album,
 // "/p/:id" the editor, "/settings" account and storage, "/s/:code" a shared link,
-// "/messages" and "/messages/:id" chats between people,
+// "/messages" and "/messages/:id" chats between people, "/news" what's new,
 // "/welcome" what Hugpix is. Signed out, "/" is the welcome page too, and
 // "/signin" (or any other address) the sign-in page.
 const subscribe = (cb) => {
@@ -111,6 +112,8 @@ export default function App() {
           <Settings />
         ) : chatId || path === '/messages' ? (
           <Messages chatId={chatId} />
+        ) : path === '/news' ? (
+          <News />
         ) : albumId ? (
           <Album key={albumId} albumId={albumId} />
         ) : (

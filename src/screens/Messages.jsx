@@ -4,10 +4,11 @@ import Avatar from '../components/Avatar'
 import { AlbumName, ago } from '../components/HomeLayouts'
 import Icon from '../components/Icon'
 import PeoplePicker from '../components/PeoplePicker'
+import { ReactionChips, ReactionRow } from '../components/Reactions'
 import Sheet from '../components/Sheet'
 import {
-  chatTitle, fetchMessages, fetchReads, isLive, isUnread, markRead, refreshChats, sendAlbumPhoto, sendMessage, startChat, updateChat,
-  useChats, watchChat,
+  chatTitle, fetchMessageReactions, fetchMessages, fetchReads, isLive, isUnread, markRead, refreshChats, sendAlbumPhoto, sendMessage,
+  setMessageReaction, startChat, updateChat, useChats, watchChat,
 } from '../lib/chat'
 import { publicUrl, useCloud } from '../lib/cloud'
 import { importFile, isVideo } from '../lib/images'
@@ -205,7 +206,7 @@ const timeOf = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minu
 function Chat({ chatId, people }) {
   const chats = useChats()
   const chat = chats.find((c) => c.id === chatId)
-  const { session } = useCloud()
+  const { session, features } = useCloud()
   const me = session?.user.id
   const [messages, setMessages] = useState(null)
   const [text, setText] = useState('')
@@ -220,9 +221,12 @@ function Chat({ chatId, people }) {
   const [typingBy, setTypingBy] = useState(null)
   const [choosing, setChoosing] = useState(false) // phone or albums?
   const [fromAlbums, setFromAlbums] = useState(false)
+  const [reactions, setReactions] = useState([]) // [{ message, user_id, emoji }]
+  const [reactingTo, setReactingTo] = useState(null) // the message whose reactions are open
   const list = useRef(null)
   const fileInput = useRef(null)
   const line = useRef(null)
+  const reloadReactions = useRef(() => {})
 
   // The latest messages, then each new one the moment it is sent (with a
   // slower look every so often in case the live line drops), who has read
@@ -253,9 +257,12 @@ function Chat({ chatId, people }) {
       }
     }
     const seen = () => !document.hidden && markRead(chatId).catch(() => {})
+    const loadReactions = () => fetchMessageReactions(chatId).then((r) => alive && setReactions(r)).catch(() => {})
+    reloadReactions.current = loadReactions
     refreshChats().catch(() => {})
     fetchReads(chatId).then((r) => alive && setReads(r)).catch(() => {})
     load()
+    loadReactions()
     line.current = watchChat(chatId, {
       onMessage: (m) => {
         add([m])
@@ -264,8 +271,12 @@ function Chat({ chatId, people }) {
       },
       onRead: (person, at) => setReads((r) => ({ ...r, [person]: at })),
       onTyping: (person) => setTypingBy({ id: person, at: Date.now() }),
+      onReaction: loadReactions,
     })
-    const t = setInterval(load, isLive() ? 20000 : 4000)
+    const t = setInterval(() => {
+      load()
+      if (!document.hidden) loadReactions()
+    }, isLive() ? 20000 : 4000)
     document.addEventListener('visibilitychange', seen)
     return () => {
       alive = false
@@ -293,6 +304,7 @@ function Chat({ chatId, people }) {
   const inChat = chat?.members.includes(me)
   const group = (chat?.members.length ?? 0) > 2
   const other = chat && !group ? personIn(people, chat.members.find((id) => id !== me)) : null
+  const canReact = !!inChat && !!features.reactions
 
   // "Seen" under my latest message, when it is the last thing said: by whom,
   // in a group.
@@ -300,6 +312,19 @@ function Chat({ chatId, people }) {
   const seenBy = lastOne && lastOne.sender === me && chat
     ? chat.members.filter((id) => id !== me && reads[id] && Date.parse(reads[id]) >= Date.parse(lastOne.created_at))
     : []
+
+  // A reaction to a message: shown at once, then saved.
+  const reactTo = (m, emoji) => {
+    setReactingTo(null)
+    setReactions((rs) => [
+      ...rs.filter((r) => !(r.message === m.id && r.user_id === me)),
+      ...(emoji ? [{ message: m.id, user_id: me, emoji }] : []),
+    ])
+    setMessageReaction(chat, m, emoji).catch((e) => {
+      setError(e.message)
+      reloadReactions.current()
+    })
+  }
 
   // Photos from the albums, sent one message each.
   const sendFromAlbums = async (ids, images) => {
@@ -397,7 +422,17 @@ function Chat({ chatId, people }) {
           return (
             <Fragment key={m.id}>
               {newDay && <p className="chat-day">{dayLabel(m.created_at)}</p>}
-              <div className={`bubble ${mine ? 'mine' : ''}`}>
+              <div
+                className={`bubble ${mine ? 'mine' : ''} ${reactingTo === m.id ? 'reacting' : ''}`}
+                // A tap on a message (not its photo) offers the reactions.
+                onClick={(e) => {
+                  if (!canReact || e.target.closest('.bubble-photo, .reaction-chips, .reaction-row')) return
+                  setReactingTo((r) => (r === m.id ? null : m.id))
+                }}
+              >
+                {reactingTo === m.id && (
+                  <ReactionRow reactions={reactions.filter((r) => r.message === m.id)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact />
+                )}
                 {showName && (
                   <b className="bubble-who"><Avatar person={personIn(people, m.sender)} size={18} /> {first(nameOf(m.sender))}</b>
                 )}
@@ -411,6 +446,11 @@ function Chat({ chatId, people }) {
                 )}
                 {m.body && <p>{m.body}</p>}
                 <time>{timeOf(m.created_at)}</time>
+                <ReactionChips
+                  reactions={reactions.filter((r) => r.message === m.id)}
+                  me={me}
+                  onPick={(emoji) => canReact && reactTo(m, emoji)}
+                />
               </div>
             </Fragment>
           )

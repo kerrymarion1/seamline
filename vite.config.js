@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon.svg', 'icons/apple-touch-icon.png'],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2}'],
         navigateFallback: '/index.html',
         // Receives photos shared in from other apps on Android, and shows
         // notifications when someone adds photos.
@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => ({
       manifest: {
         name: 'Hugpix',
         short_name: 'Hugpix',
-        description: 'Photo albums and collages, shared with family and friends.',
+        description: 'Photo albums, shared with family and friends.',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',

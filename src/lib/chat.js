@@ -123,6 +123,31 @@ export async function sendMessage(chat, { text = '', image = null }) {
   return data
 }
 
+// Reactions on a chat's messages: [{ message, user_id, emoji }].
+export async function fetchMessageReactions(chatId) {
+  if (!getCloud().features.reactions) return []
+  const { data } = await supabase.from('seamline_message_reactions').select('message, user_id, emoji').eq('chat', chatId)
+  return data ?? []
+}
+
+// React to a message, change the reaction, or (null) take it back. Whoever
+// sent the message hears about a new one.
+export async function setMessageReaction(chat, message, emoji) {
+  const me = myId()
+  if (!emoji) {
+    const { error } = await supabase.from('seamline_message_reactions').delete().eq('message', message.id).eq('user_id', me)
+    if (error) throw new Error(error.message)
+    return
+  }
+  const { error } = await supabase
+    .from('seamline_message_reactions')
+    .upsert({ message: message.id, chat: chat.id, user_id: me, emoji }, { onConflict: 'message,user_id' })
+  if (error) throw new Error(error.message)
+  if (message.sender !== me && getCloud().features.push) {
+    supabase.functions.invoke('seamline-notify', { body: { chat: chat.id, message: message.id, reaction: emoji } }).catch(() => {})
+  }
+}
+
 // Where everyone in a chat has read up to, by person: for "Seen".
 export async function fetchReads(chatId) {
   const { data } = await supabase.from('seamline_chat_reads').select('user_id, read_at').eq('chat', chatId)
@@ -137,12 +162,14 @@ export const isLive = () => !!supabase && !!getCloud().features.live
 
 // One chat, while it is open: new messages, read receipts and "typing".
 // Returns { typing() to say I'm typing, close() }.
-export function watchChat(chatId, { onMessage, onRead, onTyping }) {
+export function watchChat(chatId, { onMessage, onRead, onTyping, onReaction = () => {} }) {
   if (!isLive()) return { typing() {}, close() {} }
   const channel = supabase
     .channel(`chat-${chatId}`)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'seamline_messages', filter: `chat=eq.${chatId}` }, (e) =>
       onMessage(e.new))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'seamline_message_reactions', filter: `chat=eq.${chatId}` }, () =>
+      onReaction())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'seamline_chat_reads', filter: `chat=eq.${chatId}` }, (e) =>
       e.new?.user_id && onRead(e.new.user_id, e.new.read_at))
     .on('broadcast', { event: 'typing' }, ({ payload }) => payload?.user && payload.user !== myId() && onTyping(payload.user))

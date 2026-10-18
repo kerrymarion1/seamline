@@ -266,7 +266,7 @@ function Users({ canSwitch }) {
   }, [])
 
   // A guest sees everything and adds to it; a member can also edit, remove,
-  // make collages and links.
+  // and make links.
   const switchRole = async (u) => {
     setBusy(u.id)
     setError(null)
@@ -322,7 +322,7 @@ function Users({ canSwitch }) {
       ))}
       {canSwitch && users?.some((u) => u.status === 'guest' || u.status === 'member') && (
         <p className="note">
-          Guests see every album and add photos to them. Members can also edit and remove things, and make collages and links.
+          Guests see every album and add photos to them. Members can also edit and remove things, and make links.
         </p>
       )}
       {users?.some((u) => u.status === 'waiting') && <p className="note">Approve people waiting under People, above.</p>}
@@ -766,7 +766,7 @@ export default function Settings() {
               <div className={`meter ${mediaUsed > MEDIA_WARN ? 'warn' : ''}`}>
                 <i style={{ width: `${Math.min(100, (mediaUsed / MEDIA_LIMIT) * 100)}%` }} />
               </div>
-              <p className="hint">{gb(mediaUsed)} of 50 GB · photos, videos and collages, on Cloudflare</p>
+              <p className="hint">{gb(mediaUsed)} of 50 GB · photos and videos, on Cloudflare</p>
               {mediaUsed > MEDIA_WARN ? (
                 <p className="note warn">Nearly full. Remove photos or videos you no longer need, or ask for the limit to be raised.</p>
               ) : (

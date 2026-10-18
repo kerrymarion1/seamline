@@ -4,13 +4,14 @@ import Icon from './Icon'
 import Logo from './Logo'
 import { refreshChats, useUnread } from '../lib/chat'
 import { avatarOf, refreshPins, refreshRequests, useCloud } from '../lib/cloud'
+import { refreshFeedSocial, useFeedCount } from '../lib/feed'
 import { countText } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
 import { lastUpload } from '../lib/store'
 
 // The front page's ways of showing the albums, picked in Settings (see
-// lib/theme.js). Each draws its own top of the page; Home keeps the collages,
-// the sheets and everything that changes data.
+// lib/theme.js). Each draws its own top of the page; Home keeps the newest
+// photos at the end, the sheets and everything that changes data.
 
 export function ago(t) {
   const m = Math.round((Date.now() - t) / 60000)
@@ -70,21 +71,25 @@ const Pic = ({ image }) => (
 
 // Who is signed in; the whole thing opens Settings. For the admin, a bell
 // beside the initial says how many people are waiting for approval, and a
-// tap then goes straight to them in People. Before it, the way to Messages,
-// with how many chats have something unread. It looks again whenever the
-// app comes back into view, and every minute while it is open.
+// tap then goes straight to them in People. Before it, the ways to What's
+// new and to Messages, with how much is new and how many chats have
+// something unread. It looks again whenever the app comes back into view,
+// and every minute while it is open.
 export function Who({ name }) {
   const { requests, features, session } = useCloud()
   const avatar = avatarOf(session)
   const waiting = requests.length
+  const fresh = useFeedCount()
   const unread = useUnread()
+  const count = (n) => n > 0 && <em>{n > 99 ? '99+' : n}</em>
   useEffect(() => {
-    // Waiting requests, unread messages, and the pinned photo someone else may have changed.
+    // Waiting requests, unread messages, what's new, and the pinned photo someone else may have changed.
     const look = () => {
       if (document.hidden) return
       refreshRequests().catch(() => {})
       refreshPins().catch(() => {})
       refreshChats().catch(() => {})
+      refreshFeedSocial().catch(() => {})
     }
     look()
     const t = setInterval(look, 60000)
@@ -97,10 +102,16 @@ export function Who({ name }) {
   const label = [name ? `Settings, signed in as ${name}` : 'Settings', waiting && `${waiting} waiting for approval`]
   return (
     <span className="who-wrap">
+    {features.social && (
+      <button className="who-chat" onClick={() => navigate('/news')} aria-label={fresh ? `What's new, ${fresh} new` : "What's new"}>
+        <Icon name="photos" size={20} />
+        {count(fresh)}
+      </button>
+    )}
     {features.messages && (
       <button className="who-chat" onClick={() => navigate('/messages')} aria-label={unread ? `Messages, ${unread} unread` : 'Messages'}>
         <Icon name="comment" size={20} />
-        {unread > 0 && <em>{unread}</em>}
+        {count(unread)}
       </button>
     )}
     <button
@@ -173,7 +184,7 @@ export function AlbumsInvite({ onNew }) {
       <h3>{onNew ? 'Keep a pool of photos' : 'No albums yet'}</h3>
       <p>
         {onNew
-          ? 'Albums hold photos inside the app, ready to drop into any collage or save back to your phone.'
+          ? "Albums hold the family's photos and videos, ready to look through, share or save back to your phone."
           : 'Albums show up here as soon as they are made, and you can add your photos to them.'}
       </p>
       {onNew && (
@@ -257,7 +268,7 @@ export function Stack({ albums, images, who, greet, first, news, summary, onNewA
 }
 
 // Editorial: the greeting set large, then the albums as a numbered index.
-export function Editorial({ albums, images, who, greet, first, stats, news, onNewAlbum, onCollages, pinned }) {
+export function Editorial({ albums, images, who, greet, first, stats, news, onNewAlbum, pinned }) {
   return (
     <>
       <header className="home-head">
@@ -313,18 +324,11 @@ export function Editorial({ albums, images, who, greet, first, stats, news, onNe
               )
             })}
           </ol>
-          {(onNewAlbum || onCollages) && (
+          {onNewAlbum && (
             <div className="ed-actions">
-              {onNewAlbum && (
-                <button className="primary" onClick={onNewAlbum}>
-                  <Icon name="plus" size={18} /> New album
-                </button>
-              )}
-              {onCollages && (
-                <button className="ed-ghost" onClick={onCollages}>
-                  Collages <Icon name="back" size={16} />
-                </button>
-              )}
+              <button className="primary" onClick={onNewAlbum}>
+                <Icon name="plus" size={18} /> New album
+              </button>
             </div>
           )}
         </>
@@ -334,16 +338,9 @@ export function Editorial({ albums, images, who, greet, first, stats, news, onNe
 }
 
 // Mosaic: every album a photo tile, edge to edge, the latest one wide across the top.
-export function Mosaic({ albums, images, who, greet, first, news, collageCount, onNewAlbum, onCollages, pinned }) {
+export function Mosaic({ albums, images, who, greet, first, news, onNewAlbum, pinned }) {
   const [lead, ...rest] = albums
   const { ids, cycle } = lead ? leadOf(lead, images, pinned) : { ids: [], cycle: null }
-  // Only once there is a collage to go to.
-  const collages = collageCount > 0 && (
-    <button className="mo-tile mo-collages" onClick={onCollages}>
-      <span className="mo-big">{collageCount}</span>
-      <span className="mo-go">Collages <Icon name="back" size={18} /></span>
-    </button>
-  )
   return (
     <div className={`mosaic ${lead ? '' : 'bare'}`}>
       <header className="mo-head">
@@ -392,35 +389,14 @@ export function Mosaic({ albums, images, who, greet, first, news, collageCount, 
                 <small>{countText(pics.map((id) => images[id]))}</small>
               </span>
             </button>
-            {i === 0 && collages}
           </Fragment>
         )
       })}
-      {rest.length === 0 && collages}
       {lead && onNewAlbum && (
         <button className="mo-tile mo-new" onClick={onNewAlbum}>
           <Icon name="plus" size={24} /> New album
         </button>
       )}
     </div>
-  )
-}
-
-// Floats at the foot of the Stack and Mosaic pages: jump between the two
-// halves of the page, or make something new.
-export function Dock({ on, onAlbums, onCollages, onNew, icons }) {
-  const tab = (id, label, icon, go) => (
-    <button className={on === id ? 'on' : ''} aria-current={on === id || undefined} aria-label={icons ? label : undefined} onClick={go}>
-      {icons ? <Icon name={icon} size={22} /> : label}
-    </button>
-  )
-  return (
-    <nav className={`dock ${icons ? 'icons' : ''}`} aria-label="Sections">
-      {tab('albums', 'Albums', 'photo', onAlbums)}
-      {tab('collages', 'Collages', 'layout', onCollages)}
-      <button className="dock-new" onClick={onNew} aria-label="New album or collage">
-        <Icon name="plus" size={22} />
-      </button>
-    </nav>
   )
 }
