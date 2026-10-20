@@ -346,19 +346,28 @@ export function deleteAlbum(id) {
 // Newest photos first.
 // `by` is whoever is adding them: { id, name } for a signed-in person, or
 // just a name. It is kept per photo in the album's `addedBy`, which travels
-// with the album to the other devices.
+// with the album to the other devices, as does where each photo was taken
+// when it says (`spots`, for the map).
 export const addToAlbum = (id, imageIds, by = '') =>
   patchAlbum(id, (a) => {
     const fresh = imageIds.filter((i) => !a.imageIds.includes(i))
     const addedBy = by ? { ...a.addedBy, ...Object.fromEntries(fresh.map((i) => [i, by])) } : a.addedBy
+    const found = fresh.filter((i) => state.images[i]?.gps).map((i) => [i, state.images[i].gps])
+    const spots = found.length ? { ...a.spots, ...Object.fromEntries(found) } : a.spots
     // When something was last added: this alone decides the album's place on the front page.
-    return { ...a, imageIds: [...fresh, ...a.imageIds], ...(addedBy ? { addedBy } : null), ...(fresh.length ? { uploadedAt: Date.now() } : null) }
+    return {
+      ...a, imageIds: [...fresh, ...a.imageIds], ...(addedBy ? { addedBy } : null), ...(spots ? { spots } : null),
+      ...(fresh.length ? { uploadedAt: Date.now() } : null),
+    }
   })
 
 export const removeFromAlbum = (id, imageIds) =>
   patchAlbum(id, (a) => {
     const next = { ...a, imageIds: a.imageIds.filter((i) => !imageIds.includes(i)) }
-    if (a.addedBy) next.addedBy = Object.fromEntries(Object.entries(a.addedBy).filter(([i]) => !imageIds.includes(i)))
+    // What was noted about each photo goes with it.
+    for (const key of ['addedBy', 'tags', 'spots', 'edited']) {
+      if (a[key]) next[key] = Object.fromEntries(Object.entries(a[key]).filter(([i]) => !imageIds.includes(i)))
+    }
     return next
   })
 
@@ -421,6 +430,33 @@ export const setCaption = (id, imageId, text) =>
     else delete captions[imageId]
     return { ...a, captions }
   })
+
+// Who is in a photo: people in Hugpix by their id, anyone else by name.
+export const setTags = (id, imageId, tags) =>
+  patchAlbum(id, (a) => {
+    const all = { ...a.tags }
+    if (tags.length) all[imageId] = tags
+    else delete all[imageId]
+    return { ...a, tags: all }
+  })
+
+// A tag that is a person in Hugpix (their account id) rather than a name.
+export const isPersonTag = (tag) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(tag)
+
+// Where an album's photos were taken: { name, lat, lng }, or null for nowhere.
+export const setAlbumPlace = (id, place) =>
+  patchAlbum(id, (a) => {
+    const { place: _, ...rest } = a
+    return place ? { ...rest, place } : rest
+  })
+
+// Where single photos were taken, read from the photos themselves:
+// { [imageId]: [lat, lng] }.
+export const setPhotoSpots = (id, spots) => patchAlbum(id, (a) => ({ ...a, spots: { ...a.spots, ...spots } }))
+
+// A photo's picture changed (cropped or turned): the time it did, so other
+// devices know to fetch it again (see sync.js).
+export const markEdited = (id, imageId, at) => patchAlbum(id, (a) => ({ ...a, edited: { ...a.edited, [imageId]: at } }))
 
 // A few words about the album, shown at the top of its shared page.
 export const setAlbumNote = (id, note) => patchAlbum(id, (a) => ({ ...a, note }))

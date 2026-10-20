@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { navigate } from '../App'
+import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
 import Avatar from '../components/Avatar'
+import AvatarFramer from '../components/AvatarFramer'
 import { ago } from '../components/HomeLayouts'
 import Icon from '../components/Icon'
 import { createBackup, restoreBackup } from '../lib/backup'
+import { renderEdit } from '../lib/edit'
+import { celebrateAdded, setVibrateOn, vibrateOn } from '../lib/feedback'
+import { setSoundOn, soundOn } from '../lib/sounds'
 import {
   addInvite, answerRequest, avatarOf, deleteInvite, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, setPinned, usePinned, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
   storageUsed, getCloud, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
@@ -89,6 +94,47 @@ function Season() {
         ))}
       </div>
       <p className="note">{hint}</p>
+    </section>
+  )
+}
+
+// The sound and the pulse when photos go into an album (and the message
+// chime), for this device. Try it plays what adding photos does right now.
+function Feedback() {
+  const [sound, setSound] = useState(soundOn)
+  const [vibrate, setVibrate] = useState(vibrateOn)
+  const showing = useActiveSeason()
+  const name = SEASONS.find((s) => s.id === showing)?.name
+  return (
+    <section className="panel">
+      <h2>Sounds and vibration</h2>
+      <div className="chips">
+        <button
+          className={`chip small ${sound ? 'on' : ''}`}
+          aria-pressed={sound}
+          onClick={() => {
+            setSoundOn(!sound)
+            setSound(!sound)
+          }}
+        >
+          Sounds {sound ? 'on' : 'off'}
+        </button>
+        <button
+          className={`chip small ${vibrate ? 'on' : ''}`}
+          aria-pressed={vibrate}
+          onClick={() => {
+            setVibrateOn(!vibrate)
+            setVibrate(!vibrate)
+          }}
+        >
+          Vibrate {vibrate ? 'on' : 'off'}
+        </button>
+        <button className="chip small" onClick={() => celebrateAdded(1)}>Try it</button>
+      </div>
+      <p className="note">
+        When photos go into an album: {name ? `${name}'s` : 'a'} sound, a pulse (Android phones; iPhones can't vibrate for web pages) and
+        a burst on screen. The chime for a new message follows these too.
+      </p>
     </section>
   )
 }
@@ -492,36 +538,79 @@ function Layout() {
   )
 }
 
-// Your profile photo: shown with your name in chats, comments and lists.
+// Your profile photo: shown beside your name everywhere. It comes from the
+// phone or from a photo already in an album, then framed in a circle (moved
+// and zoomed), so a face can be picked out of a group.
 function ProfilePhoto({ session }) {
   const avatar = avatarOf(session)
   const input = useRef(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
-  const change = async (file) => {
-    setBusy(true)
-    setMessage(null)
+  const [fromAlbums, setFromAlbums] = useState(false)
+  const [framing, setFraming] = useState(null) // { previewUrl, width, height, own }: the photo being framed
+  const [frameError, setFrameError] = useState(null)
+
+  // `own` is a picture made here for the purpose, let go of afterwards.
+  const frame = async (url, own) => {
     try {
-      await setAvatar(file)
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image()
+        el.onload = () => resolve(el)
+        el.onerror = reject
+        el.src = url
+      })
+      setMessage(null)
+      setFrameError(null)
+      setFraming({ previewUrl: url, width: img.naturalWidth, height: img.naturalHeight, own })
+    } catch {
+      if (own) URL.revokeObjectURL(url)
+      setMessage('That file could not be read as a photo.')
+    }
+  }
+  const stopFraming = () => {
+    if (framing?.own) URL.revokeObjectURL(framing.previewUrl)
+    setFraming(null)
+  }
+  const use = async (change) => {
+    setBusy(true)
+    setFrameError(null)
+    try {
+      const { blob } = await renderEdit(framing.previewUrl, change)
+      await setAvatar(blob)
       refreshPeople(true)
-      setMessage(file ? 'Saved' : 'Taken off')
+      setMessage('Saved')
+      stopFraming()
+    } catch (e) {
+      setFrameError(e.message)
+    }
+    setBusy(false)
+  }
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await setAvatar(null)
+      refreshPeople(true)
+      setMessage('Taken off')
     } catch (e) {
       setMessage(e.message)
     }
     setBusy(false)
   }
+
   return (
     <div className="profile-photo">
-      <Avatar person={{ name: userName(session), avatar }} size={64} />
+      <button className="profile-photo-pick" disabled={busy} onClick={() => input.current.click()} aria-label={avatar ? 'Change your profile photo' : 'Add a profile photo'}>
+        <Avatar person={{ id: session.user.id, name: userName(session), avatar }} size={64} />
+        <span className="profile-photo-badge" aria-hidden="true"><Icon name="photo" size={14} /></span>
+      </button>
       <div>
         <div className="label">Profile photo</div>
         <div className="profile-photo-btns">
-          <button className="pill-btn" disabled={busy} onClick={() => input.current.click()}>
-            {busy ? 'Saving…' : avatar ? 'Change' : 'Add a photo'}
-          </button>
-          {avatar && <button className="pill-btn" disabled={busy} onClick={() => change(null)}>Remove</button>}
+          <button className="pill-btn" disabled={busy} onClick={() => input.current.click()}>From your phone</button>
+          <button className="pill-btn" disabled={busy} onClick={() => setFromAlbums(true)}>From an album</button>
+          {avatar && <button className="pill-btn" disabled={busy} onClick={remove}>Remove</button>}
         </div>
-        <p className="note">{message ?? 'Shown with your name in chats, comments and lists.'}</p>
+        <p className="note">{message ?? 'Shown beside your name everywhere: chats, comments, photos you add and lists.'}</p>
       </div>
       <input
         ref={input}
@@ -531,9 +620,29 @@ function ProfilePhoto({ session }) {
         onChange={(e) => {
           const file = e.target.files[0]
           e.target.value = ''
-          if (file) change(file)
+          if (file) frame(URL.createObjectURL(file), true)
         }}
       />
+      <AlbumPhotoPicker
+        open={fromAlbums}
+        onClose={() => setFromAlbums(false)}
+        max={1}
+        title="Choose your photo"
+        action={(n) => (n ? 'Use this photo' : 'Tap a photo')}
+        onPick={(ids, images) => {
+          setFromAlbums(false)
+          frame(images[ids[0]].previewUrl, false)
+        }}
+      />
+      {framing && (
+        <AvatarFramer
+          image={framing}
+          busy={busy}
+          error={frameError}
+          onCancel={stopFraming}
+          onSave={use}
+        />
+      )}
     </div>
   )
 }
@@ -711,7 +820,6 @@ export default function Settings() {
       </header>
 
       <main className="settings-body">
-        <Season />
         {cloud.session && !cloud.loading && !cloud.recovering && (
           <section className="panel">
             <h2>Account</h2>
@@ -723,6 +831,8 @@ export default function Settings() {
             <button className="secondary block" onClick={() => turnOffPush().catch(() => {}).finally(signOut)}>Sign out</button>
           </section>
         )}
+        <Season />
+        <Feedback />
         <Colour />
         <Layout />
         <Backup />
@@ -766,7 +876,7 @@ export default function Settings() {
               <div className={`meter ${mediaUsed > MEDIA_WARN ? 'warn' : ''}`}>
                 <i style={{ width: `${Math.min(100, (mediaUsed / MEDIA_LIMIT) * 100)}%` }} />
               </div>
-              <p className="hint">{gb(mediaUsed)} of 50 GB · photos and videos, on Cloudflare</p>
+              <p className="hint">{gb(mediaUsed)} of 100 GB · photos and videos, on Cloudflare</p>
               {mediaUsed > MEDIA_WARN ? (
                 <p className="note warn">Nearly full. Remove photos or videos you no longer need, or ask for the limit to be raised.</p>
               ) : (

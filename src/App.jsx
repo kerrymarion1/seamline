@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react'
 import { clearTextCache } from './lib/fonts'
 import { FontsContext } from './lib/fontsContext'
+import AddedFx from './components/AddedFx'
 import CloudSync from './components/CloudSync'
 import Logo from './components/Logo'
 import MessageWatcher from './components/MessageWatcher'
@@ -20,12 +21,16 @@ const News = lazy(() => import('./screens/News'))
 const Settings = lazy(() => import('./screens/Settings'))
 const ShareView = lazy(() => import('./screens/ShareView'))
 const Welcome = lazy(() => import('./screens/Welcome'))
+const Favourites = lazy(() => import('./screens/Wall').then((m) => ({ default: m.Favourites })))
+const Person = lazy(() => import('./screens/Wall').then((m) => ({ default: m.Person })))
+const PlaceMap = lazy(() => import('./screens/PlaceMap'))
 const splash = <div className="splash"><Logo as="div" loop /></div>
 
 // Minimal path router: "/" and "/albums" home, "/album/:id" one album,
 // "/p/:id" the editor, "/settings" account and storage, "/s/:code" a shared link,
 // "/messages" and "/messages/:id" chats between people, "/news" what's new,
-// "/welcome" what Hugpix is. Signed out, "/" is the welcome page too, and
+// "/favourites" the most loved photos, "/people/:tag" everyone tagged in
+// photos, "/map" where the albums were, "/welcome" what Hugpix is. Signed out, "/" is the welcome page too, and
 // "/signin" (or any other address) the sign-in page.
 const subscribe = (cb) => {
   window.addEventListener('popstate', cb)
@@ -69,6 +74,7 @@ export default function App() {
   const albumId = path.match(/^\/album\/([^/]+)/)?.[1]
   const shareToken = path.match(/^\/s\/([^/]+)/)?.[1]
   const chatId = path.match(/^\/messages\/([^/]+)/)?.[1]
+  const personTag = path.match(/^\/people\/([^/]+)/)?.[1]
 
   // A tapped notification asks the open app to go to an album (see public/push.js).
   useEffect(() => {
@@ -114,6 +120,12 @@ export default function App() {
           <Messages chatId={chatId} />
         ) : path === '/news' ? (
           <News />
+        ) : path === '/favourites' ? (
+          <Favourites />
+        ) : personTag ? (
+          <Person key={personTag} tag={decodeURIComponent(personTag)} />
+        ) : path === '/map' ? (
+          <PlaceMap />
         ) : albumId ? (
           <Album key={albumId} albumId={albumId} />
         ) : (
@@ -123,6 +135,7 @@ export default function App() {
       <SharedInbox />
       <CloudSync />
       <MessageWatcher />
+      <AddedFx />
     </FontsContext.Provider>
   )
 }

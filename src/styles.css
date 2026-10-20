@@ -1431,6 +1431,19 @@ select.field { appearance: none; -webkit-appearance: none; }
 .album-bar .chip svg { fill: currentColor; }
 .album-bar .sort-btn { margin-left: auto; }
 .album-bar .sort-btn svg { fill: none; }
+.album-bar .place-btn svg { fill: none; }
+.album-bar .place-btn span { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album-bar .place-btn.set { color: var(--accent); }
+
+/* Finding an album's place by name. */
+.place-search { display: flex; align-items: center; gap: 8px; }
+.place-search .field { flex: 1; min-width: 0; }
+.place-search .pill-btn { flex: none; height: 44px; }
+.place-pick { padding: 6px 4px; }
+.place-pick svg { flex: none; color: var(--accent); }
+.place-names { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.place-names b { font-weight: 600; }
+.place-names small { overflow: hidden; color: var(--text-2); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 /* How many notes visitors have left on a photo. */
 .said {
@@ -1470,10 +1483,68 @@ select.field { appearance: none; -webkit-appearance: none; }
 /* Top right: save to phone, and remove. The title stays centred over two. */
 .viewer-tools { flex: none; display: flex; }
 .viewer > .topbar:has(.viewer-tools > :nth-child(2)) .preview-title { padding-left: 40px; }
+.viewer > .topbar:has(.viewer-tools > :nth-child(3)) .preview-title { padding-left: 80px; }
 /* Comment and caption: small buttons until tapped. */
 .viewer-write { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.viewer-write .chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; color: var(--text-2); font-size: 13px; }
+.viewer-write .chip { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 13px; color: var(--text-2); font-size: 13px; }
 .viewer-write .chip.share { color: var(--accent); }
+/* Who is in a photo, under it: a tap shows every photo they're in. */
+.viewer-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px 0 4px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.tag-chip:active { background: var(--surface-3); }
+
+/* ---------- pages of photos from every album: favourites, one person's ---------- */
+
+.wall .topbar .preview-title { flex: 1; }
+.wall-body { flex: 1; overflow-y: auto; padding: 0 3px calc(var(--safe-b) + 24px); }
+.wall-sub { margin: 2px 10px 10px; color: var(--text-2); font-size: 13px; }
+.wall-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+@media (min-width: 700px) {
+  .wall-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+.wall-tile { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 4px; background: var(--surface-2); }
+.wall-tile > img { width: 100%; height: 100%; object-fit: cover; }
+.wall-tile:active { opacity: 0.8; }
+.wall-clip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+.wall-score {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.wall-score svg { fill: #ff6b8b; stroke: #ff6b8b; }
+.wall-person { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0 2px; }
+.wall-person h2 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
 .viewer-notes button.caption { align-self: center; max-width: 100%; padding: 2px 8px; border-radius: 8px; overflow-wrap: anywhere; }
 .viewer-notes button.caption:active { background: var(--surface-2); }
 .caption { color: var(--text); font-size: 15px; text-align: center; }
@@ -1577,20 +1648,7 @@ img.fade.in { opacity: 1; }
   transition: border-color 0.2s, transform 0.15s var(--spring);
 }
 .who:active { transform: scale(0.97); }
-.who i {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: var(--on-accent);
-  font-style: normal;
-  font-weight: 700;
-  font-size: 13px;
-}
-.who span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; font-size: 12.5px; }
+.who .who-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; font-size: 12.5px; }
 /* People waiting for the admin's approval: a bell with the count, beside the initial. */
 .who .who-bell {
   position: relative;
@@ -1633,7 +1691,7 @@ img.fade.in { opacity: 1; }
   .who .who-bell { animation: none; }
 }
 .who svg { flex: none; width: 18px; height: 18px; }
-.who:not(:has(i, img)) { padding: 0 12px; }
+.who:not(:has(.avatar)) { padding: 0 12px; }
 @media (hover: hover) {
   .who:hover { border-color: rgb(var(--accent-rgb) / 0.6); }
 }
@@ -1643,15 +1701,19 @@ img.fade.in { opacity: 1; }
 .tile-tags .said { position: static; }
 .by {
   max-width: 100%;
-  padding: 3px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px 2px 2px;
   overflow: hidden;
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.55);
   font-size: 11px;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+.by > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Under a photo: who added it, with their picture, and when. */
+.added-line { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .note.centre { text-align: center; }
 .name-form { display: flex; flex-direction: column; gap: 8px; }
 
@@ -1959,6 +2021,155 @@ img.fade.in { opacity: 1; }
 .newest-label b, .newest-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .newest-label b { font-size: 13px; font-weight: 600; }
 .newest-label small { color: #d6d3cc; font-size: 11.5px; }
+.newest-score { display: inline-flex; align-items: center; gap: 4px; }
+.newest-label .newest-by { display: flex; align-items: center; gap: 5px; }
+.newest-score svg { fill: #ff6b8b; stroke: #ff6b8b; }
+
+/* ---------- cropping and turning a photo ---------- */
+
+.crop-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-t);
+  background: #000;
+  animation: preview-in 0.25s var(--spring);
+}
+.crop-screen .topbar .preview-title { flex: 1; }
+.crop-save { min-width: 64px; justify-content: center; }
+.crop-stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; }
+.crop-box { position: relative; touch-action: none; }
+.crop-box img { position: absolute; left: 50%; top: 50%; max-width: none; pointer-events: none; user-select: none; }
+.crop-frame {
+  position: absolute;
+  outline: 2px solid #fff;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.62);
+  cursor: move;
+  touch-action: none;
+}
+.crop-grid {
+  position: absolute;
+  inset: 0;
+  --line: linear-gradient(rgb(255 255 255 / 0.35), rgb(255 255 255 / 0.35));
+  background:
+    var(--line) 33.33% 0 / 1px 100% no-repeat,
+    var(--line) 66.66% 0 / 1px 100% no-repeat,
+    var(--line) 0 33.33% / 100% 1px no-repeat,
+    var(--line) 0 66.66% / 100% 1px no-repeat;
+}
+.crop-handle { position: absolute; width: 44px; height: 44px; touch-action: none; }
+.crop-handle::after { content: ''; position: absolute; width: 18px; height: 18px; border: 4px solid #fff; }
+.crop-handle.nw { left: -22px; top: -22px; cursor: nwse-resize; }
+.crop-handle.nw::after { left: 18px; top: 18px; border-right: 0; border-bottom: 0; }
+.crop-handle.ne { right: -22px; top: -22px; cursor: nesw-resize; }
+.crop-handle.ne::after { right: 18px; top: 18px; border-left: 0; border-bottom: 0; }
+.crop-handle.sw { left: -22px; bottom: -22px; cursor: nesw-resize; }
+.crop-handle.sw::after { left: 18px; bottom: 18px; border-right: 0; border-top: 0; }
+.crop-handle.se { right: -22px; bottom: -22px; cursor: nwse-resize; }
+.crop-handle.se::after { right: 18px; bottom: 18px; border-left: 0; border-top: 0; }
+.crop-tools { flex: none; display: flex; justify-content: center; gap: 8px; padding: 12px 16px calc(var(--safe-b) + 16px); }
+.crop-tools .chip { display: inline-flex; align-items: center; gap: 6px; }
+.crop-screen .preview-error { margin: 0 16px; text-align: center; }
+
+/* Framing a profile photo: the photo moves and zooms behind a still circle. */
+.framer-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
+.framer-stage:active { cursor: grabbing; }
+.framer-stage img { position: absolute; left: 50%; top: 50%; max-width: none; pointer-events: none; }
+.framer-circle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 2px solid rgb(255 255 255 / 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.62);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.framer-tools { flex: none; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 16px 4px; color: var(--text-2); }
+.framer-tools input[type='range'] { flex: 1; max-width: 240px; accent-color: var(--accent); }
+.framer-tools .chip { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
+.framer-hint { flex: none; padding: 4px 16px calc(var(--safe-b) + 14px); color: var(--text-2); font-size: 12px; text-align: center; }
+
+/* ---------- the map of places ---------- */
+
+.place-map .topbar .preview-title { flex: 1; }
+.map-box { flex: 1; min-height: 0; background: #0e0e10; }
+.map-note { flex: none; padding: 10px 16px calc(var(--safe-b) + 12px); color: var(--text-2); font-size: 13px; text-align: center; }
+.place-map .leaflet-container { background: #0e0e10; font: inherit; }
+/* OpenStreetMap's light map, turned dark. */
+.place-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55); }
+.place-map .leaflet-control-attribution { background: rgb(0 0 0 / 0.55); color: #9a978f; font-size: 10px; }
+.place-map .leaflet-control-attribution a { color: #c9c6bf; }
+.place-map .leaflet-bar { border: 1px solid var(--edge); border-radius: 12px; overflow: hidden; }
+.place-map .leaflet-bar a { width: 38px; height: 38px; border-bottom-color: var(--edge); background: var(--surface-2); color: var(--text); line-height: 38px; }
+.map-pin { border: 0; background: none; }
+.map-pin-photo {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 52px;
+  padding: 3px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.5);
+}
+.map-pin-photo::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  border: 7px solid transparent;
+  border-top-color: #fff;
+  border-bottom: 0;
+  transform: translateX(-50%);
+}
+.map-pin-photo img { display: block; width: 100%; height: 100%; border-radius: 13px; object-fit: cover; }
+.map-pin b {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 21px;
+  text-align: center;
+}
+.map-photos { margin: 8px 0 14px; }
+
+/* The way to the map, at the very end of the front page. */
+.places-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--edge);
+  border-radius: 20px;
+  background: var(--surface);
+  text-align: left;
+}
+.places-card:active { background: var(--surface-2); }
+.places-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent);
+}
+.places-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.places-text b { font-size: 16px; }
+.places-text small { color: var(--text-2); font-size: 13px; }
+.places-go { flex: none; color: var(--text-2); transform: scaleX(-1); }
 .newest-clip {
   position: absolute;
   top: 8px;
@@ -3114,6 +3325,9 @@ img.fade.in { opacity: 1; }
 }
 .secret-bar:disabled { opacity: 1; }
 .secret-bar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.secret-bar .secret-faces { flex: none; display: inline-flex; overflow: visible; }
+.secret-faces .avatar { box-shadow: 0 0 0 2px var(--bg); }
+.secret-faces .avatar + .avatar { margin-left: -6px; }
 
 /* ---------- profile photos (see components/Avatar.jsx) ---------- */
 
@@ -3124,15 +3338,33 @@ img.fade.in { opacity: 1; }
   overflow: hidden;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: var(--on-accent);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+  color: #fff;
+  font-style: normal;
   font-weight: 700;
+  letter-spacing: 0.02em;
   line-height: 1;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
   object-fit: cover;
 }
 img.avatar { background: var(--surface-2); }
-.who .who-photo { flex: none; width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
 .profile-photo { display: flex; align-items: center; gap: 14px; }
-.profile-photo-btns { display: flex; gap: 6px; margin: 6px 0 4px; }
+.profile-photo-pick { position: relative; flex: none; border-radius: 50%; }
+.profile-photo-pick:active { transform: scale(0.96); }
+.profile-photo-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--surface);
+  color: var(--on-accent);
+}
+.profile-photo-btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
 .user-row { flex-wrap: nowrap; }
 .user-row .person-who { flex: 1; }
 .user-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
@@ -3189,23 +3421,42 @@ img.avatar { background: var(--surface-2); }
 .reaction-row button.on .reaction-emoji { animation: heart-pop 0.4s var(--spring); }
 .reaction-emoji { display: inline-flex; font-size: 20px; line-height: 1; }
 .emoji { display: inline-block; flex: none; object-fit: contain; vertical-align: -4px; }
-/* Under a message: a floating bar just below it. */
+/* Under a message: a floating bar just below it, with the reactions and,
+   on my own messages, delete. */
 .bubble { position: relative; }
-.bubble .reaction-row.compact {
+.bubble .bubble-tools {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
   z-index: 3;
-  flex-wrap: nowrap;
+  display: flex;
+  align-items: center;
   gap: 2px;
   padding: 4px;
   border: 1px solid var(--edge);
   border-radius: 24px;
   background: var(--surface-3);
   box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  color: var(--text);
   animation: wl-fade-up 0.25s var(--spring) both;
 }
-.bubble.mine .reaction-row.compact { left: auto; right: 0; }
+.bubble.mine .bubble-tools { left: auto; right: 0; }
+.bubble .reaction-row.compact { flex-wrap: nowrap; gap: 2px; }
+.bubble-delete {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 8px;
+  border-radius: 18px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.reaction-row + .bubble-delete { margin-left: 2px; border-left: 1px solid var(--edge); border-radius: 0 18px 18px 0; }
+.bubble-delete.sure { background: var(--danger); color: #210806; border-radius: 18px; }
 .bubble .reaction-row.compact button { height: 36px; min-width: 36px; padding: 0 6px; background: none; }
 .bubble .reaction-row.compact button.on { background: rgb(var(--accent-rgb) / 0.25); box-shadow: none; }
 .bubble .reaction-row.compact small { display: none; }
@@ -3250,12 +3501,16 @@ img.avatar { background: var(--surface-2); }
 
 /* ---------- messages: who, typing, seen, photos from albums ---------- */
 
-.chat-head { flex-direction: row; align-items: center; gap: 10px; }
-.chat-head > span { min-width: 0; display: flex; flex-direction: column; }
+.chat-head-text { min-width: 0; display: flex; flex-direction: column; }
 .chat-head small.typing { color: var(--accent); }
 .bubble-who { display: inline-flex; align-items: center; gap: 6px; }
+/* Someone else's messages: their picture beside the last of each run. */
+.bubble-row { align-self: flex-start; display: flex; align-items: flex-end; gap: 7px; max-width: min(86%, 460px); }
+.bubble-row .bubble { align-self: auto; min-width: 0; max-width: 100%; }
+.bubble-row .bubble-face { flex: none; width: 28px; height: 28px; margin-bottom: 1px; }
+span.bubble-face:empty { visibility: hidden; }
 .chat-seen { align-self: flex-end; margin: 2px 4px 0; color: var(--text-2); font-size: 12px; }
-.typing-bubble { flex-direction: row; gap: 4px; padding: 12px 14px; }
+.bubble.typing-bubble { flex-direction: row; gap: 4px; padding: 12px 14px; }
 .typing-bubble i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-2); animation: typing-dot 1.2s ease-in-out infinite; }
 .typing-bubble i:nth-child(2) { animation-delay: 0.15s; }
 .typing-bubble i:nth-child(3) { animation-delay: 0.3s; }
@@ -3284,6 +3539,34 @@ img.avatar { background: var(--surface-2); }
 .pending-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; max-height: 46vh; overflow-y: auto; }
 .pending-thumb { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 10px; background: var(--surface-2); }
 .pending-thumb img { width: 100%; height: 100%; object-fit: cover; }
+/* Already in an album: dimmed, with where. */
+.pending-thumb.dupe img { opacity: 0.5; }
+.pending-dupe {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  overflow: hidden;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dupe-warn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgb(var(--accent-rgb) / 0.12);
+  font-size: 14px;
+}
+.dupe-warn .pill-btn { flex: none; }
 .pending-thumb > button {
   position: absolute;
   top: 4px;
@@ -3338,6 +3621,11 @@ img.avatar { background: var(--surface-2); }
 .people-matches button { display: flex; align-items: center; gap: 10px; width: 100%; height: 46px; padding: 0 10px; border-radius: 10px; font-size: 15px; text-align: left; }
 .people-matches button.on { background: var(--surface-3); }
 .people-matches small { margin-left: auto; color: var(--text-2); font-size: 12px; }
+/* Deleting a chat, for me only: asked first. */
+.chat-clear { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
+.chat-clear p { color: var(--text-2); font-size: 14px; line-height: 1.4; }
+.chat-clear-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.people-new { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: rgb(var(--accent-rgb) / 0.18); color: var(--accent); }
 .people-initial {
   flex: none;
   display: grid;
@@ -3410,7 +3698,7 @@ img.avatar { background: var(--surface-2); }
 .message-banner-text b { font-size: 14.5px; }
 .message-banner-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 13.5px; }
 
-.chat-head { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 0 6px; text-align: left; }
+.chat-head { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 0 6px; text-align: left; }
 .chat-head:disabled { opacity: 1; }
 .chat-head b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
 .chat-head small { color: var(--text-2); font-size: 12px; }
@@ -3430,6 +3718,9 @@ img.avatar { background: var(--surface-2); }
 .bubble.mine { align-self: flex-end; border-radius: 18px 18px 6px 18px; background: var(--accent); color: var(--on-accent); }
 @keyframes bubble-in { from { opacity: 0; translate: 0 6px; } }
 .bubble p { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 15.5px; line-height: 1.35; }
+/* Web addresses in messages and comments: tap to open in a new tab. */
+.bubble p a, .comment-list a { color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.bubble:not(.mine) p a, .comment-list a { color: var(--accent); }
 .bubble time { align-self: flex-end; opacity: 0.6; font-size: 11px; }
 .bubble-who { color: var(--accent); font-size: 12.5px; }
 .bubble-photo { display: block; margin: -2px -6px 0; overflow: hidden; border-radius: 13px; }
@@ -3486,3 +3777,113 @@ img.avatar { background: var(--surface-2); }
 .chat-viewer .icon-btn { position: absolute; top: calc(var(--safe-t) + 6px); left: 8px; color: #fff; }
 .chat-people { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .chat-people li { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+
+/* A toast's Undo, for a moment after photos go in. */
+.toast-undo { margin-left: 4px; padding: 4px 10px; border-radius: 12px; background: rgb(var(--accent-rgb) / 0.18); color: var(--accent); font-weight: 700; pointer-events: auto; }
+
+/* ---------- photos added: the burst on screen (components/AddedFx.jsx) ---------- */
+
+.added-fx { position: fixed; inset: 0; z-index: 45; overflow: hidden; pointer-events: none; }
+.fx-heart, .fx-bat, .fx-fall, .fx-confetti { position: absolute; display: block; }
+.fx-heart { bottom: -40px; animation: fx-rise var(--t) cubic-bezier(0.2, 0.7, 0.3, 1) var(--d) both; filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35)); }
+@keyframes fx-rise {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4) rotate(0deg); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), -75vh) scale(1.05) rotate(var(--r)); }
+}
+.fx-flash { position: absolute; inset: 0; background: #dfe6ff; animation: fx-flash 0.75s linear both; }
+@keyframes fx-flash {
+  0% { opacity: 0; }
+  6% { opacity: 0.36; }
+  14% { opacity: 0.05; }
+  22% { opacity: 0.26; }
+  42%, 100% { opacity: 0; }
+}
+.fx-bolt {
+  position: absolute;
+  top: 0;
+  width: 70px;
+  height: 46vh;
+  stroke: #f4f1ff;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px #b9c6ff) drop-shadow(0 0 22px #8fa3ff);
+  animation: fx-bolt 0.75s linear both;
+}
+@keyframes fx-bolt {
+  0% { opacity: 0; }
+  6% { opacity: 1; }
+  14% { opacity: 0.15; }
+  22% { opacity: 0.9; }
+  45%, 100% { opacity: 0; }
+}
+.fx-bat { bottom: -40px; fill: #0d0810; filter: drop-shadow(0 0 3px rgb(255 150 70 / 0.95)) drop-shadow(0 0 12px rgb(255 110 30 / 0.6)); animation: fx-fly var(--t) ease-in var(--d) both; }
+@keyframes fx-fly {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  12% { opacity: 1; }
+  30% { transform: translate(calc(var(--dx) * 0.3), -30vh) scale(0.85) rotate(-8deg); }
+  60% { transform: translate(calc(var(--dx) * 0.7), -65vh) scale(1) rotate(8deg); }
+  100% { opacity: 0.9; transform: translate(var(--dx), -115vh) scale(1.1) rotate(-4deg); }
+}
+.fx-fall { top: -40px; animation: fx-fall var(--t) cubic-bezier(0.4, 0, 0.8, 0.6) var(--d) both; }
+@keyframes fx-fall {
+  0% { opacity: 0; transform: translate(0, 0) rotate(0deg); }
+  10% { opacity: 1; }
+  100% { opacity: 0.85; transform: translate(var(--dx), 112vh) rotate(var(--r)); }
+}
+.fx-snow { border-radius: 50%; background: #fff; box-shadow: 0 0 6px rgb(255 255 255 / 0.8); }
+.fx-confetti { left: 50%; bottom: 8vh; border-radius: 2px; animation: fx-pop var(--t) cubic-bezier(0.15, 0.7, 0.4, 1) var(--d) both; }
+@keyframes fx-pop {
+  0% { opacity: 1; transform: translate(-50%, 0) rotate(0deg); }
+  40% { opacity: 1; transform: translate(calc(-50% + var(--dx)), var(--up)) rotate(var(--r)); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx) * 1.3), 15vh) rotate(calc(var(--r) * 2)); }
+}
+.fx-burst { position: absolute; width: 0; height: 0; }
+.fx-burst::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: -14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: currentColor;
+  filter: blur(6px);
+  animation: fx-glow 1.2s ease-out var(--d) both;
+}
+@keyframes fx-glow {
+  0% { opacity: 0.9; transform: scale(0.4); }
+  100% { opacity: 0; transform: scale(2.4); }
+}
+.fx-burst i {
+  position: absolute;
+  left: -1.5px;
+  top: 0;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  transform-origin: 50% 0;
+  animation: fx-spark 1.3s cubic-bezier(0.15, 0.7, 0.3, 1) var(--d) both;
+}
+@keyframes fx-spark {
+  0% { opacity: 1; transform: rotate(var(--a)) translateY(0) scaleY(0.3); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(var(--reach)) scaleY(1); }
+}
+/* On a season, the page gives a little shake as well (an iPhone's stand-in for the pulse). */
+:root[data-quake] #root { animation: quake 0.5s ease-in-out; }
+@keyframes quake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-4px, 2px); }
+  30% { transform: translate(4px, -2px); }
+  45% { transform: translate(-3px, 1px); }
+  60% { transform: translate(3px, -1px); }
+  80% { transform: translate(-1px, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .added-fx { display: none; }
+  :root[data-quake] #root { animation: none; }
+}

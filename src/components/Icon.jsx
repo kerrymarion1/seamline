@@ -106,6 +106,28 @@ const paths = {
       <path d="M3.5 7.5v9M20.5 7.5v9" />
     </>
   ),
+  crop: <path d="M7 3v14h14M3 7h14v14" />,
+  rotate: (
+    <>
+      <path d="M20 11a8 8 0 10-2.3 5.7" />
+      <path d="M20 5v6h-6" />
+    </>
+  ),
+  // A place on the map.
+  pin: (
+    <>
+      <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0113 0c0 5.4-6.5 11-6.5 11z" />
+      <circle cx="12" cy="10" r="2.3" />
+    </>
+  ),
+  // People in a photo.
+  people: (
+    <>
+      <circle cx="9" cy="8.5" r="3" />
+      <path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" />
+      <path d="M15.5 5.8a3 3 0 010 5.4M17.5 14.3c1.6.7 2.7 2.3 3 4.7" />
+    </>
+  ),
   // What's new: a stack of photos.
   photos: (
     <>

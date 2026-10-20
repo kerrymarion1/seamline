@@ -5,16 +5,16 @@ import { useActiveSeason } from '../lib/theme'
 // and never in the way of a tap (see .season-decor in styles.css). Nothing
 // outside a season.
 
-const BAT = 'M32 10c-2-4-5-6-8-6 2 3 2 6 0 8-4-3-10-4-16-2 6 2 10 7 11 12 3-3 7-4 11-3 1-2 2-3 2-5 0 2 1 3 2 5 4-1 8 0 11 3 1-5 5-10 11-12-6-2-12-1-16 2-2-2-2-5 0-8-3 0-6 2-8 6z'
+export const BAT = 'M32 10c-2-4-5-6-8-6 2 3 2 6 0 8-4-3-10-4-16-2 6 2 10 7 11 12 3-3 7-4 11-3 1-2 2-3 2-5 0 2 1 3 2 5 4-1 8 0 11 3 1-5 5-10 11-12-6-2-12-1-16 2-2-2-2-5 0-8-3 0-6 2-8 6z'
 const Bat = ({ className }) => (
   <svg className={className} viewBox="0 0 64 32"><path d={BAT} /></svg>
 )
 
 // A maple leaf, and where each falling one starts (% across), how big it is
 // and how far through its fall it begins, so they never move in step.
-const LEAF = 'M12 2l1.8 3.6 3.2-1-1 3.6 3.6.8-2.6 2.6 2 2.4-3.6.4.4 3.6L12 15.4 8.2 18l.4-3.6-3.6-.4 2-2.4L4.4 9l3.6-.8-1-3.6 3.2 1zM11.4 15h1.2v7h-1.2z'
+export const LEAF = 'M12 2l1.8 3.6 3.2-1-1 3.6 3.6.8-2.6 2.6 2 2.4-3.6.4.4 3.6L12 15.4 8.2 18l.4-3.6-3.6-.4 2-2.4L4.4 9l3.6-.8-1-3.6 3.2 1zM11.4 15h1.2v7h-1.2z'
 const LEAVES = [[8, 26, 0], [26, 18, -5], [47, 30, -9], [63, 20, -2], [80, 24, -7], [92, 16, -12]]
-const LEAF_COLOURS = ['#e07a2e', '#c2452d', '#f2b45a', '#9c5a2a']
+export const LEAF_COLOURS = ['#e07a2e', '#c2452d', '#f2b45a', '#9c5a2a']
 
 // Where the bulbs hang on the wire, and which colour each is.
 const BULBS = [[4, 18], [14, 34], [24, 42], [34, 40], [44, 30], [54, 20], [64, 14], [74, 14], [84, 18], [94, 24]]

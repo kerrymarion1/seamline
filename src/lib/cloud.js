@@ -17,8 +17,8 @@ const UPLOAD_QUALITY = 0.88
 export const STORAGE_LIMIT = 1024 ** 3 // 1 GB
 // Cloudflare R2, where photos, videos and finished collages go. The first
 // 10 GB are free; beyond that it is about $0.015 per GB a month.
-export const MEDIA_LIMIT = 50 * 1024 ** 3 // 50 GB
-export const MEDIA_WARN = 40 * 1024 ** 3 // when Settings starts to warn
+export const MEDIA_LIMIT = 100 * 1024 ** 3 // 100 GB
+export const MEDIA_WARN = 90 * 1024 ** 3 // when Settings starts to warn
 
 export const supabase = URL_ && KEY ? createClient(URL_, KEY) : null
 
@@ -466,7 +466,7 @@ export const mediaStorageUsed = (shares = state.shares) => stored(shares, true)
 // registry. `album` is a secret album's id when it goes online for one: its
 // row then stays hidden from everyone outside that album.
 async function ensureVideo(image, onFraction, album) {
-  if (mediaStorageUsed() + image.blob.size > MEDIA_LIMIT) throw new Error('Storage is full (50 GB). Remove some photos or videos first.')
+  if (mediaStorageUsed() + image.blob.size > MEDIA_LIMIT) throw new Error('Storage is full (100 GB). Remove some photos or videos first.')
   const ext = image.name?.match(/\.([a-z0-9]+)$/i)?.[1].toLowerCase() ?? 'mp4'
   const stored = []
   try {
@@ -523,7 +523,7 @@ export async function ensureThumbs(images, limit = 25) {
 async function ensurePhotoOnCloudflare(image, copy, name, album) {
   const small = state.features.thumbs ? await thumbOf(image.previewBlob) : null
   const bytes = copy.blob.size + (small?.size ?? 0)
-  if (mediaStorageUsed() + bytes > MEDIA_LIMIT) throw new Error('Storage is full (50 GB). Remove some photos or videos first.')
+  if (mediaStorageUsed() + bytes > MEDIA_LIMIT) throw new Error('Storage is full (100 GB). Remove some photos or videos first.')
   const stored = []
   try {
     stored.push(await putMedia(copy.blob, { ext: 'jpg', type: 'image/jpeg', name }))
@@ -571,6 +571,34 @@ export async function ensurePhotos(images, onProgress = () => {}, { album = null
     const row = { library: state.library, id: image.id, path, name: `${base}.jpg`, width: copy.width, height: copy.height, bytes: copy.blob.size }
     set({ photos: { ...state.photos, [image.id]: row } })
   }
+}
+
+// A photo already online whose picture has changed (cropped or turned): put
+// the new picture online in its place, under the same id, and remove the old
+// files unless a link still shows them. Its reactions, comments and tags stay
+// with it. A photo not online yet needs nothing: it goes up as it is now.
+export async function replaceOnline(image) {
+  const old = state.photos[image.id]
+  if (!old || !state.canSync) return
+  const copy = await uploadCopy(image)
+  const small = state.features.thumbs ? await thumbOf(image.previewBlob) : null
+  const stored = []
+  try {
+    stored.push(await putMedia(copy.blob, { ext: 'jpg', type: 'image/jpeg', name: old.name }))
+    if (small) stored.push(await putMedia(small, { ext: 'jpg', type: 'image/jpeg' }))
+    const saved = await supabase
+      .from('seamline_photos')
+      .update({ path: stored[0], thumb: small ? stored[1] : null, width: copy.width, height: copy.height, bytes: copy.blob.size + (small?.size ?? 0) })
+      .eq('library', state.library).eq('id', image.id).select().single()
+    if (saved.error) throw new Error(saved.error.message)
+    set({ photos: { ...state.photos, [image.id]: saved.data } })
+  } catch (err) {
+    await removeStored(stored).catch(() => {})
+    throw err
+  }
+  const shown = pathsInUse()
+  const gone = [old.path, old.thumb].filter((p) => p && !shown.has(p))
+  if (gone.length) await removeStored(gone).catch(() => {})
 }
 
 // Remove online copies nothing refers to any more. `usedIds` are the photos
@@ -941,8 +969,9 @@ export async function visitorUpload(token, file) {
 
 // Everyone in my library, { id, name, role }, by name: for choosing who is in
 // a secret album or a chat (see seamline_library_people).
+// Null when it can't be asked yet (signed out, or the library not read yet).
 export async function fetchLibraryPeople() {
-  if (!supabase || !state.session || !state.features.messages) return []
+  if (!supabase || !state.session || !state.features.messages) return null
   const { data, error } = await supabase.rpc('seamline_library_people')
   if (error) throw new Error(error.message)
   return data ?? []

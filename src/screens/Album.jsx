@@ -2,27 +2,49 @@ import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import Avatar from '../components/Avatar'
+import CropEditor from '../components/CropEditor'
 import LinkSheet from '../components/LinkSheet'
+import Linkify from '../components/Linkify'
 import PeoplePicker from '../components/PeoplePicker'
 import PhotoPager from '../components/PhotoPager'
+import PlaceSheet from '../components/PlaceSheet'
 import { ReactionRow } from '../components/Reactions'
 import {
   adoptVisitorItems, canLink, deleteComment, fetchMedia, findShare, me, progressText, publicUrl, refreshComments,
   refreshHearts, refreshShares, removeVisitorItem, setPinned, setRights, stopShare, useCloud, usePinned, visitorItems,
 } from '../lib/cloud'
 import Sheet from '../components/Sheet'
+import TagSheet from '../components/TagSheet'
+import { tagName } from '../lib/collections'
+import { findDuplicates } from '../lib/dupes'
+import { celebrateAdded } from '../lib/feedback'
+import { editPhoto } from '../lib/edit'
 import { clock, countText, importFile, importMedia, isVideo } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
-import { personIn, usePeople } from '../lib/people'
+import { adderOf, personIn, usePeople } from '../lib/people'
 import { announceUpload } from '../lib/push'
 import { addPhotoComment, fetchAlbumSocial, removePhotoComment, setReaction, watchAlbumSocial } from '../lib/social'
 import { syncNow } from '../lib/sync'
 import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
-  addImages, addToAlbum, deleteAlbum, uploaderName, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumNote, setAlbumPeople, setCaption,
-  sortAlbum, useAlbum, useStore,
+  addedAt, addImages, addToAlbum, deleteAlbum, isPersonTag, uploaderName, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumNote, setAlbumPeople, setCaption,
+  getState, sortAlbum, useAlbum, useStore,
 } from '../lib/store'
+
+// Who added a photo and when, for under it: "Added by Kerry · today",
+// "Added by Kerry · Oct 17", "Oct 17, 2024" from another year, or just
+// "Added Oct 17" when who isn't known.
+function addedText(by, t) {
+  const d = new Date(t)
+  const now = new Date()
+  const day = !(t > Date.UTC(2020, 0) && t < Date.now() + 864e5) ? ''
+    : d.toDateString() === now.toDateString() ? 'today'
+    : d.toDateString() === new Date(Date.now() - 864e5).toDateString() ? 'yesterday'
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' })
+  if (by) return day ? `Added by ${by} · ${day}` : `Added by ${by}`
+  return day && `Added ${day}`
+}
 
 const SORTS = [
   { id: 'newest', name: 'Newest first', hint: 'The most recently added at the top' },
@@ -54,6 +76,7 @@ export default function Album({ albumId }) {
   const [busy, setBusy] = useState(false)
   const [linking, setLinking] = useState(null) // { kind, sourceId, title, imageIds, captions, note }
   const [pending, setPending] = useState([]) // chosen, waiting for "Add"
+  const [dupes, setDupes] = useState(new Map()) // which of those are already in an album, and which album
   // Who sees this album: everyone, or (secret) only the people chosen.
   const [choosingPeople, setChoosingPeople] = useState(false)
   const people = usePeople()
@@ -66,6 +89,9 @@ export default function Album({ albumId }) {
   // A comment or the caption being written, for one photo: { kind, photo }.
   const [writing, setWriting] = useState(null)
   const writingHere = writing?.photo === viewing ? writing.kind : null
+  const [tagging, setTagging] = useState(false) // who is in the photo being looked at
+  const [placing, setPlacing] = useState(false) // where the album was
+  const [cropping, setCropping] = useState(null) // { busy, error } while turning or cropping the photo being looked at
   useEffect(() => {
     if (!features.social) return
     let live = true
@@ -114,7 +140,8 @@ export default function Album({ albumId }) {
 
   useEffect(() => {
     if (!notice || notice.busy) return
-    const t = setTimeout(() => setNotice(null), 2600)
+    // Longer while there is something to undo.
+    const t = setTimeout(() => setNotice(null), notice.undo ? 6000 : 2600)
     return () => clearTimeout(t)
   }, [notice])
 
@@ -141,6 +168,8 @@ export default function Album({ albumId }) {
   const viewed = images[viewing]
   const captions = album.captions ?? {}
   const addedBy = album.addedBy ?? {}
+  const addedLine = viewed ? addedText(uploaderName(addedBy[viewing]), addedAt(viewing)) : ''
+  const tagsHere = album.tags?.[viewing] ?? []
   const said = comments[viewing] ?? []
   // A secret album never gets a link or the front-page pin: both would show
   // its photos to everyone.
@@ -212,6 +241,11 @@ export default function Album({ albumId }) {
     }
     setPending((p) => [...p, ...records])
     setNotice(failed ? { text: `${failed} file${failed > 1 ? 's' : ''} could not be read` } : null)
+    // Then, while they wait, a look for any already in an album.
+    const { albums, images: here } = getState()
+    findDuplicates(records, albums, here)
+      .then((found) => found.size && setDupes((d) => new Map([...d, ...found])))
+      .catch(() => {})
   }
   const dropPending = (records) =>
     records.forEach((r) => {
@@ -225,13 +259,29 @@ export default function Album({ albumId }) {
   const cancelPending = () => {
     dropPending(pending)
     setPending([])
+    setDupes(new Map())
   }
+  const pendingDupes = pending.filter((r) => dupes.has(r.id))
+  const leaveOutDupes = () => {
+    dropPending(pendingDupes)
+    setPending((p) => p.filter((r) => !dupes.has(r.id)))
+  }
+  // In they go, with the season's sound, pulse and burst, and a moment to undo.
   const submitPending = () => {
+    const ids = pending.map((r) => r.id)
     addImages(pending)
-    addToAlbum(album.id, pending.map((r) => r.id), me())
+    addToAlbum(album.id, ids, me())
     announceUpload(album, pending)
-    setNotice({ text: `Added ${countText(pending)} to ${album.name}` })
+    celebrateAdded(pending.length)
+    setNotice({
+      text: `Added ${countText(pending)} to ${album.name}`,
+      undo: () => {
+        removeFromAlbum(album.id, ids)
+        setNotice({ text: 'Taken back out' })
+      },
+    })
     setPending([])
+    setDupes(new Map())
   }
 
   // A photo's file: the one on this device, or its online copy where this
@@ -271,6 +321,18 @@ export default function Album({ albumId }) {
       kind: 'photo', sourceId: viewing, title: (viewed.name ?? 'Photo').replace(/\.[^.]+$/, ''), imageIds: [viewing], captions,
     })
   const canLinkViewed = !guest && !secret && canLink(viewed)
+  // Turning and cropping changes the photo for everyone; a guest can't.
+  const canEditViewed = !guest && !!viewed && !isVideo(viewed)
+  const saveCrop = async (change) => {
+    setCropping({ busy: true, error: null })
+    try {
+      await editPhoto(album.id, viewing, change)
+      setCropping(null)
+      setNotice({ text: 'Photo saved' })
+    } catch (e) {
+      setCropping({ busy: false, error: e.message || 'Could not save the photo' })
+    }
+  }
   const pinnedHere = pin?.album === album.id && pin?.image === viewing
   const seasonName = SEASONS.find((s) => s.id === season)?.name
   // The pin is the whole library's: everyone's front page follows it.
@@ -423,6 +485,9 @@ export default function Album({ albumId }) {
       {secret && (
         <button className="secret-bar" onClick={limited ? undefined : openPeople} disabled={limited}>
           <Icon name="lock" size={14} />
+          <span className="secret-faces">
+            {(album.members ?? []).slice(0, 5).map((id) => <Avatar key={id} person={personIn(people, id) ?? { id, name: nameOf(id) }} size={20} />)}
+          </span>
           <span>
             Secret · {(album.members ?? []).map((id) => (id === myId ? 'you' : nameOf(id).split(' ')[0])).join(', ')}
           </span>
@@ -459,7 +524,7 @@ export default function Album({ albumId }) {
               aria-label="Album note"
             />
           )}
-          {!selecting && ids.length > 1 && (
+          {!selecting && ids.length > 0 && (
             <div className="album-bar">
               {liked.length > 0 && (
                 <>
@@ -469,7 +534,16 @@ export default function Album({ albumId }) {
                   </button>
                 </>
               )}
-              {!limited && (
+              {/* Where it was, for the map. */}
+              {(!limited || album.place) && (
+                <button
+                  className={`chip small place-btn ${album.place ? 'set' : ''}`}
+                  onClick={() => (limited ? navigate('/map') : setPlacing(true))}
+                >
+                  <Icon name="pin" size={15} /> <span>{album.place?.name ?? 'Add place'}</span>
+                </button>
+              )}
+              {!limited && ids.length > 1 && (
                 <button className="chip small sort-btn" onClick={() => setSorting(true)}>
                   <Icon name="sort" size={16} /> Sort
                 </button>
@@ -523,7 +597,12 @@ export default function Album({ albumId }) {
                   )}
                   {(addedBy[id] || noteCount(id) > 0) && (
                     <span className="tile-tags">
-                      {addedBy[id] && <span className="by">{uploaderName(addedBy[id])}</span>}
+                      {addedBy[id] && (
+                        <span className="by">
+                          <Avatar person={adderOf(people, addedBy[id])} size={16} />
+                          <span>{uploaderName(addedBy[id])}</span>
+                        </span>
+                      )}
                       {noteCount(id) > 0 && <span className="said"><Icon name="comment" size={13} /> {noteCount(id)}</span>}
                     </span>
                   )}
@@ -597,6 +676,11 @@ export default function Album({ albumId }) {
               {hearts.byItem[viewing] > 0 && <span className="hearts inline"><Icon name="heart" size={13} /> {hearts.byItem[viewing]}</span>}
             </div>
             <span className="viewer-tools">
+              {canEditViewed && (
+                <button className="icon-btn" onClick={() => setCropping({ busy: false, error: null })} aria-label="Crop and turn">
+                  <Icon name="crop" size={20} />
+                </button>
+              )}
               <button className="icon-btn" disabled={busy} onClick={() => save([viewing])} aria-label="Save to phone">
                 <Icon name="download" size={20} />
               </button>
@@ -613,7 +697,12 @@ export default function Album({ albumId }) {
             onIndex={(i) => setViewing(shown[i])}
           />
           <div className="viewer-notes">
-            {addedBy[viewing] && <p className="note centre">Added by {uploaderName(addedBy[viewing])}</p>}
+            {addedLine && (
+              <p className="note centre added-line">
+                {addedBy[viewing] && <Avatar person={adderOf(people, addedBy[viewing])} size={20} />}
+                {addedLine}
+              </p>
+            )}
             {/* The caption, when there is one: a tap edits it. */}
             {captions[viewing] && writingHere !== 'caption' && (
               limited ? (
@@ -621,6 +710,17 @@ export default function Album({ albumId }) {
               ) : (
                 <button className="caption" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>{captions[viewing]}</button>
               )
+            )}
+            {/* Who is in it: a tap shows every photo they're in. */}
+            {tagsHere.length > 0 && (
+              <div className="viewer-tags">
+                {tagsHere.map((t) => (
+                  <button key={t} className="tag-chip" onClick={() => navigate(`/people/${encodeURIComponent(t)}`)}>
+                    <Avatar person={isPersonTag(t) ? personIn(people, t) : { id: t, name: t }} size={20} />
+                    {tagName(t, people).split(' ')[0]}
+                  </button>
+                ))}
+              </div>
             )}
             {features.social && (
               <div className="family-react">
@@ -632,7 +732,7 @@ export default function Album({ albumId }) {
                 {famNotes[viewing].map((c) => (
                   <li key={c.id}>
                     <Avatar person={personIn(people, c.user_id)} size={26} />
-                    <p><b>{firstOf(c.user_id)}</b> {c.body}</p>
+                    <p><b>{firstOf(c.user_id)}</b> <Linkify text={c.body} /></p>
                     {(c.user_id === myId || admin) && (
                       <button className="icon-btn" onClick={() => dropComment(c)} aria-label="Delete this comment">
                         <Icon name="close" size={16} />
@@ -665,21 +765,18 @@ export default function Album({ albumId }) {
                 autoFocus
               />
             ) : (
-              (features.social || canLinkViewed || (!limited && !captions[viewing])) && (
+              (features.social || canLinkViewed || !limited) && (
                 <div className="viewer-write">
                   {features.social && (
-                    <button className="chip small" onClick={() => setWriting({ kind: 'comment', photo: viewing })}>
-                      <Icon name="comment" size={15} /> Comment
-                    </button>
+                    <button className="chip small" onClick={() => setWriting({ kind: 'comment', photo: viewing })}>Comment</button>
                   )}
                   {!limited && !captions[viewing] && (
-                    <button className="chip small" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>
-                      <Icon name="edit" size={15} /> Caption
-                    </button>
+                    <button className="chip small" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>Caption</button>
                   )}
+                  {!limited && <button className="chip small" onClick={() => setTagging(true)}>{tagsHere.length ? 'Tags' : 'Tag'}</button>}
                   {canLinkViewed && (
                     <button className="chip small share" onClick={linkPhoto}>
-                      <Icon name="link" size={15} /> Share link
+                      <Icon name="link" size={14} /> Share
                     </button>
                   )}
                 </div>
@@ -728,10 +825,26 @@ export default function Album({ albumId }) {
         <div className="toast" role="status">
           {notice.busy && <i className="spinner" />}
           {notice.text}
+          {notice.undo && <button className="toast-undo" onClick={notice.undo}>Undo</button>}
         </div>
       )}
 
       <LinkSheet target={linking} onClose={() => setLinking(null)} />
+
+      {cropping && viewed && (
+        <CropEditor
+          key={viewing}
+          image={viewed}
+          busy={cropping.busy}
+          error={cropping.error}
+          onCancel={() => setCropping(null)}
+          onSave={saveCrop}
+        />
+      )}
+
+      <PlaceSheet key={placing ? 'open' : 'closed'} open={placing} album={album} onClose={() => setPlacing(false)} />
+
+      <TagSheet key={tagging ? viewing : 'closed'} open={tagging && !!viewed} album={album} photoId={viewing} onClose={() => setTagging(false)} />
 
       <Sheet open={sorting} onClose={() => setSorting(false)} title="Sort this album" modal>
         <p className="hint">The order is kept, and it is the order people see on the shared page.</p>
@@ -751,8 +864,9 @@ export default function Album({ albumId }) {
       <Sheet open={pending.length > 0} onClose={cancelPending} title={`Add to ${album.name}`} modal>
         <div className="pending-grid">
           {pending.map((r) => (
-            <span key={r.id} className="pending-thumb">
+            <span key={r.id} className={`pending-thumb ${dupes.has(r.id) ? 'dupe' : ''}`}>
               <img src={r.previewUrl} alt="" draggable={false} />
+              {dupes.has(r.id) && <span className="pending-dupe">{dupes.get(r.id).id === album.id ? 'Already here' : `In ${dupes.get(r.id).name}`}</span>}
               {isVideo(r) && <span className="clip"><Icon name="play" size={12} /> {clock(r.duration)}</span>}
               <button onClick={() => unpick(r)} aria-label="Take this one off"><Icon name="close" size={14} /></button>
             </span>
@@ -761,6 +875,18 @@ export default function Album({ albumId }) {
             <Icon name="plus" size={22} />
           </button>
         </div>
+        {pendingDupes.length > 0 && (
+          <div className="dupe-warn">
+            <p>
+              {pendingDupes.length === pending.length
+                ? `${pending.length === 1 ? 'This is' : 'These are all'} already in your albums.`
+                : `${pendingDupes.length} of these ${pendingDupes.length === 1 ? 'is' : 'are'} already in your albums.`}
+            </p>
+            {pendingDupes.length < pending.length && (
+              <button className="pill-btn" onClick={leaveOutDupes}>Leave {pendingDupes.length === 1 ? 'it' : 'them'} out</button>
+            )}
+          </div>
+        )}
         {secret && <p className="note">This album is secret: only its people will see these.</p>}
         <button className="primary block" onClick={submitPending}>
           Add {countText(pending)} to {album.name}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import { chime } from '../lib/chime'
-import { isLive, refreshChats, useChats, watchChats } from '../lib/chat'
+import { chatsLoaded, isLive, isUnread, refreshChats, useChats, watchChats } from '../lib/chat'
 import { useCloud } from '../lib/cloud'
 import { usePeople } from '../lib/people'
 import { pushStatus } from '../lib/push'
@@ -52,12 +52,13 @@ export default function MessageWatcher() {
   // Compare with the last look: what has moved on, from someone else, in a
   // chat I'm in. The first look only sets the starting point.
   useEffect(() => {
-    if (!on) return
+    // The starting point is the list as first read, not the empty one before it.
+    if (!on || !chatsLoaded()) return
     const before = seen.current
     seen.current = new Map(chats.map((c) => [c.id, c.last_at]))
     if (!before) return
     const fresh = chats.filter(
-      (c) => c.members.includes(me) && c.last_by && c.last_by !== me && c.last_text != null
+      (c) => c.members.includes(me) && c.last_by && c.last_by !== me && c.last_text != null && isUnread(c)
         && before.get(c.id) !== c.last_at && (!before.has(c.id) || Date.parse(c.last_at) > Date.parse(before.get(c.id))),
     )
     if (!fresh.length || document.hidden) return

@@ -4,6 +4,7 @@ import { me } from '../lib/cloud'
 import { importMedia, isVideoFile } from '../lib/images'
 import { announceUpload } from '../lib/push'
 import { clearShared, pendingShared } from '../lib/shared'
+import { celebrateAdded } from '../lib/feedback'
 import { addImages, addToAlbum, createAlbum, useStore } from '../lib/store'
 import Icon from './Icon'
 import Sheet from './Sheet'
@@ -45,6 +46,7 @@ export default function SharedInbox() {
     }
     addImages(records)
     addToAlbum(target.id, records.map((r) => r.id), me())
+    if (records.length) celebrateAdded(records.length)
     announceUpload(target, records)
     await clearShared()
     setProgress(null)

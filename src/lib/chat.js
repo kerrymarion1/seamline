@@ -7,11 +7,13 @@ import { ensureLocal } from './sync'
 // seamline_chats, its messages in seamline_messages (see 20261017_private.sql).
 // The people in a chat see it, and so does the admin. Each person's "read up
 // to" time is kept in seamline_chat_reads, which is where unread counts come
-// from. New messages are fetched every few seconds while a chat is open, and
+// from, and so is when they last cleared a chat for themselves. New messages are fetched every few seconds while a chat is open, and
 // a notification is sent for each one (seamline-notify).
 
 let chats = []
+let loaded = false // the list has been read at least once
 let reads = {}
+let cleared = {} // chat id -> when I cleared it
 const listeners = new Set()
 const emit = () => listeners.forEach((l) => l())
 const subscribe = (l) => {
@@ -27,11 +29,27 @@ export async function refreshChats() {
   if (!ready()) return
   const [list, mine] = await Promise.all([
     supabase.from('seamline_chats').select('*').order('last_at', { ascending: false }),
-    supabase.from('seamline_chat_reads').select('chat, read_at').eq('user_id', myId()),
+    supabase.from('seamline_chat_reads').select(getCloud().features.clearing ? 'chat, read_at, cleared_at' : 'chat, read_at').eq('user_id', myId()),
   ])
   if (list.error) throw new Error(list.error.message)
   chats = list.data
+  loaded = true
   reads = Object.fromEntries((mine.data ?? []).map((r) => [r.chat, r.read_at]))
+  cleared = Object.fromEntries((mine.data ?? []).filter((r) => r.cleared_at).map((r) => [r.chat, r.cleared_at]))
+  emit()
+}
+
+// A chat I cleared, with nothing new since: it stays out of my list.
+export const isCleared = (chat) => !!cleared[chat.id] && Date.parse(chat.last_at) <= Date.parse(cleared[chat.id])
+
+// Delete a chat for me only: its messages so far are hidden from me and it
+// leaves my list until someone writes again. The others keep everything.
+export async function clearChat(chat) {
+  const at = new Date().toISOString()
+  const { error } = await supabase.from('seamline_chat_reads').upsert({ chat: chat.id, user_id: myId(), read_at: at, cleared_at: at })
+  if (error) throw new Error(error.message)
+  cleared = { ...cleared, [chat.id]: at }
+  reads = { ...reads, [chat.id]: at }
   emit()
 }
 
@@ -41,6 +59,7 @@ export const isUnread = (chat) =>
   && (!reads[chat.id] || Date.parse(chat.last_at) > Date.parse(reads[chat.id]))
 
 export const useChats = () => useSyncExternalStore(subscribe, () => chats)
+export const chatsLoaded = () => loaded
 export const useUnread = () => useSyncExternalStore(subscribe, () => chats.filter(isUnread).length)
 
 // A photo from an album, sent as a message: its full file is fetched first if
@@ -51,9 +70,11 @@ export async function sendAlbumPhoto(chat, image) {
   return sendMessage(chat, { image: getState().images[image.id] ?? image })
 }
 
-// The latest messages in a chat, oldest first; `after` fetches only newer ones.
+// The latest messages in a chat, oldest first; `after` fetches only newer
+// ones. Nothing from before I cleared the chat.
 export async function fetchMessages(chatId, after = null) {
   let query = supabase.from('seamline_messages').select('*').eq('chat', chatId)
+  if (cleared[chatId] && !after) query = query.gt('created_at', cleared[chatId])
   if (after) {
     query = query.gt('created_at', after).order('created_at', { ascending: true })
     const { data, error } = await query
@@ -162,12 +183,16 @@ export const isLive = () => !!supabase && !!getCloud().features.live
 
 // One chat, while it is open: new messages, read receipts and "typing".
 // Returns { typing() to say I'm typing, close() }.
-export function watchChat(chatId, { onMessage, onRead, onTyping, onReaction = () => {} }) {
+export function watchChat(chatId, { onMessage, onRead, onTyping, onReaction = () => {}, onDelete = () => {} }) {
   if (!isLive()) return { typing() {}, close() {} }
   const channel = supabase
     .channel(`chat-${chatId}`)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'seamline_messages', filter: `chat=eq.${chatId}` }, (e) =>
       onMessage(e.new))
+    // A deleted message carries only its id, and can't be filtered by chat:
+    // the chat drops it if it is one of its own.
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'seamline_messages' }, (e) =>
+      e.old?.id && onDelete(e.old.id))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'seamline_message_reactions', filter: `chat=eq.${chatId}` }, () =>
       onReaction())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'seamline_chat_reads', filter: `chat=eq.${chatId}` }, (e) =>
@@ -198,6 +223,7 @@ export function watchChats() {
   return () => supabase.removeChannel(channel)
 }
 
+// Only whoever sent a message can delete it, for everyone in the chat.
 export async function deleteMessage(message) {
   const { error } = await supabase.from('seamline_messages').delete().eq('id', message.id)
   if (error) throw new Error(error.message)

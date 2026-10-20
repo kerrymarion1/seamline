@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
+import Avatar from './Avatar'
 import Icon from './Icon'
 import Logo from './Logo'
 import { refreshChats, useUnread } from '../lib/chat'
@@ -119,18 +120,14 @@ export function Who({ name }) {
       onClick={() => navigate(waiting ? '/settings#people' : '/settings')}
       aria-label={label.filter(Boolean).join('. ')}
     >
-      {avatar ? (
-        <img className="who-photo" src={avatar} alt="" draggable={false} />
-      ) : (
-        name && <i aria-hidden="true">{name[0].toUpperCase()}</i>
-      )}
+      {(avatar || name) && <Avatar person={{ id: session?.user.id, name, avatar }} size={28} />}
       {waiting > 0 && (
         <b className="who-bell" aria-hidden="true">
           <Icon name="bell" size={16} />
           <em>{waiting}</em>
         </b>
       )}
-      {name && <span>{name}</span>}
+      {name && <span className="who-name">{name}</span>}
       <Icon name="gear" size={20} />
     </button>
     </span>

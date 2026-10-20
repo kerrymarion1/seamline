@@ -6,8 +6,10 @@ import Icon from './Icon'
 // starting with what was typed first, then any containing it). Enter or a tap
 // adds one; they show as chips, each with a cross. Backspace in an empty box
 // takes the last one off. `people` are { id, name, role }; `value` the chosen
-// ids; `locked` ids are shown but can't be removed (yourself, say).
-export default function PeoplePicker({ people, value, onChange, locked = [], placeholder = 'Type a name' }) {
+// ids; `locked` ids are shown but can't be removed (yourself, say). With
+// `allowNew`, a name that isn't anyone's can be added as it is typed (it goes
+// into `value` as the name itself), for tagging people who aren't in Hugpix.
+export default function PeoplePicker({ people, value, onChange, locked = [], placeholder = 'Type a name', allowNew = false }) {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const input = useRef(null)
@@ -25,6 +27,11 @@ export default function PeoplePicker({ people, value, onChange, locked = [], pla
         })
         .slice(0, 6)
     : []
+
+  // A new name, as typed, when it isn't anyone's already.
+  const typed = query.trim().replace(/\s+/g, ' ')
+  const canAdd = allowNew && !!typed && !value.includes(typed) && !people.some((p) => p.name.toLowerCase() === typed.toLowerCase())
+  const personOf = (id) => byId.get(id) ?? (allowNew ? { id, name: id } : null)
 
   const add = (person) => {
     onChange([...value, person.id])
@@ -44,6 +51,9 @@ export default function PeoplePicker({ people, value, onChange, locked = [], pla
     } else if ((e.key === 'Enter' || e.key === 'Tab') && matches.length) {
       e.preventDefault()
       add(matches[Math.min(active, matches.length - 1)])
+    } else if (e.key === 'Enter' && canAdd) {
+      e.preventDefault()
+      add({ id: typed })
     } else if (e.key === 'Backspace' && !query) {
       const last = [...value].reverse().find((id) => !locked.includes(id))
       if (last) remove(last)
@@ -59,10 +69,10 @@ export default function PeoplePicker({ people, value, onChange, locked = [], pla
       <div className="people-box" onClick={() => input.current?.focus()}>
         {value.map((id) => (
           <span key={id} className="people-chip">
-            <Avatar person={byId.get(id)} size={22} />
-            {byId.get(id)?.name ?? 'Someone'}
+            <Avatar person={personOf(id)} size={22} />
+            {personOf(id)?.name ?? 'Someone'}
             {!locked.includes(id) && (
-              <button type="button" aria-label={`Take ${byId.get(id)?.name ?? 'them'} off`} onClick={() => remove(id)}>
+              <button type="button" aria-label={`Take ${personOf(id)?.name ?? 'them'} off`} onClick={() => remove(id)}>
                 <Icon name="close" size={12} />
               </button>
             )}
@@ -79,7 +89,7 @@ export default function PeoplePicker({ people, value, onChange, locked = [], pla
             onKeyDown={onKeyDown}
             placeholder={value.length ? '' : placeholder}
             role="combobox"
-            aria-expanded={matches.length > 0}
+            aria-expanded={matches.length > 0 || canAdd}
             aria-controls={listId}
             aria-autocomplete="both"
             autoComplete="off"
@@ -90,7 +100,7 @@ export default function PeoplePicker({ people, value, onChange, locked = [], pla
           {hint && <span className="people-hint" aria-hidden="true"><i>{query}</i>{hint}</span>}
         </span>
       </div>
-      {matches.length > 0 && (
+      {(matches.length > 0 || canAdd) && (
         <ul className="people-matches" id={listId} role="listbox">
           {matches.map((p, i) => (
             <li key={p.id} role="option" aria-selected={i === active}>
@@ -106,9 +116,17 @@ export default function PeoplePicker({ people, value, onChange, locked = [], pla
               </button>
             </li>
           ))}
+          {canAdd && (
+            <li role="option" aria-selected={!matches.length}>
+              <button type="button" className={matches.length ? '' : 'on'} onClick={() => add({ id: typed })}>
+                <span className="people-new"><Icon name="plus" size={16} /></span>
+                Add “{typed}”
+              </button>
+            </li>
+          )}
         </ul>
       )}
-      {q && !matches.length && <p className="note">No one by that name in Hugpix.</p>}
+      {q && !matches.length && !allowNew && <p className="note">No one by that name in Hugpix.</p>}
     </div>
   )
 }

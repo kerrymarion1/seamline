@@ -145,6 +145,7 @@ export async function ensureLocal(ids) {
       addImages([{
         id, name: old.name, width: old.width, height: old.height, blob, previewBlob,
         url: URL.createObjectURL(blob), previewUrl: URL.createObjectURL(previewBlob),
+        ...(old.edited ? { edited: old.edited } : null),
       }])
       // Give anything still showing the small copy a moment to switch over.
       setTimeout(() => URL.revokeObjectURL(old.previewUrl), 5000)
@@ -169,10 +170,24 @@ async function fetchMissing() {
   const inCollage = new Set([...local.projects, ...local.presets].flatMap(photoIdsOf))
   const wanted = new Set()
   for (const list of Object.values(LISTS)) for (const doc of local[list]) for (const id of photoIdsOf(doc)) wanted.add(id)
-  const todo = [...wanted].filter((id) => !local.images[id] && photos[id])
+  // A photo cropped or turned on another device since this one fetched it
+  // comes again (its album notes when; see replaceOnline in cloud.js).
+  const editedAt = new Map()
+  for (const album of local.albums) {
+    for (const [id, at] of Object.entries(album.edited ?? {})) editedAt.set(id, Math.max(editedAt.get(id) ?? 0, at))
+  }
+  const stale = (id) => !!local.images[id] && (local.images[id].edited ?? 0) < (editedAt.get(id) ?? 0)
+  const todo = [...wanted].filter((id) => (!local.images[id] || stale(id)) && photos[id])
   for (const [i, id] of todo.entries()) {
     setStatus({ fetching: { done: i, total: todo.length } })
     const row = photos[id]
+    const edited = editedAt.get(id) ? { edited: editedAt.get(id) } : null
+    const before = local.images[id]
+    // Anything still showing the old picture gets a moment to switch over.
+    const release = () => before && setTimeout(() => {
+      URL.revokeObjectURL(before.previewUrl)
+      if (before.blob) URL.revokeObjectURL(before.url)
+    }, 5000)
     try {
       if (row.kind === 'video') {
         // Only the still is downloaded; the video plays from its online copy.
@@ -192,8 +207,9 @@ async function fetchMissing() {
         const previewBlob = await small.blob()
         addImages([{
           id, remote: publicUrl(row.path), name: row.name, width: row.width, height: row.height, blob: null, previewBlob,
-          url: publicUrl(row.path), previewUrl: URL.createObjectURL(previewBlob),
+          url: publicUrl(row.path), previewUrl: URL.createObjectURL(previewBlob), ...edited,
         }])
+        release()
         continue
       }
       const res = await fetchMedia(publicUrl(row.path))
@@ -202,8 +218,9 @@ async function fetchMissing() {
       const previewBlob = await previewOf(blob)
       addImages([{
         id, name: row.name, width: row.width, height: row.height, blob, previewBlob,
-        url: URL.createObjectURL(blob), previewUrl: URL.createObjectURL(previewBlob),
+        url: URL.createObjectURL(blob), previewUrl: URL.createObjectURL(previewBlob), ...edited,
       }])
+      release()
     } catch {
       // Offline or a broken file: try again on the next cycle.
     }

@@ -3,6 +3,7 @@ import { navigate } from '../App'
 import {
   AlbumName, AlbumsInvite, ago, CoverCycle, Editorial, leadOf, Mosaic, News, openAlbum, Stack, Who,
 } from '../components/HomeLayouts'
+import Avatar from '../components/Avatar'
 import Icon from '../components/Icon'
 import Logo from '../components/Logo'
 import NotifyNudge from '../components/NotifyNudge'
@@ -10,10 +11,11 @@ import PeoplePicker from '../components/PeoplePicker'
 import SeasonDecor from '../components/SeasonDecor'
 import Sheet from '../components/Sheet'
 import { greeting, newsSince, rememberNow } from '../lib/activity'
+import { favouritePhotos, refreshFavourites, useReactionCounts } from '../lib/collections'
 import { useCloud, usePinned, userName } from '../lib/cloud'
 import { countText, isVideo } from '../lib/images'
 import { fadeIn } from '../lib/motion'
-import { usePeople } from '../lib/people'
+import { adderOf, usePeople } from '../lib/people'
 import { announceAlbum } from '../lib/push'
 import { useActiveSeason, useLayout } from '../lib/theme'
 import { addedAt, createAlbum, lastUpload, uploaderName, useStore } from '../lib/store'
@@ -67,6 +69,7 @@ function Albums({ albums, images, onNew, pinned }) {
 // The end of the page: the latest photos and videos from every album, newest
 // first, each with who added it and where. A tap opens it in its album.
 function NewestPhotos({ albums, images }) {
+  const people = usePeople()
   const seen = new Set()
   const newest = []
   for (const album of albums) {
@@ -90,13 +93,63 @@ function NewestPhotos({ albums, images }) {
               <img className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
               {isVideo(images[id]) && <span className="newest-clip"><Icon name="play" size={12} /></span>}
               <span className="newest-label">
-                {by && <b>{by}</b>}
+                {by && <b className="newest-by"><Avatar person={adderOf(people, album.addedBy[id])} size={18} />{by}</b>}
                 <small><AlbumName album={album} /></small>
               </span>
             </button>
           )
         })}
       </div>
+    </section>
+  )
+}
+
+// After the newest: the family's favourites, the most loved first, and the
+// way to all of them.
+function FavouritePhotos({ albums, images }) {
+  const { hearts, features } = useCloud()
+  const reactionCounts = useReactionCounts()
+  useEffect(() => {
+    refreshFavourites().catch(() => {})
+  }, [])
+  const items = features.social ? favouritePhotos(albums, images, reactionCounts, hearts.byItem) : []
+  if (!items.length) return null
+  return (
+    <section className="newest">
+      <div className="section-head">
+        <h2>Favourites<span className="count">{items.length}</span></h2>
+        <button className="pill-btn" onClick={() => navigate('/favourites')}>See all</button>
+      </div>
+      <div className="newest-row">
+        {items.slice(0, 24).map(({ id, album, score }) => (
+          <button key={id} className="newest-tile" onClick={() => navigate(`/album/${album.id}?photo=${encodeURIComponent(id)}`)}>
+            <img className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
+            {isVideo(images[id]) && <span className="newest-clip"><Icon name="play" size={12} /></span>}
+            <span className="newest-label">
+              <b className="newest-score"><Icon name="heart" size={12} /> {score}</b>
+              <small><AlbumName album={album} /></small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// The very end: the way to the map of where the albums were.
+function PlacesCard({ albums }) {
+  const placed = albums.filter((a) => a.place || Object.keys(a.spots ?? {}).length).length
+  if (!albums.length) return null
+  return (
+    <section>
+      <button className="places-card" onClick={() => navigate('/map')}>
+        <span className="places-icon"><Icon name="pin" size={22} /></span>
+        <span className="places-text">
+          <b>Places</b>
+          <small>{placed ? `${placed} album${placed === 1 ? '' : 's'} on the map` : 'Put your albums on a map'}</small>
+        </span>
+        <span className="places-go" aria-hidden="true"><Icon name="back" size={16} /></span>
+      </button>
     </section>
   )
 }
@@ -218,6 +271,8 @@ export default function Home() {
         )}
 
         <NewestPhotos albums={latestFirst} images={images} />
+        <FavouritePhotos albums={latestFirst} images={images} />
+        <PlacesCard albums={latestFirst} />
       </main>
 
       {/* New here, or notifications still off on this device: ask once in a while. */}

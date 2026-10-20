@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon.svg', 'icons/apple-touch-icon.png'],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2,mp3}'],
         navigateFallback: '/index.html',
         // Receives photos shared in from other apps on Android, and shows
         // notifications when someone adds photos.

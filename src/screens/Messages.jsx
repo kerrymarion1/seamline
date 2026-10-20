@@ -1,20 +1,21 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
+import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
 import Avatar from '../components/Avatar'
-import { AlbumName, ago } from '../components/HomeLayouts'
+import { ago } from '../components/HomeLayouts'
 import Icon from '../components/Icon'
+import Linkify from '../components/Linkify'
 import PeoplePicker from '../components/PeoplePicker'
 import { ReactionChips, ReactionRow } from '../components/Reactions'
 import Sheet from '../components/Sheet'
 import {
-  chatTitle, fetchMessageReactions, fetchMessages, fetchReads, isLive, isUnread, markRead, refreshChats, sendAlbumPhoto, sendMessage,
-  setMessageReaction, startChat, updateChat, useChats, watchChat,
+  chatTitle, clearChat, deleteMessage, fetchMessageReactions, fetchMessages, fetchReads, isLive, isUnread, markRead, refreshChats, sendAlbumPhoto, sendMessage,
+  isCleared, setMessageReaction, startChat, updateChat, useChats, watchChat,
 } from '../lib/chat'
 import { publicUrl, useCloud } from '../lib/cloud'
-import { importFile, isVideo } from '../lib/images'
+import { importFile } from '../lib/images'
 import { personIn, usePeople } from '../lib/people'
 import { pushStatus, turnOnPush } from '../lib/push'
-import { useStore } from '../lib/store'
 
 // Messages: "/messages" lists the chats, newest first; "/messages/:id" is one
 // chat. Anyone in the library can message anyone else in it, one to one or a
@@ -85,7 +86,7 @@ function HearMessages() {
 }
 
 function ChatList({ people }) {
-  const chats = useChats()
+  const chats = useChats().filter((c) => !isCleared(c))
   const { session, admin } = useCloud()
   const me = session?.user.id
   const [starting, setStarting] = useState(false)
@@ -223,6 +224,8 @@ function Chat({ chatId, people }) {
   const [fromAlbums, setFromAlbums] = useState(false)
   const [reactions, setReactions] = useState([]) // [{ message, user_id, emoji }]
   const [reactingTo, setReactingTo] = useState(null) // the message whose reactions are open
+  const [confirming, setConfirming] = useState(null) // my message about to be deleted
+  const [clearing, setClearing] = useState(false) // asking before the chat is deleted for me
   const list = useRef(null)
   const fileInput = useRef(null)
   const line = useRef(null)
@@ -294,6 +297,7 @@ function Chat({ chatId, people }) {
       onRead: (person, at) => setReads((r) => ({ ...r, [person]: at })),
       onTyping: (person) => setTypingBy({ id: person, at: Date.now() }),
       onReaction: loadReactions,
+      onDelete: (id) => setMessages((m) => (m?.some((x) => x.id === id) ? m.filter((x) => x.id !== id) : m)),
     })
     const t = setInterval(() => {
       load()
@@ -334,6 +338,20 @@ function Chat({ chatId, people }) {
   const seenBy = lastOne && lastOne.sender === me && chat
     ? chat.members.filter((id) => id !== me && reads[id] && Date.parse(reads[id]) >= Date.parse(lastOne.created_at))
     : []
+
+  // Deleting one of mine: gone at once, back if the database says no.
+  const removeMessage = async (m) => {
+    setReactingTo(null)
+    setConfirming(null)
+    setMessages((ms) => ms.filter((x) => x.id !== m.id))
+    try {
+      await deleteMessage(m)
+      refreshChats().catch(() => {})
+    } catch (e) {
+      setError(e.message)
+      setMessages((ms) => [...ms, m].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)))
+    }
+  }
 
   // A reaction to a message: shown at once, then saved.
   const reactTo = (m, emoji) => {
@@ -407,7 +425,17 @@ function Chat({ chatId, people }) {
   }
   const openAbout = () => {
     setRename(chat.title ?? '')
+    setClearing(false)
     setAbout(true)
+  }
+  const deleteChat = async () => {
+    try {
+      await clearChat(chat)
+      setAbout(false)
+      navigate('/messages')
+    } catch (e) {
+      setError(e.message)
+    }
   }
   const saveName = async () => {
     try {
@@ -423,7 +451,7 @@ function Chat({ chatId, people }) {
         <button className="icon-btn" onClick={() => navigate('/messages')} aria-label="Back to messages"><Icon name="back" /></button>
         <button className="chat-head" onClick={openAbout} disabled={!chat}>
           {other && <Avatar person={other} size={34} />}
-          <span>
+          <span className="chat-head-text">
             <b>{chat ? chatTitle(chat, people) : 'Messages'}</b>
             {chat && (
               <small className={typingBy ? 'typing' : ''}>
@@ -441,20 +469,21 @@ function Chat({ chatId, people }) {
           const mine = m.sender === me
           const newDay = i === 0 || dayOf(messages[i - 1].created_at) !== dayOf(m.created_at)
           const showName = group && !mine && (i === 0 || messages[i - 1].sender !== m.sender || newDay)
-          return (
-            <Fragment key={m.id}>
-              {newDay && <p className="chat-day">{dayLabel(m.created_at)}</p>}
+          // Someone else's picture sits beside the last of each run of their messages.
+          const next = messages[i + 1]
+          const lastOfRun = !next || next.sender !== m.sender || dayOf(next.created_at) !== dayOf(m.created_at)
+          const bubble = (
               <div
                 className={`bubble ${mine ? 'mine' : ''} ${reactingTo === m.id ? 'reacting' : ''}`}
-                // A tap on a message (not its photo) offers the reactions.
+                // A tap on a message (not its photo) offers the reactions, and
+                // on my own messages a way to delete it.
                 onClick={(e) => {
-                  if (!canReact || e.target.closest('.bubble-photo, .reaction-chips, .reaction-row')) return
+                  if ((!canReact && !mine) || e.target.closest('a, .bubble-photo, .reaction-chips, .bubble-tools')) return
+                  setConfirming(null)
                   setReactingTo((r) => (r === m.id ? null : m.id))
                 }}
               >
-                {showName && (
-                  <b className="bubble-who"><Avatar person={personIn(people, m.sender)} size={18} /> {first(nameOf(m.sender))}</b>
-                )}
+                {showName && <b className="bubble-who">{first(nameOf(m.sender))}</b>}
                 {m.photo && (
                   <button className="bubble-photo" onClick={() => setViewing(m)} aria-label="Open photo">
                     <img
@@ -463,7 +492,7 @@ function Chat({ chatId, people }) {
                     />
                   </button>
                 )}
-                {m.body && <p>{m.body}</p>}
+                {m.body && <p><Linkify text={m.body} /></p>}
                 <time>{timeOf(m.created_at)}</time>
                 <ReactionChips
                   reactions={reactions.filter((r) => r.message === m.id)}
@@ -471,9 +500,38 @@ function Chat({ chatId, people }) {
                   onPick={(emoji) => canReact && reactTo(m, emoji)}
                 />
                 {reactingTo === m.id && (
-                  <ReactionRow reactions={reactions.filter((r) => r.message === m.id)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact />
+                  <div className="bubble-tools">
+                    {canReact && (
+                      <ReactionRow reactions={reactions.filter((r) => r.message === m.id)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact />
+                    )}
+                    {mine && (
+                      <button
+                        className={`bubble-delete ${confirming === m.id ? 'sure' : ''}`}
+                        onClick={() => (confirming === m.id ? removeMessage(m) : setConfirming(m.id))}
+                        aria-label={confirming === m.id ? 'Delete for everyone' : 'Delete this message'}
+                      >
+                        {confirming === m.id ? 'Delete for everyone' : <Icon name="trash" size={18} />}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
+          )
+          return (
+            <Fragment key={m.id}>
+              {newDay && <p className="chat-day">{dayLabel(m.created_at)}</p>}
+              {mine ? (
+                bubble
+              ) : (
+                <div className="bubble-row">
+                  {lastOfRun ? (
+                    <Avatar person={personIn(people, m.sender) ?? { id: m.sender, name: nameOf(m.sender) }} size={28} className="bubble-face" />
+                  ) : (
+                    <span className="bubble-face" aria-hidden="true" />
+                  )}
+                  {bubble}
+                </div>
+              )}
             </Fragment>
           )
         })}
@@ -481,7 +539,10 @@ function Chat({ chatId, people }) {
           <p className="chat-seen">Seen{group ? ` by ${seenBy.map((id) => first(nameOf(id))).join(', ')}` : ''}</p>
         )}
         {typingBy && (
-          <div className="bubble typing-bubble" aria-label={`${first(nameOf(typingBy.id))} is typing`}><i /><i /><i /></div>
+          <div className="bubble-row">
+            <Avatar person={personIn(people, typingBy.id) ?? { id: typingBy.id, name: nameOf(typingBy.id) }} size={28} className="bubble-face" />
+            <div className="bubble typing-bubble" aria-label={`${first(nameOf(typingBy.id))} is typing`}><i /><i /><i /></div>
+          </div>
         )}
       </main>
 
@@ -536,7 +597,14 @@ function Chat({ chatId, people }) {
           </button>
         </div>
       </Sheet>
-      <AlbumPhotoPicker open={fromAlbums} onClose={() => setFromAlbums(false)} onSend={sendFromAlbums} />
+      <AlbumPhotoPicker
+        open={fromAlbums}
+        onClose={() => setFromAlbums(false)}
+        onPick={sendFromAlbums}
+        title="Send from an album"
+        action={(n) => (n ? `Send ${n} photo${n === 1 ? '' : 's'}` : 'Choose up to 10')}
+        secretNote="From a secret album: everyone in this chat will see the photos you send."
+      />
 
       {viewing && (
         <div className="chat-viewer" onClick={() => setViewing(null)}>
@@ -578,6 +646,19 @@ function Chat({ chatId, people }) {
               )}
             </>
           )}
+          {features.clearing && (
+            clearing ? (
+              <div className="chat-clear">
+                <p>Delete this chat? It goes from your list and its messages are cleared for you. {group ? 'Everyone else' : nameOf(chat.members.find((id) => id !== me) ?? '').split(' ')[0] || 'The others'} keep{group ? '' : 's'} it. If someone writes again, it comes back with just the new messages.</p>
+                <div className="chat-clear-buttons">
+                  <button className="secondary" onClick={() => setClearing(false)}>Keep it</button>
+                  <button className="primary danger" onClick={deleteChat}>Delete chat</button>
+                </div>
+              </div>
+            ) : (
+              <button className="text-btn danger" onClick={() => setClearing(true)}>Delete chat</button>
+            )
+          )}
         </Sheet>
       )}
 
@@ -596,54 +677,3 @@ function Chat({ chatId, people }) {
   )
 }
 
-// Photos from the albums on this device, to send in a chat: an album at a
-// time, up to ten picked at once. Videos stay in the albums.
-function AlbumPhotoPicker({ open, onClose, onSend }) {
-  const albums = useStore((s) => s.albums)
-  const images = useStore((s) => s.images)
-  const [albumId, setAlbumId] = useState(null)
-  const [picked, setPicked] = useState([])
-  useEffect(() => {
-    if (!open) setPicked([])
-  }, [open])
-  const isPhoto = (id) => images[id] && !isVideo(images[id])
-  const withPhotos = albums.filter((a) => a.imageIds.some(isPhoto))
-  const album = withPhotos.find((a) => a.id === albumId) ?? withPhotos[0]
-  const ids = album ? album.imageIds.filter(isPhoto) : []
-  const toggle = (id) =>
-    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length < 10 ? [...p, id] : p))
-  return (
-    <Sheet open={open} onClose={onClose} title="Send from an album" modal>
-      {withPhotos.length === 0 ? (
-        <p className="hint">There are no photos in the albums yet.</p>
-      ) : (
-        <>
-          <div className="chips">
-            {withPhotos.map((a) => (
-              <button key={a.id} className={`chip small ${a === album ? 'on' : ''}`} onClick={() => setAlbumId(a.id)}>
-                <AlbumName album={a} />
-              </button>
-            ))}
-          </div>
-          <div className="pick-grid">
-            {ids.map((id) => {
-              const n = picked.indexOf(id)
-              return (
-                <button key={id} className={`pick-photo ${n >= 0 ? 'on' : ''}`} onClick={() => toggle(id)} aria-pressed={n >= 0}>
-                  <img src={images[id].previewUrl} alt="" loading="lazy" draggable={false} />
-                  {n >= 0 && <b>{n + 1}</b>}
-                </button>
-              )
-            })}
-          </div>
-          {album?.secret && picked.length > 0 && (
-            <p className="note">From a secret album: everyone in this chat will see the photos you send.</p>
-          )}
-          <button className="primary block" disabled={!picked.length} onClick={() => onSend(picked, images)}>
-            {picked.length ? `Send ${picked.length} photo${picked.length === 1 ? '' : 's'}` : 'Choose up to 10'}
-          </button>
-        </>
-      )}
-    </Sheet>
-  )
-}
