@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
+import AlbumChooser from '../components/AlbumChooser'
 import Avatar from '../components/Avatar'
+import Camera from '../components/Camera'
 import CropEditor from '../components/CropEditor'
+import { GreetingPicker, greetingSeason, isGreeting, markPlayed, playGreeting, unplayed } from '../components/Greetings'
 import LinkSheet from '../components/LinkSheet'
 import Linkify from '../components/Linkify'
 import PeoplePicker from '../components/PeoplePicker'
+import PhotoShareSheet from '../components/PhotoShareSheet'
 import PhotoPager from '../components/PhotoPager'
 import PlaceSheet from '../components/PlaceSheet'
 import { ReactionRow } from '../components/Reactions'
@@ -17,18 +21,19 @@ import Sheet from '../components/Sheet'
 import TagSheet from '../components/TagSheet'
 import { tagName } from '../lib/collections'
 import { findDuplicates } from '../lib/dupes'
+import { fetchSeen, markSeen, seenTime } from '../lib/seen'
 import { celebrateAdded } from '../lib/feedback'
 import { editPhoto } from '../lib/edit'
 import { clock, countText, importFile, importMedia, isVideo } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
 import { adderOf, personIn, usePeople } from '../lib/people'
-import { announceUpload } from '../lib/push'
+import { announceShared, announceUpload } from '../lib/push'
 import { addPhotoComment, fetchAlbumSocial, removePhotoComment, setReaction, watchAlbumSocial } from '../lib/social'
 import { syncNow } from '../lib/sync'
 import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
-  addedAt, addImages, addToAlbum, deleteAlbum, isPersonTag, uploaderName, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumNote, setAlbumPeople, setCaption,
+  addedAt, addImages, addToAlbum, deleteAlbum, isPersonTag, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumNote, setAlbumPeople, setCaption,
   getState, sortAlbum, useAlbum, useStore,
 } from '../lib/store'
 
@@ -91,6 +96,9 @@ export default function Album({ albumId }) {
   const writingHere = writing?.photo === viewing ? writing.kind : null
   const [tagging, setTagging] = useState(false) // who is in the photo being looked at
   const [placing, setPlacing] = useState(false) // where the album was
+  const [sharingPhoto, setSharingPhoto] = useState(false) // the share sheet for the photo being looked at
+  const [copying, setCopying] = useState(null) // photos on their way into another album
+  const [shooting, setShooting] = useState(false) // the in-app camera is open
   const [cropping, setCropping] = useState(null) // { busy, error } while turning or cropping the photo being looked at
   useEffect(() => {
     if (!features.social) return
@@ -105,6 +113,47 @@ export default function Album({ albumId }) {
       clearInterval(t)
     }
   }, [albumId, features.social])
+
+  // Who has seen each photo: read with the album, and noted for me once a
+  // photo has been open for a second.
+  const [views, setViews] = useState([]) // [{ photo, user_id, first_seen, last_seen }]
+  const [seenList, setSeenList] = useState(false)
+  useEffect(() => {
+    if (!features.seen) return
+    let live = true
+    const load = () => fetchSeen(albumId).then((rows) => live && setViews(rows)).catch(() => {})
+    load()
+    const t = setInterval(() => !document.hidden && load(), 30000)
+    return () => {
+      live = false
+      clearInterval(t)
+    }
+  }, [albumId, features.seen])
+  useEffect(() => {
+    if (!viewing || !features.seen) return
+    const t = setTimeout(() => {
+      markSeen(albumId, viewing)
+        .then((row) => row && setViews((rows) => [...rows.filter((r) => !(r.photo === row.photo && r.user_id === row.user_id)), row]))
+        .catch(() => {})
+    }, 1000)
+    return () => clearTimeout(t)
+  }, [viewing, albumId, features.seen])
+
+  // Seasonal greetings given as reactions (components/Greetings.jsx): each
+  // plays by itself once, the first time the photo is open on this device.
+  const [greeting, setGreeting] = useState(false) // the season's greetings, to react with
+  useEffect(() => {
+    if (!viewing) return
+    const keyOf = (h) => `${albumId}:${h.photo}:${h.user_id}:${h.emoji}`
+    const theirs = social.hearts.filter((h) => h.photo === viewing && h.user_id !== session?.user.id && isGreeting(h.emoji))
+    const due = theirs.filter((h) => unplayed([keyOf(h)]).length)
+    if (!due.length) return
+    const t = setTimeout(() => {
+      markPlayed(theirs.map(keyOf))
+      playGreeting(due.at(-1).emoji)
+    }, 700)
+    return () => clearTimeout(t)
+  }, [viewing, social.hearts, albumId, session])
 
   // Opened from a notification about one photo (?photo=): show that photo.
   const askedPhoto = useRef(new URLSearchParams(window.location.search).get('photo'))
@@ -168,14 +217,21 @@ export default function Album({ albumId }) {
   const viewed = images[viewing]
   const captions = album.captions ?? {}
   const addedBy = album.addedBy ?? {}
-  const addedLine = viewed ? addedText(uploaderName(addedBy[viewing]), addedAt(viewing)) : ''
+  // Whoever added it, by the name they go by now (the admin may have renamed them).
+  const addedLine = viewed ? addedText(adderOf(people, addedBy[viewing])?.name ?? '', addedAt(viewing)) : ''
   const tagsHere = album.tags?.[viewing] ?? []
+  // Who else has seen it, the first to see it first.
+  const seenHere = views
+    .filter((r) => r.photo === viewing && r.user_id !== session?.user.id)
+    .sort((a, b) => Date.parse(a.first_seen) - Date.parse(b.first_seen))
   const said = comments[viewing] ?? []
   // A secret album never gets a link or the front-page pin: both would show
   // its photos to everyone.
   const secret = !!album.secret
   const myId = session?.user.id
   const nameOf = (id) => people.find((p) => p.id === id)?.name ?? 'Someone'
+  // A link to the whole album: never for a secret one.
+  const canShareLink = photoIds.length > 0 && !guest && !secret
   const openPeople = () => {
     setSecretOn(secret)
     setChosen(album.members ?? (myId ? [myId] : []))
@@ -184,17 +240,31 @@ export default function Album({ albumId }) {
   const savePeople = () => {
     // You stay in it yourself; only the admin can be outside a secret album.
     const members = secretOn ? [...new Set([...(admin || !myId ? [] : [myId]), ...chosen])] : null
-    setAlbumPeople(album.id, members)
+    // People new to an album that was already secret hear it was shared with
+    // them. (Going secret shares it with no one new: they could all see it.)
+    const added = secret && members ? members.filter((id) => !(album.members ?? []).includes(id) && id !== myId) : []
+    setAlbumPeople(album.id, members, myId)
+    if (added.length) announceShared(album, added)
     // A link would show it to anyone: going secret switches it off.
     if (members && share) stopShare(share).catch(() => {})
     setChoosingPeople(false)
     setNotice({
-      text: members ? `Secret: only ${members.length === 1 ? 'you' : `these ${members.length} people`} can see it` : 'Everyone can see this album now',
+      text: added.length
+        ? `Shared with ${added.map((id) => nameOf(id).split(' ')[0]).join(', ')}`
+        : members ? `Secret: only ${members.length === 1 ? 'you' : `these ${members.length} people`} can see it` : 'Everyone can see this album now',
     })
   }
 
   // The family's reactions and comments on the photo being looked at.
   const reactedHere = social.hearts.filter((h) => h.photo === viewing)
+  // The season's greetings, while one is on; given ones still show and play after it.
+  const greetSeason = features.greetings ? greetingSeason(season, !!features.moreGreetings) : null
+  const myReaction = reactedHere.find((h) => h.user_id === session?.user.id)?.emoji ?? null
+  const greetCounts = {}
+  for (const h of reactedHere) if (isGreeting(h.emoji)) greetCounts[h.emoji] = (greetCounts[h.emoji] ?? 0) + 1
+  const onGreet = features.greetings
+    ? () => (greetSeason ? setGreeting(true) : playGreeting(reactedHere.filter((h) => isGreeting(h.emoji)).at(-1)?.emoji))
+    : null
   const firstOf = (id) => (id === myId ? 'You' : (personIn(people, id)?.name ?? 'Someone').split(' ')[0])
   const react = (emoji) => {
     const photo = viewing
@@ -284,6 +354,45 @@ export default function Album({ albumId }) {
     setDupes(new Map())
   }
 
+  // Taken with the in-app camera: straight in, no review sheet.
+  const sendFromCamera = async (file) => {
+    const record = await importMedia(file)
+    addImages([record])
+    addToAlbum(album.id, [record.id], me())
+    announceUpload(album, [record])
+    celebrateAdded(1)
+    setShooting(false)
+    setNotice({
+      text: `Added to ${album.name}`,
+      undo: () => {
+        removeFromAlbum(album.id, [record.id])
+        setNotice({ text: 'Taken back out' })
+      },
+    })
+  }
+
+  // The same photos, in one more album: nothing is uploaded again. Whoever
+  // can see that album hears about them, and there's a moment to undo.
+  const copyTo = (target) => {
+    const fresh = copying.filter((id) => !target.imageIds.includes(id))
+    setCopying(null)
+    stopSelecting()
+    if (!fresh.length) {
+      setNotice({ text: `Already in ${target.name}` })
+      return
+    }
+    addToAlbum(target.id, fresh, me())
+    announceUpload(target, fresh.map((id) => images[id]))
+    celebrateAdded(fresh.length)
+    setNotice({
+      text: `Added ${countText(fresh.map((id) => images[id]))} to ${target.name}`,
+      undo: () => {
+        removeFromAlbum(target.id, fresh)
+        setNotice({ text: 'Taken back out' })
+      },
+    })
+  }
+
   // A photo's file: the one on this device, or its online copy where this
   // device only holds a small one.
   async function fileOf(image) {
@@ -320,7 +429,6 @@ export default function Album({ albumId }) {
     setLinking({
       kind: 'photo', sourceId: viewing, title: (viewed.name ?? 'Photo').replace(/\.[^.]+$/, ''), imageIds: [viewing], captions,
     })
-  const canLinkViewed = !guest && !secret && canLink(viewed)
   // Turning and cropping changes the photo for everyone; a guest can't.
   const canEditViewed = !guest && !!viewed && !isVideo(viewed)
   const saveCrop = async (change) => {
@@ -459,20 +567,10 @@ export default function Album({ albumId }) {
             {selecting ? 'Cancel' : 'Select'}
           </button>
         )}
-        {!selecting && !limited && features.secret && (
-          <button className={`icon-btn ${secret ? 'active' : ''}`} onClick={openPeople} aria-label="Who can see this album">
-            <Icon name="lock" size={20} />
-          </button>
-        )}
-        {photoIds.length > 0 && !selecting && !guest && !secret && (
-          <button
-            className="icon-btn"
-            onClick={() =>
-              setLinking({ kind: 'album', sourceId: album.id, title: album.name, imageIds: photoIds, captions, note: album.note ?? '' })
-            }
-            aria-label="Share album link"
-          >
-            <Icon name="link" size={20} />
+        {/* Share: who is in it (anyone may be added at any time), or a link. */}
+        {!selecting && (canShareLink || (!limited && features.secret)) && (
+          <button className={`icon-btn ${secret ? 'active' : ''}`} onClick={openPeople} aria-label="Share this album">
+            <Icon name="share" size={20} />
           </button>
         )}
         {!selecting && !limited && (
@@ -500,6 +598,9 @@ export default function Album({ albumId }) {
           <p>Add photos and videos here for everyone to see.</p>
           <button className="primary" onClick={() => fileInput.current.click()}>
             <Icon name="plus" size={20} /> Add photos or videos
+          </button>
+          <button className="secondary" onClick={() => setShooting(true)}>
+            <Icon name="camera" size={20} /> Take a photo or video
           </button>
         </div>
       ) : (
@@ -600,7 +701,7 @@ export default function Album({ albumId }) {
                       {addedBy[id] && (
                         <span className="by">
                           <Avatar person={adderOf(people, addedBy[id])} size={16} />
-                          <span>{uploaderName(addedBy[id])}</span>
+                          <span>{adderOf(people, addedBy[id])?.name}</span>
                         </span>
                       )}
                       {noteCount(id) > 0 && <span className="said"><Icon name="comment" size={13} /> {noteCount(id)}</span>}
@@ -614,9 +715,14 @@ export default function Album({ albumId }) {
       )}
 
       {ids.length > 0 && !selecting && (
-        <button className="primary fab" onClick={() => fileInput.current.click()}>
-          <Icon name="plus" size={20} /> Add photos or videos
-        </button>
+        <div className="fab-row">
+          <button className="primary" onClick={() => fileInput.current.click()}>
+            <Icon name="plus" size={20} /> Add photos or videos
+          </button>
+          <button className="primary fab-camera" onClick={() => setShooting(true)} aria-label="Take a photo or video">
+            <Icon name="camera" size={22} />
+          </button>
+        </div>
       )}
       {selecting && (
         <nav className="toolbar">
@@ -646,6 +752,10 @@ export default function Album({ albumId }) {
               <button className="tool" disabled={!picked.length || busy} onClick={() => save(picked)}>
                 <Icon name="download" />
                 <span>Save {picked.length || ''}</span>
+              </button>
+              <button className="tool" disabled={!picked.length} onClick={() => setCopying(picked)}>
+                <Icon name="photos" />
+                <span>To album</span>
               </button>
               {!limited && (
                 <>
@@ -724,7 +834,7 @@ export default function Album({ albumId }) {
             )}
             {features.social && (
               <div className="family-react">
-                <ReactionRow reactions={reactedHere} me={myId} onPick={react} />
+                <ReactionRow reactions={reactedHere} me={myId} onPick={react} season={greetSeason} onGreet={onGreet} />
               </div>
             )}
             {famNotes[viewing]?.length > 0 && (
@@ -741,6 +851,20 @@ export default function Album({ albumId }) {
                   </li>
                 ))}
               </ul>
+            )}
+            {seenHere.length > 0 && (
+              <button className="seen-by" onClick={() => setSeenList(true)}>
+                <span className="seen-faces">
+                  {seenHere.slice(0, 4).map((r) => (
+                    <Avatar key={r.user_id} person={personIn(people, r.user_id) ?? { id: r.user_id, name: nameOf(r.user_id) }} size={20} />
+                  ))}
+                </span>
+                <span>
+                  Seen by {seenHere.length <= 2
+                    ? seenHere.map((r) => nameOf(r.user_id).split(' ')[0]).join(' and ')
+                    : `${seenHere.slice(0, 2).map((r) => nameOf(r.user_id).split(' ')[0]).join(', ')} and ${seenHere.length - 2} more`}
+                </span>
+              </button>
             )}
             {/* Writing a comment or a caption: small buttons until tapped, so the photo keeps the room. */}
             {writingHere === 'comment' ? (
@@ -765,7 +889,7 @@ export default function Album({ albumId }) {
                 autoFocus
               />
             ) : (
-              (features.social || canLinkViewed || !limited) && (
+              (
                 <div className="viewer-write">
                   {features.social && (
                     <button className="chip small" onClick={() => setWriting({ kind: 'comment', photo: viewing })}>Comment</button>
@@ -774,11 +898,9 @@ export default function Album({ albumId }) {
                     <button className="chip small" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>Caption</button>
                   )}
                   {!limited && <button className="chip small" onClick={() => setTagging(true)}>{tagsHere.length ? 'Tags' : 'Tag'}</button>}
-                  {canLinkViewed && (
-                    <button className="chip small share" onClick={linkPhoto}>
-                      <Icon name="link" size={14} /> Share
-                    </button>
-                  )}
+                  <button className="chip small share" onClick={() => setSharingPhoto(true)}>
+                    <Icon name="share" size={14} /> Share
+                  </button>
                 </div>
               )
             )}
@@ -831,6 +953,8 @@ export default function Album({ albumId }) {
 
       <LinkSheet target={linking} onClose={() => setLinking(null)} />
 
+      {shooting && <Camera albumName={album.name} onSend={sendFromCamera} onClose={() => setShooting(false)} />}
+
       {cropping && viewed && (
         <CropEditor
           key={viewing}
@@ -839,6 +963,73 @@ export default function Album({ albumId }) {
           error={cropping.error}
           onCancel={() => setCropping(null)}
           onSave={saveCrop}
+        />
+      )}
+
+      <PhotoShareSheet
+        key={sharingPhoto ? viewing : 'closed'}
+        open={sharingPhoto && !!viewed}
+        onClose={() => setSharingPhoto(false)}
+        image={viewed}
+        secret={secret}
+        canSend={!!viewed && !isVideo(viewed)}
+        canLinkIt={!guest && !!viewed && canLink(viewed)}
+        onLink={() => {
+          setSharingPhoto(false)
+          linkPhoto()
+        }}
+        onToAlbum={() => {
+          setSharingPhoto(false)
+          setCopying([viewing])
+        }}
+        fileOf={fileOf}
+        onDone={(text) => setNotice({ text })}
+      />
+
+      <AlbumChooser
+        open={!!copying}
+        onClose={() => setCopying(null)}
+        title={copying?.length > 1 ? `Add ${copying.length} to another album` : 'Add to another album'}
+        note={secret ? 'From a secret album: whoever can see the album you pick will see these too.' : null}
+        exclude={album.id}
+        onPick={copyTo}
+      />
+
+      <Sheet open={seenList && seenHere.length > 0} onClose={() => setSeenList(false)} title="Seen by" modal>
+        <ul className="seen-list">
+          {seenHere.map((r) => (
+            <li key={r.user_id}>
+              <Avatar person={personIn(people, r.user_id) ?? { id: r.user_id, name: nameOf(r.user_id) }} size={36} />
+              <span className="seen-who">
+                <b>{nameOf(r.user_id)}</b>
+                <small>
+                  First saw it {seenTime(r.first_seen)}
+                  {Date.parse(r.last_seen) - Date.parse(r.first_seen) > 60000 && <>, last {seenTime(r.last_seen)}</>}
+                </small>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Sheet>
+
+      {greetSeason && (
+        <GreetingPicker
+          season={greetSeason}
+          more={!!features.moreGreetings}
+          open={greeting && !!viewed}
+          onClose={() => setGreeting(false)}
+          note="Your reaction to this photo. Whoever added it hears about it, and everyone who opens it sees it play."
+          counts={greetCounts}
+          mine={myReaction}
+          onPick={(kind) => {
+            setGreeting(false)
+            if (myReaction === kind) {
+              react(null)
+            } else {
+              react(kind)
+              playGreeting(kind)
+            }
+          }}
         />
       )}
 
@@ -893,7 +1084,10 @@ export default function Album({ albumId }) {
         </button>
       </Sheet>
 
-      <Sheet open={choosingPeople} onClose={() => setChoosingPeople(false)} title="Who can see this album" modal>
+      <Sheet open={choosingPeople} onClose={() => setChoosingPeople(false)} title="Share this album" modal>
+        {!limited && features.secret && (
+          <>
+        <div className="label">Who can see it</div>
         <div className="chips" role="radiogroup" aria-label="Who can see it">
           <button role="radio" aria-checked={!secretOn} className={`chip small ${secretOn ? '' : 'on'}`} onClick={() => setSecretOn(false)}>
             Everyone
@@ -907,13 +1101,31 @@ export default function Album({ albumId }) {
             <PeoplePicker people={people} value={chosen} onChange={setChosen} locked={admin ? [] : [myId]} placeholder="Add someone: type a name" />
             <p className="note">
               Only the people here can see this album, add to it and hear about it{admin ? '' : ", and Hugpix's admin can see it too"}.
-              Secret albums can't have share links{share ? '; this one’s link stops working' : ''}.
+              Anyone you add gets a notification. Secret albums have no album link{share ? ', so this one’s link stops working' : ''};
+              single photos can still be shared from the photo itself.
             </p>
           </>
         ) : (
           <p className="note">Everyone in Hugpix can see this album.</p>
         )}
         <button className="primary block" onClick={savePeople}>Save</button>
+          </>
+        )}
+        {canShareLink && !secretOn && (
+          <div className="share-link-part">
+            <div className="label">Share a link</div>
+            <button
+              className="secondary block"
+              onClick={() => {
+                setChoosingPeople(false)
+                setLinking({ kind: 'album', sourceId: album.id, title: album.name, imageIds: photoIds, captions, note: album.note ?? '' })
+              }}
+            >
+              <Icon name="link" size={18} /> Link to this album
+            </button>
+            <p className="note">Anyone with the link can see the photos, without signing in.</p>
+          </div>
+        )}
       </Sheet>
 
       <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete album?" modal>

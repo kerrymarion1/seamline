@@ -9,7 +9,10 @@
 //   { album, name, photo, reaction }     someone reacted to a photo in an album
 //     (older apps send heart: true for ❤️)
 //   { album, name, photo, comment }      someone commented on one
+//   { chat, text, photo, effect }        ...with a seasonal greeting (or only that)
 //   { chat, message, reaction }          someone reacted to a message
+//   { album, name, shared: [ids] }       someone shared a private album with
+//                                        these people (added them to it)
 //
 // An album is everyone's news unless it is secret: then only the people in
 // it hear. A message is heard only by the people in its chat. A heart goes
@@ -30,6 +33,18 @@ const reply = (body: unknown, status = 200) =>
 
 const count = (n: unknown) => Math.max(0, Math.min(10000, Math.round(Number(n) || 0)));
 const REACTIONS = ["❤️", "😂", "😮", "😢", "👍", "🎉"];
+// Seasonal greetings (src/components/Greetings.jsx): sent in a message, or
+// given to a photo as a reaction.
+const GREETINGS: Record<string, string> = {
+  gingerbread: "Gingerbread dash", penguin: "Penguin slide", snowman: "Snowman wave", gift: "Gift pop", flurry: "Snow flurry",
+  ghost: "Ghost boo", bats: "Bat swoop", pumpkin: "Pumpkin flash", spider: "Spider drop",
+  turkey: "Turkey strut", leaves: "Leaf gust", pie: "Pie time", squirrel: "Squirrel dash",
+  sleigh: "Sleigh ride", reindeer: "Reindeer hop", tree: "Tree lights",
+  witch: "Witch flyby", cat: "Black cat", candy: "Candy shower",
+  harvest: "Horn of plenty", scarecrow: "Scarecrow wave", acorns: "Acorn drop",
+  midnight: "Midnight", champagne: "Champagne pop", confetti: "Confetti cannon", goldworks: "Gold fireworks",
+  fireworks: "Fireworks", flag: "Flag wave", eagle: "Eagle soar", sparkler: "Sparkler",
+};
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -43,8 +58,8 @@ Deno.serve(async (req: Request) => {
   if (!auth?.user || !library) return reply({ error: "Not a member of a library." }, 403);
 
   let body: {
-    album?: string; name?: string; photos?: number; videos?: number; made?: boolean; members?: unknown[];
-    chat?: string; text?: string; photo?: boolean | string; heart?: boolean; comment?: string;
+    album?: string; name?: string; photos?: number; videos?: number; made?: boolean; members?: unknown[]; shared?: unknown[];
+    chat?: string; text?: string; photo?: boolean | string; heart?: boolean; comment?: string; effect?: string;
     message?: string; reaction?: string;
   };
   try {
@@ -78,7 +93,8 @@ Deno.serve(async (req: Request) => {
       return reply({ ok: true });
     }
     const text = String(body.text ?? "").replace(/\s+/g, " ").trim().slice(0, 140);
-    const said = text || (body.photo ? "Sent a photo" : "");
+    const greeting = GREETINGS[String(body.effect ?? "")];
+    const said = text || (body.photo ? "Sent a photo" : greeting ? `Sent a ${greeting}` : "");
     if (!said) return reply({ error: "Bad request" }, 400);
     const group = chat.members.length > 2;
     await notifyLibrary(admin, library, {
@@ -91,7 +107,8 @@ Deno.serve(async (req: Request) => {
   }
 
   // A reaction or a comment on one photo in an album the caller can see.
-  const reaction = REACTIONS.includes(String(body.reaction ?? "")) ? String(body.reaction) : body.heart === true ? "❤️" : "";
+  const asked = String(body.reaction ?? "");
+  const reaction = REACTIONS.includes(asked) || GREETINGS[asked] ? asked : body.heart === true ? "❤️" : "";
   if (typeof body.photo === "string" && (reaction || typeof body.comment === "string")) {
     const albumId = String(body.album ?? "");
     const photo = body.photo;
@@ -122,10 +139,40 @@ Deno.serve(async (req: Request) => {
         title: String(data.name ?? body.name ?? "An album").slice(0, 80),
         body: said
           ? `${firstName(auth.user)}: ${said}`
-          : reaction === "❤️" ? `${firstName(auth.user)} loved your photo` : `${firstName(auth.user)} reacted ${reaction} to your photo`,
+          : reaction === "❤️" ? `${firstName(auth.user)} loved your photo`
+          : GREETINGS[reaction] ? `${firstName(auth.user)} sent a ${GREETINGS[reaction]} for your photo`
+          : `${firstName(auth.user)} reacted ${reaction} to your photo`,
         url: `/album/${albumId}?photo=${encodeURIComponent(photo)}`,
         tag: `photo-${albumId}-${photo}`,
       }, auth.user.id, only);
+    }
+    return reply({ ok: true });
+  }
+
+  // A private album shared with more people: only they hear, and only if the
+  // caller may see the album (its people, or the admin). The album on the
+  // server may not show them in it yet, so they are only kept to this library.
+  if (Array.isArray(body.shared)) {
+    const albumId = String(body.album ?? "");
+    if (!/^[\w-]{1,64}$/.test(albumId)) return reply({ error: "Bad request" }, 400);
+    const { data: doc } = await admin.from("seamline_docs").select("data")
+      .eq("library", library).eq("kind", "album").eq("id", albumId).maybeSingle();
+    if (doc?.data?.secret === true && !(doc.data.members ?? []).map(String).includes(auth.user.id)) {
+      const { data: isAdmin } = await caller.rpc("seamline_is_admin");
+      if (!isAdmin) return reply({ error: "Not in that album." }, 403);
+    }
+    const asked = body.shared.map(String).filter((id) => /^[0-9a-f-]{36}$/.test(id) && id !== auth.user.id).slice(0, 100);
+    if (asked.length) {
+      const { data: rows } = await admin.from("seamline_members").select("user_id").eq("library", library).in("user_id", asked);
+      const to = (rows ?? []).map((r) => String(r.user_id));
+      if (to.length) {
+        await notifyLibrary(admin, library, {
+          title: String(doc?.data?.name ?? body.name ?? "An album").trim().slice(0, 80) || "An album",
+          body: `${firstName(auth.user)} shared an album with you`,
+          url: `/album/${albumId}`,
+          tag: `album-${albumId}`,
+        }, auth.user.id, to);
+      }
     }
     return reply({ ok: true });
   }
@@ -156,7 +203,10 @@ Deno.serve(async (req: Request) => {
   // "made a new album" with what was added.
   await notifyLibrary(admin, library, {
     title: albumName,
-    body: made ? `${firstName(auth.user)} made a new album` : `${firstName(auth.user)} added ${countText(photos, videos)}`,
+    // A new private album is, for its people, one shared with them.
+    body: made
+      ? only ? `${firstName(auth.user)} shared an album with you` : `${firstName(auth.user)} made a new album`
+      : `${firstName(auth.user)} added ${countText(photos, videos)}`,
     url: `/album/${album}`,
     tag: `album-${album}`,
   }, auth.user.id, only);

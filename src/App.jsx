@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react
 import { clearTextCache } from './lib/fonts'
 import { FontsContext } from './lib/fontsContext'
 import AddedFx from './components/AddedFx'
+import { GreetingStage } from './components/Greetings'
 import CloudSync from './components/CloudSync'
 import Logo from './components/Logo'
 import MessageWatcher from './components/MessageWatcher'
@@ -136,6 +137,7 @@ export default function App() {
       <CloudSync />
       <MessageWatcher />
       <AddedFx />
+      <GreetingStage />
     </FontsContext.Provider>
   )
 }

@@ -332,10 +332,17 @@ export function createAlbum(name, createdBy = '', members = null) {
 export const renameAlbum = (id, name) => patchAlbum(id, (a) => ({ ...a, name }))
 
 // Who sees an album: everyone (members null), or only these accounts.
-export const setAlbumPeople = (id, members) =>
+// People added to an album that was already private are noted in
+// `sharedWith` ({ [id]: { at, by } }), for What's new; `by` is who added them.
+export const setAlbumPeople = (id, members, by = null) =>
   patchAlbum(id, (a) => {
     const { secret, members: _, ...rest } = a
-    return members ? { ...rest, secret: true, members } : rest
+    if (!members) return rest
+    const fresh = a.secret ? members.filter((m) => !(a.members ?? []).includes(m) && m !== by) : []
+    const sharedWith = fresh.length
+      ? { ...a.sharedWith, ...Object.fromEntries(fresh.map((m) => [m, { at: Date.now(), by }])) }
+      : a.sharedWith
+    return { ...rest, secret: true, members, ...(sharedWith ? { sharedWith } : null) }
   })
 
 export function deleteAlbum(id) {

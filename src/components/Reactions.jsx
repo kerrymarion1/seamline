@@ -1,10 +1,13 @@
+import { GreetingFace, isGreeting, SeasonFace } from './Greetings'
 import { REACTIONS } from '../lib/social'
 
 // The reactions drawn as Microsoft's soft 3D Fluent emoji (MIT licence, see
 // public/reactions/LICENSE.txt), the same on every phone, rather than each
 // device's own. 96 px WebP, shown at up to a third of that.
 const FILES = { '❤️': 'heart', '😂': 'laugh', '😮': 'wow', '😢': 'sad', '👍': 'thumbs', '🎉': 'party' }
+// A seasonal greeting given as a reaction shows as its character.
 export function Emoji({ emoji, size = 22 }) {
+  if (isGreeting(emoji)) return <GreetingFace kind={emoji} size={size} />
   const file = FILES[emoji]
   if (!file) return <span>{emoji}</span>
   return <img className="emoji" src={`/reactions/${file}.webp`} alt={emoji} width={size} height={size} draggable={false} />
@@ -12,9 +15,14 @@ export function Emoji({ emoji, size = 22 }) {
 
 // The six reactions as a row of buttons, each with how many people chose it.
 // Mine is lit; tapping mine again takes it back, tapping another changes it.
-// `reactions` are [{ user_id, emoji }]; `onPick(emoji | null)`.
-export function ReactionRow({ reactions, me, onPick, compact = false }) {
+// `reactions` are [{ user_id, emoji }]; `onPick(emoji | null)`. With
+// `onGreet`, a seventh button for seasonal greetings (components/Greetings):
+// the season's own face (`season`), or the greeting I gave, with how many
+// greetings the photo has had.
+export function ReactionRow({ reactions, me, onPick, compact = false, season = null, onGreet = null }) {
   const mine = reactions.find((r) => r.user_id === me)?.emoji ?? null
+  const greetings = reactions.filter((r) => isGreeting(r.emoji))
+  const greeted = isGreeting(mine) ? mine : null
   return (
     <div className={`reaction-row ${compact ? 'compact' : ''}`} role="group" aria-label="React">
       {REACTIONS.map((emoji) => {
@@ -33,6 +41,18 @@ export function ReactionRow({ reactions, me, onPick, compact = false }) {
           </button>
         )
       })}
+      {onGreet && (season || greetings.length > 0) && (
+        <button
+          className={`greet-btn ${greeted ? 'on' : ''} ${greetings.length ? 'has' : ''}`}
+          onClick={onGreet}
+          aria-label={`Seasonal greetings${greetings.length ? `, ${greetings.length}` : ''}`}
+        >
+          <span className="reaction-emoji">
+            {greeted ? <GreetingFace kind={greeted} size={22} /> : season ? <SeasonFace season={season} size={20} /> : <GreetingFace kind={greetings.at(-1).emoji} size={22} />}
+          </span>
+          {greetings.length > 0 && <small>{greetings.length}</small>}
+        </button>
+      )}
     </div>
   )
 }

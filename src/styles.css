@@ -3374,7 +3374,7 @@ img.avatar { background: var(--surface-2); }
 
 /* The six in one row across, who reacted underneath. */
 .family-react { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.family-react .reaction-row { flex-wrap: nowrap; width: 100%; max-width: 300px; }
+.family-react .reaction-row { flex-wrap: nowrap; width: 100%; max-width: 330px; }
 .family-react .reaction-row button { flex: 1 1 0; min-width: 0; height: 32px; justify-content: center; padding: 0 3px; border-radius: 16px; }
 .family-react .reaction-row .emoji { width: 18px; height: 18px; }
 .family-react .reaction-row small { font-size: 11px; }
@@ -3886,4 +3886,483 @@ span.bubble-face:empty { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .added-fx { display: none; }
   :root[data-quake] #root { animation: none; }
+}
+
+/* Choosing an album, each with its cover. */
+.album-pick.add-to { height: 60px; justify-content: flex-start; }
+.add-to img, .add-to-blank { flex: none; width: 44px; height: 44px; border-radius: 10px; background: var(--surface-3); object-fit: cover; }
+.add-to-blank { display: grid; place-items: center; color: var(--text-2); }
+.add-to .hint { margin-left: auto; padding-left: 8px; font-size: 13px; white-space: nowrap; }
+
+/* Sharing one photo: the ways, one to a row. */
+.share-ways { gap: 2px; }
+.share-way { padding: 8px 4px; }
+.share-way:disabled { opacity: 0.55; }
+.share-way-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgb(var(--accent-rgb) / 0.14);
+  color: var(--accent);
+}
+.share-way-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.share-way-text b { font-weight: 600; }
+.share-way-text small { color: var(--text-2); font-size: 12.5px; }
+.share-link-part { margin-top: 14px; }
+
+/* ---------- the in-app camera (components/Camera.jsx) ---------- */
+
+.camera { position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; padding-top: var(--safe-t); background: #000; color: #fff; }
+.camera-top { flex: none; display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px; }
+.camera-top .icon-btn { color: #fff; }
+.camera-where { min-width: 0; display: inline-flex; align-items: center; gap: 8px; overflow: hidden; font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.camera-dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3b30; animation: camera-blink 1s steps(2) infinite; }
+@keyframes camera-blink { 50% { opacity: 0.2; } }
+.camera-stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+.camera-stage > video { width: 100%; height: 100%; object-fit: cover; }
+.camera-stage > video.mirror { transform: scaleX(-1); }
+.camera-stage > img, .camera-stage > video[controls] { object-fit: contain; }
+.camera-failed { max-width: 300px; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; color: #d6d3cc; text-align: center; }
+.camera-bottom { flex: none; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 14px 16px calc(var(--safe-b) + 22px); }
+.camera-modes { display: flex; gap: 6px; }
+.camera-modes button { padding: 6px 14px; border-radius: 16px; color: #b9b6ae; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.camera-modes button.on { background: rgb(255 255 255 / 0.14); color: var(--accent); }
+.shutter { display: grid; place-items: center; width: 76px; height: 76px; border: 4px solid #fff; border-radius: 50%; }
+.shutter i { width: 60px; height: 60px; border-radius: 50%; background: #fff; transition: width 0.2s, height 0.2s, border-radius 0.2s, transform 0.15s; }
+.shutter.video i { background: #ff3b30; }
+.shutter.recording i { width: 30px; height: 30px; border-radius: 7px; }
+.shutter:active i { transform: scale(0.9); }
+.camera-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 420px; }
+
+/* Under a photo: who else has seen it; a tap lists them with the times. */
+.seen-by { align-self: center; display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px 3px 4px; border-radius: 14px; color: var(--text-2); font-size: 12.5px; }
+.seen-by:active { background: var(--surface-2); }
+.seen-faces { display: inline-flex; }
+.seen-faces .avatar { box-shadow: 0 0 0 2px var(--bg); }
+.seen-faces .avatar + .avatar { margin-left: -6px; }
+.seen-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.seen-list li { display: flex; align-items: center; gap: 12px; padding: 8px 4px; }
+.seen-who { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.seen-who b { font-weight: 600; }
+.seen-who small { color: var(--text-2); font-size: 12.5px; }
+
+/* An album's add buttons: photos from the phone, and the camera beside them. */
+.fab-row { position: fixed; left: 50%; bottom: calc(var(--safe-b) + 24px); z-index: 5; translate: -50% 0; display: flex; gap: 10px; }
+.fab-row > button { white-space: nowrap; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+.fab-row .fab-camera { width: 54px; padding: 0; justify-content: center; border-radius: 50%; }
+.empty .secondary { margin-top: 4px; }
+/* The front page's camera, bottom right. */
+.home-camera {
+  position: fixed;
+  right: 18px;
+  bottom: calc(var(--safe-b) + 20px);
+  z-index: 6;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.home .home-body { padding-bottom: calc(var(--safe-b) + 96px); }
+
+/* ---------- seasonal greetings (components/Greetings.jsx), as in Plait ----------
+   Across the whole screen, over everything, touching nothing. */
+
+.gr-stage { position: fixed; inset: 0; z-index: 75; overflow: hidden; pointer-events: none; }
+.gr-actor { position: absolute; }
+.gr-actor svg { display: block; filter: drop-shadow(0 8px 14px rgb(0 0 0 / 0.35)); }
+
+/* The gingerbread runner dashes across low down, bobbing, arms and legs going. */
+.gr-gingerbread .gr-actor { left: 0; bottom: 24%; animation: gr-run 3s cubic-bezier(0.4, 0.1, 0.6, 0.9) both; }
+.gr-bob { animation: gr-bob 0.26s ease-in-out infinite alternate; }
+.gr-stage .gb-limb { transform-box: fill-box; transform-origin: 50% 0; animation: gr-swing 0.26s ease-in-out infinite alternate; }
+.gr-stage .gb-limb.gb-b { animation-direction: alternate-reverse; }
+@keyframes gr-run { from { transform: translateX(-100px); } to { transform: translateX(calc(100vw + 20px)); } }
+@keyframes gr-bob { from { transform: translateY(0) rotate(-5deg); } to { transform: translateY(-12px) rotate(5deg); } }
+@keyframes gr-swing { from { transform: rotate(-24deg); } to { transform: rotate(24deg); } }
+
+/* The penguin slides in from the right on its belly, scarf flapping. */
+.gr-penguin .gr-actor { right: 0; bottom: 16%; animation: gr-slide 3s cubic-bezier(0.2, 0.6, 0.4, 1) both; }
+.gr-stage .pg-scarf { transform-box: fill-box; transform-origin: 0 50%; animation: gr-flap 0.18s ease-in-out infinite alternate; }
+.gr-stage .pg-spray { animation: gr-spray 0.3s linear infinite; }
+@keyframes gr-slide { 0% { transform: translateX(140px) rotate(-3deg); } 100% { transform: translateX(calc(-100vw - 160px)) rotate(2deg); } }
+@keyframes gr-flap { from { transform: skewY(-8deg); } to { transform: skewY(8deg); } }
+@keyframes gr-spray { from { transform: translate(0, 0); opacity: 1; } to { transform: translate(8px, -4px); opacity: 0.2; } }
+
+/* The snowman rises from the foot of the screen, waves, and sinks again. */
+.gr-snowman .gr-actor { left: 50%; bottom: 0; animation: gr-rise 3.3s ease-in-out both; }
+.gr-stage .sm-wave { transform-box: fill-box; transform-origin: 0 100%; animation: gr-wave 0.36s ease-in-out 0.6s 6 alternate both; }
+@keyframes gr-rise { 0% { transform: translate(-50%, 110%); } 18%, 82% { transform: translate(-50%, 6%); } 100% { transform: translate(-50%, 110%); } }
+@keyframes gr-wave { from { transform: rotate(-14deg); } to { transform: rotate(22deg); } }
+
+/* The present lands in the middle, shakes, and its lid pops off in gold stars. */
+.gr-gift .gr-actor { left: 50%; top: 40%; animation: gr-gift 2.6s ease-out both; }
+.gr-stage .gift-lid { transform-box: fill-box; transform-origin: 50% 100%; animation: gr-lid 2.6s ease-out both; }
+.gr-star {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  background: #f6cd6b;
+  opacity: 0;
+  clip-path: polygon(50% 0, 61% 38%, 100% 38%, 68% 61%, 79% 100%, 50% 76%, 21% 100%, 32% 61%, 0 38%, 39% 38%);
+  animation: gr-star 1.3s ease-out both;
+}
+@keyframes gr-gift {
+  0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+  14% { transform: translate(-50%, -50%) scale(1.06); opacity: 1; }
+  20%, 34% { transform: translate(-50%, -50%) scale(1) rotate(0); }
+  24% { transform: translate(-50%, -50%) rotate(-6deg); }
+  29% { transform: translate(-50%, -50%) rotate(6deg); }
+  86% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+}
+@keyframes gr-lid { 0%, 36% { transform: none; } 52% { transform: translateY(-34px) rotate(-16deg); } 100% { transform: translateY(-46px) rotate(-22deg); } }
+@keyframes gr-star {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1) rotate(160deg); }
+}
+
+/* The flurry: snow falls the height of the screen, drifting. */
+.gr-flake { position: absolute; top: -40px; opacity: 0.95; animation: gr-fall 2.6s linear both; }
+.gr-flake svg { filter: drop-shadow(0 0 4px rgb(255 255 255 / 0.5)); }
+@keyframes gr-fall { from { transform: translate(0, 0) rotate(0); } to { transform: translate(var(--drift), calc(100vh + 80px)) rotate(240deg); } }
+
+/* Reduced motion: the character fades in and out where it stands. */
+.gr-calm { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); animation: gr-calm 1.8s ease-in-out both; }
+.gr-calm * { animation: none !important; }
+@keyframes gr-calm { 0%, 100% { opacity: 0; } 20%, 80% { opacity: 1; } }
+
+/* The ghost floats up, sways, says boo (a swell), and fades. */
+.gr-ghost .gr-actor { left: 50%; bottom: 18%; animation: gr-ghost 3s ease-in-out both; }
+.gr-stage .ghost-arm { transform-box: fill-box; transform-origin: 100% 0; animation: gr-ghost-wave 0.3s ease-in-out 0.5s 6 alternate both; }
+@keyframes gr-ghost {
+  0% { transform: translate(-50%, 70%); opacity: 0; }
+  22% { transform: translate(-58%, 0); opacity: 0.96; }
+  40% { transform: translate(-42%, -4%); }
+  55% { transform: translate(-50%, -8%) scale(1.18); }
+  70% { transform: translate(-50%, -6%) scale(1); opacity: 0.96; }
+  100% { transform: translate(-50%, -30%); opacity: 0; }
+}
+@keyframes gr-ghost-wave { from { transform: rotate(-10deg); } to { transform: rotate(18deg); } }
+
+/* The bats swoop across in a dip, wings beating. */
+.gr-bat { position: absolute; left: 0; animation: gr-bat 2.4s cubic-bezier(0.4, 0.2, 0.6, 0.9) both; }
+.gr-stage .bat-wing { transform-box: fill-box; animation: gr-wing 0.14s ease-in-out infinite alternate; }
+.gr-stage .bat-wing-l { transform-origin: 100% 50%; }
+.gr-stage .bat-wing-r { transform-origin: 0 50%; }
+@keyframes gr-bat { 0% { transform: translate(-80px, 0); } 50% { transform: translate(50vw, 9vh); } 100% { transform: translate(calc(100vw + 40px), -6vh); } }
+@keyframes gr-wing { from { transform: scaleY(1); } to { transform: scaleY(0.3); } }
+
+/* Lightning flashes, and the jack-o-lantern is there in it, grinning and flickering. */
+.gr-flash { position: absolute; inset: 0; background: #fff; animation: gr-flash 0.7s ease-out both; }
+@keyframes gr-flash { 0% { opacity: 0; } 8% { opacity: 0.75; } 16% { opacity: 0.1; } 24% { opacity: 0.55; } 100% { opacity: 0; } }
+.gr-pumpkin .gr-actor { left: 50%; top: 42%; animation: gr-pumpkin 2.8s ease-out both; }
+.gr-pumpkin .gr-actor svg { filter: drop-shadow(0 0 22px rgb(255 170 40 / 0.7)); }
+.gr-stage .jack-face { animation: gr-flicker 0.18s steps(2) infinite; }
+@keyframes gr-pumpkin {
+  0%, 6% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+  16% { transform: translate(-50%, -50%) scale(1.12); opacity: 1; }
+  24%, 84% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+}
+@keyframes gr-flicker { from { opacity: 1; } to { opacity: 0.7; } }
+
+/* The spider drops down its thread, bounces, waits, and climbs back up. */
+.gr-spider .gr-actor { left: 64%; top: 0; animation: gr-spider 3.3s ease-in-out both; }
+.gr-stage .spider-legs { transform-origin: 20px 26px; animation: gr-legs 0.2s ease-in-out infinite alternate; }
+@keyframes gr-spider {
+  0% { transform: translateY(-110%); }
+  28% { transform: translateY(34vh); }
+  36% { transform: translateY(29vh); }
+  44% { transform: translateY(32vh); }
+  78% { transform: translateY(32vh); }
+  100% { transform: translateY(-110%); }
+}
+@keyframes gr-legs { from { transform: scaleX(1); } to { transform: scaleX(0.86); } }
+
+/* The turkey struts across, low down, taking its time. */
+.gr-turkey .gr-actor { left: 0; bottom: 14%; animation: gr-run 3.8s linear both; }
+.gr-stage .turkey-shape { animation: gr-strut 0.8s ease-in-out infinite alternate; }
+.gr-stage .turkey-leg { transform-box: fill-box; transform-origin: 50% 0; animation: gr-step 0.8s ease-in-out infinite alternate; }
+.gr-stage .turkey-leg-b { animation-direction: alternate-reverse; }
+@keyframes gr-strut { from { transform: translateY(0) rotate(-2deg); } to { transform: translateY(-2px) rotate(2deg); } }
+@keyframes gr-step { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+
+/* A gust of leaves blows across, tumbling. */
+.gr-leaf { position: absolute; left: 0; animation: gr-blow 2.4s cubic-bezier(0.3, 0.2, 0.6, 1) both; }
+@keyframes gr-blow { from { transform: translate(-50px, 0) rotate(0); } to { transform: translate(calc(100vw + 50px), var(--dy)) rotate(var(--spin)); } }
+
+/* The pie slides up into the middle, steam curling off it. */
+.gr-pie .gr-actor { left: 50%; top: 44%; animation: gr-pie 2.8s ease-out both; }
+.gr-stage .pie-steam path { animation: gr-steam 1.2s ease-in-out infinite; }
+.gr-stage .pie-steam path:nth-child(2) { animation-delay: 0.3s; }
+.gr-stage .pie-steam path:nth-child(3) { animation-delay: 0.6s; }
+@keyframes gr-pie {
+  0% { transform: translate(-50%, 40%); opacity: 0; }
+  18% { transform: translate(-50%, -50%); opacity: 1; }
+  82% { transform: translate(-50%, -50%); opacity: 1; }
+  100% { transform: translate(-50%, -60%); opacity: 0; }
+}
+@keyframes gr-steam { 0% { transform: translateY(4px); opacity: 0; } 40% { opacity: 0.9; } 100% { transform: translateY(-6px); opacity: 0; } }
+
+/* The squirrel hops across with its acorn, tail flicking. */
+.gr-squirrel .gr-actor { left: 0; bottom: 18%; animation: gr-run 3.2s cubic-bezier(0.45, 0.1, 0.55, 0.9) both; }
+.gr-hop { animation: gr-hop 0.32s ease-in-out infinite alternate; }
+.gr-stage .squirrel-tail { transform-box: fill-box; transform-origin: 90% 90%; animation: gr-tail 0.32s ease-in-out infinite alternate; }
+@keyframes gr-hop { from { transform: translateY(0); } to { transform: translateY(-16px); } }
+@keyframes gr-tail { from { transform: rotate(-6deg); } to { transform: rotate(8deg); } }
+
+/* The character standing still: on a message, a reaction, in the picker. */
+.gr-face { display: inline-grid; place-items: center; line-height: 0; }
+.gr-face svg { display: block; }
+
+/* The picker: each with its name, and how many have reacted with it. */
+.gr-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.gr-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 6px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+}
+.gr-tile:active { transform: scale(0.96); border-color: var(--accent); }
+.gr-tile.on { border-color: var(--accent); background: rgb(var(--accent-rgb) / 0.16); }
+.gr-tile small { position: absolute; top: 6px; right: 8px; color: var(--accent); font-size: 11px; font-weight: 800; }
+.gr-tile-face { display: grid; place-items: center; height: 56px; }
+
+/* On a message: a small tag under the words, or, sent on its own, the
+   character and its name; either plays it again. */
+.greeting-tag {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 2px 10px 2px 6px;
+  border: 1px solid rgb(255 255 255 / 0.25);
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.15);
+  font-size: 12px;
+  font-weight: 600;
+}
+.greeting-alone { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 14px 2px; font-size: 13px; font-weight: 600; }
+/* Two big choices side by side (sending a photo: from the phone or an album). */
+.new-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.new-choice button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 16px;
+  border: 1px solid var(--edge);
+  border-radius: 20px;
+  background: var(--surface-2);
+  text-align: left;
+  transition: transform 0.15s var(--spring), border-color 0.2s;
+}
+.new-choice button:active { transform: scale(0.97); }
+.new-choice svg { margin-bottom: 8px; color: var(--accent); }
+.new-choice b { font-size: 16px; }
+.new-choice span { color: var(--text-2); font-size: 13px; }
+
+/* Settings: an invite link just made, and the ones made before. */
+.invite-made { display: flex; flex-direction: column; gap: 10px; }
+.invite-made-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.invite-made-btns > :only-child { grid-column: 1 / -1; }
+.invite-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.invite-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--edge); }
+.invite-list li:last-child { border-bottom: 0; }
+.invite-list small { color: var(--text-2); font-size: 12.5px; text-align: right; }
+/* The admin renaming someone in the Users list. */
+.rename-row { display: flex; align-items: center; gap: 6px; }
+.rename-row .field { flex: 1; min-width: 0; height: 40px; }
+/* While renaming, the name box gets the row; the status and switch step aside. */
+.user-row.renaming .user-side { display: none; }
+
+/* The message box: the season's greetings button, beside the photo one. */
+.composer-greet { color: var(--accent); }
+/* On a photo: the season's button at the end of the reactions. */
+.reaction-row .greet-btn.on { background: rgb(var(--accent-rgb) / 0.22); box-shadow: inset 0 0 0 1.5px var(--accent); }
+
+/* ---------- more greetings (components/GreetingsMore.jsx) ---------- */
+
+/* The sleigh flies across the top of the sky, rising, reindeer legs going. */
+.gr-sleigh .gr-actor { left: 0; top: 14%; animation: gr-fly 3.8s cubic-bezier(0.35, 0.1, 0.6, 0.9) both; }
+.gr-stage .sl-legs { animation: gr-gallop 0.22s ease-in-out infinite alternate; }
+@keyframes gr-fly { 0% { transform: translate(-200px, 40px) rotate(-6deg); } 100% { transform: translate(calc(100vw + 20px), -40px) rotate(-10deg); } }
+@keyframes gr-gallop { from { transform: translateX(-0.6px); } to { transform: translateX(0.6px); } }
+
+/* The reindeer hops across low down, its nose glowing. */
+.gr-reindeer .gr-actor { left: 0; bottom: 18%; animation: gr-run 3.2s cubic-bezier(0.45, 0.1, 0.55, 0.9) both; }
+.gr-stage .rd-nose { animation: gr-glow 0.5s ease-in-out infinite alternate; }
+.gr-stage .rd-legs { transform-box: fill-box; transform-origin: 50% 0; animation: gr-swing 0.32s ease-in-out infinite alternate; }
+@keyframes gr-glow { from { filter: drop-shadow(0 0 1px #ff3b30); } to { filter: drop-shadow(0 0 6px #ff3b30); } }
+
+/* The tree rises into the middle and its lights twinkle. */
+.gr-tree .gr-actor { left: 50%; bottom: 0; animation: gr-rise 3.2s ease-in-out both; }
+.gr-stage .tr-light { animation: gr-twinkle 0.6s ease-in-out infinite alternate; }
+.gr-stage .tr-star { transform-box: fill-box; transform-origin: 50% 50%; animation: gr-spin-star 1.6s ease-in-out infinite; }
+@keyframes gr-twinkle { from { opacity: 0.35; } to { opacity: 1; } }
+@keyframes gr-spin-star { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+
+/* The witch sweeps across the sky on her broom, cape streaming. */
+.gr-witch .gr-actor { left: 0; top: 22%; animation: gr-swoop 3.6s cubic-bezier(0.4, 0.15, 0.6, 0.9) both; }
+.gr-stage .wt-cape { transform-box: fill-box; transform-origin: 100% 50%; animation: gr-flap 0.2s ease-in-out infinite alternate; }
+@keyframes gr-swoop {
+  0% { transform: translate(-180px, 30px) rotate(-4deg); }
+  50% { transform: translate(45vw, -10px) rotate(4deg); }
+  100% { transform: translate(calc(100vw + 20px), 20px) rotate(-6deg); }
+}
+
+/* The black cat appears, eyes glowing and blinking, tail swishing. */
+.gr-cat .gr-actor { left: 50%; bottom: 14%; animation: gr-cat 3s ease-in-out both; }
+.gr-stage .ct-eyes { transform-box: fill-box; transform-origin: 50% 50%; animation: gr-blink 1.2s ease-in-out 0.6s 2; }
+.gr-stage .ct-tail { transform-box: fill-box; transform-origin: 0 100%; animation: gr-swish 0.5s ease-in-out infinite alternate; }
+@keyframes gr-cat {
+  0% { transform: translate(-50%, 30%) scale(0.6); opacity: 0; }
+  18%, 82% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, 0) scale(1); opacity: 0; }
+}
+@keyframes gr-blink { 0%, 40%, 60%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.1); } }
+@keyframes gr-swish { from { transform: rotate(-8deg); } to { transform: rotate(10deg); } }
+
+/* Candy falls like snow. */
+.gr-candy svg { filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.35)); }
+
+/* The horn of plenty lands in the middle and its fruit tumbles out. */
+.gr-harvest .gr-actor { left: 50%; top: 46%; animation: gr-gift 3s ease-out both; }
+.gr-fruit { position: absolute; left: 70%; top: 40%; opacity: 0; animation: gr-tumble 1.6s cubic-bezier(0.2, 0.6, 0.4, 1) both; }
+@keyframes gr-tumble {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  15% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 60px)) rotate(200deg) scale(1); }
+}
+
+/* The scarecrow rises and waves; crows take off. */
+.gr-scarecrow .gr-actor { left: 50%; bottom: 0; animation: gr-rise 3.3s ease-in-out both; }
+.gr-stage .sc-arms { transform-box: fill-box; transform-origin: 50% 50%; animation: gr-sway 0.4s ease-in-out 0.5s 6 alternate both; }
+.gr-crow { position: absolute; left: 55%; opacity: 0; animation: gr-crow 1.8s ease-in both; }
+.gr-stage .cr-wing { transform-box: fill-box; transform-origin: 50% 80%; animation: gr-wing 0.16s ease-in-out infinite alternate; }
+@keyframes gr-sway { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+@keyframes gr-crow { 0% { opacity: 0; transform: translate(0, 0); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(45vw, -40vh); } }
+
+/* Acorns drop from the top, bounce and roll. */
+.gr-acorn { position: absolute; top: -40px; animation: gr-drop 2.4s cubic-bezier(0.5, 0, 0.75, 0) both; }
+@keyframes gr-drop {
+  0% { transform: translateY(0) rotate(0); }
+  60% { transform: translateY(78vh) rotate(var(--spin)); }
+  72% { transform: translateY(68vh) rotate(var(--spin)); }
+  84% { transform: translateY(78vh) rotate(var(--spin)); opacity: 1; }
+  100% { transform: translateY(78vh) rotate(var(--spin)); opacity: 0; }
+}
+
+/* The clock's hands sweep round to twelve, then gold bursts. */
+.gr-midnight .gr-actor { left: 50%; top: 46%; animation: gr-gift 3.4s ease-out both; }
+.gr-stage .ck-minute { animation: gr-minute 1.4s cubic-bezier(0.3, 0, 0.3, 1) 0.3s both; }
+.gr-stage .ck-hour { animation: gr-hour 1.4s cubic-bezier(0.3, 0, 0.3, 1) 0.3s both; }
+@keyframes gr-minute { from { transform: rotate(-270deg); } to { transform: rotate(0deg); } }
+@keyframes gr-hour { from { transform: rotate(-30deg); } to { transform: rotate(0deg); } }
+
+/* The bottle pops its cork; bubbles rise. */
+.gr-champagne .gr-actor { left: 50%; top: 52%; animation: gr-gift 3s ease-out both; }
+.gr-stage .cp-cork { animation: gr-cork 1.2s cubic-bezier(0.2, 0.7, 0.4, 1) 0.6s both; }
+@keyframes gr-cork { 0% { transform: none; } 100% { transform: translate(60px, -220px) rotate(540deg); opacity: 0; } }
+.gr-bubble { position: absolute; top: 0; border: 1.5px solid rgb(255 241 193 / 0.9); border-radius: 50%; opacity: 0; animation: gr-bubble 1.4s ease-out both; }
+@keyframes gr-bubble { 0% { opacity: 0; transform: translate(0, 0); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), -160px); } }
+
+/* Confetti shot from both bottom corners. */
+.gr-confetti { position: absolute; bottom: 0; border-radius: 2px; animation: gr-shot 2.6s cubic-bezier(0.15, 0.7, 0.4, 1) both; }
+.gr-confetti.from-left { left: 4%; }
+.gr-confetti.from-right { right: 4%; }
+@keyframes gr-shot {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0); }
+  45% { opacity: 1; transform: translate(var(--dx), var(--up)) rotate(var(--spin)); }
+  100% { opacity: 0; transform: translate(calc(var(--dx) * 1.2), 10vh) rotate(calc(var(--spin) * 1.6)); }
+}
+
+/* Fireworks: bursts of sparks, one after another. */
+.gr-burst { position: absolute; width: 0; height: 0; }
+.gr-burst::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: -16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  filter: blur(7px);
+  animation: gr-glow-burst 1.3s ease-out var(--d) both;
+}
+@keyframes gr-glow-burst { 0% { opacity: 0.9; transform: scale(0.4); } 100% { opacity: 0; transform: scale(2.6); } }
+.gr-burst i {
+  position: absolute;
+  left: -1.5px;
+  top: 0;
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  opacity: 0;
+  transform-origin: 50% 0;
+  animation: gr-spark 1.4s cubic-bezier(0.15, 0.7, 0.3, 1) var(--d) both;
+}
+@keyframes gr-spark {
+  0% { opacity: 1; transform: rotate(var(--a)) translateY(0) scaleY(0.3); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(var(--reach)) scaleY(1); }
+}
+
+/* The flag rises into the middle and waves. */
+.gr-flag .gr-actor { left: 50%; top: 40%; animation: gr-gift 3.2s ease-out both; }
+.gr-wave { animation: gr-ripple 0.6s ease-in-out infinite alternate; transform-origin: 0 50%; }
+@keyframes gr-ripple { from { transform: skewY(-3deg) scaleX(1); } to { transform: skewY(3deg) scaleX(0.97); } }
+
+/* The eagle soars across, wings beating slowly. */
+.gr-eagle .gr-actor { left: 0; top: 24%; animation: gr-swoop 3.4s cubic-bezier(0.35, 0.15, 0.6, 0.9) both; }
+.gr-stage .eg-wing { transform-box: fill-box; animation: gr-beat 0.5s ease-in-out infinite alternate; }
+.gr-stage .eg-wing-l { transform-origin: 100% 60%; }
+.gr-stage .eg-wing-r { transform-origin: 0 60%; }
+@keyframes gr-beat { from { transform: scaleY(1); } to { transform: scaleY(0.45); } }
+
+/* The sparkler loops through the middle, throwing sparks. */
+.gr-sparkler .gr-actor { left: 50%; top: 40%; animation: gr-loop 3.2s ease-in-out both; }
+.gr-spray { position: absolute; left: 50px; top: 14px; }
+.gr-spray i {
+  position: absolute;
+  width: 2px;
+  height: 8px;
+  border-radius: 1px;
+  background: #ffe08a;
+  box-shadow: 0 0 5px #ffd45c;
+  animation: gr-fizz 0.6s linear infinite;
+}
+@keyframes gr-fizz { 0% { opacity: 1; transform: rotate(var(--a)) translateY(0); } 100% { opacity: 0; transform: rotate(var(--a)) translateY(var(--r)); } }
+@keyframes gr-loop {
+  0% { transform: translate(-50%, -50%) translate(-40vw, 10vh); opacity: 0; }
+  12% { opacity: 1; }
+  40% { transform: translate(-50%, -50%) translate(0, -8vh) rotate(-10deg); }
+  70% { transform: translate(-50%, -50%) translate(10vw, 6vh) rotate(8deg); }
+  88% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) translate(40vw, -6vh); opacity: 0; }
 }

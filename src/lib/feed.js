@@ -65,7 +65,8 @@ export function useFeedCount() {
 }
 
 // The feed: [{ key, kind, at, who, whoName, album, photos, emoji, text }],
-// kind being 'added', 'album', 'reaction' or 'comment'. `me` and `myName`
+// kind being 'added', 'album', 'shared' (a private album with me in it),
+// 'reaction' or 'comment'. `me` and `myName`
 // tell my own doings apart (entries from before people were told apart only
 // carry a name).
 export function buildFeed({ albums, me, myName, social }) {
@@ -76,7 +77,11 @@ export function buildFeed({ albums, me, myName, social }) {
 
   for (const album of albums) {
     if (album.createdBy && album.createdBy !== me && (album.createdAt ?? 0) > since) {
-      items.push({ key: `album:${album.id}`, kind: 'album', at: album.createdAt, who: album.createdBy, album })
+      items.push({ key: `album:${album.id}`, kind: album.secret ? 'shared' : 'album', at: album.createdAt, who: album.createdBy, album })
+    }
+    const shared = me && album.sharedWith?.[me]
+    if (shared?.by && shared.by !== me && shared.at > since) {
+      items.push({ key: `shared:${album.id}:${shared.at}`, kind: 'shared', at: shared.at, who: shared.by, album })
     }
     // Photos others added: one item per person, album and day.
     const groups = new Map()

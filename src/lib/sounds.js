@@ -404,6 +404,389 @@ export function addedSound(season) {
   turn[key] = i + 1
 }
 
+// ---------- the sounds of the further greetings (components/GreetingsMore.jsx) ----------
+
+// A buzzy voice note: `type` through a vowel-like filter, gliding `from` to `to`.
+function voice(c, to, at, len, from, end, { type = 'sawtooth', formant = 1200, q = 4, level = 0.4 } = {}) {
+  const o = c.createOscillator()
+  o.type = type
+  o.frequency.setValueAtTime(from, at)
+  o.frequency.exponentialRampToValueAtTime(end, at + len)
+  const f = c.createBiquadFilter()
+  f.type = 'bandpass'
+  f.frequency.value = formant
+  f.Q.value = q
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.0001, at)
+  g.gain.exponentialRampToValueAtTime(level, at + 0.02)
+  g.gain.exponentialRampToValueAtTime(0.0001, at + len)
+  o.connect(f).connect(g).connect(to)
+  o.start(at)
+  o.stop(at + len + 0.02)
+  return { o, f }
+}
+
+// A witch's cackle: "heh-heh-heh-heh", quick and falling.
+function cackle() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 1.2)
+  const t = c.currentTime + 0.03
+  for (let i = 0; i < 7; i++) {
+    const f = 900 - i * 45 + Math.random() * 40
+    voice(c, out, t + i * 0.12, 0.09, f * 1.1, f * 0.85, { formant: 1500, q: 3, level: 0.5 })
+  }
+}
+
+// A cat's meow: rising, then falling, through an opening mouth.
+function meow() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 1.1)
+  const t = c.currentTime + 0.03
+  const { o, f } = voice(c, out, t, 0.7, 520, 460, { formant: 1100, q: 3, level: 0.45 })
+  o.frequency.setValueAtTime(520, t)
+  o.frequency.exponentialRampToValueAtTime(800, t + 0.25)
+  o.frequency.exponentialRampToValueAtTime(440, t + 0.7)
+  f.frequency.setValueAtTime(900, t)
+  f.frequency.exponentialRampToValueAtTime(1900, t + 0.25)
+  f.frequency.exponentialRampToValueAtTime(800, t + 0.7)
+}
+
+// Sweets landing: bright little plinks, all over.
+function plinks(n = 10) {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 0.9)
+  const t = c.currentTime + 0.03
+  for (let i = 0; i < n; i++) ping(c, out, t + 0.1 + Math.random() * 1.4, 1800 + Math.random() * 1800, 0.08, 0.3)
+}
+
+// A horn set down with a thump, the fruit tumbling out.
+function thump() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 1)
+  const t = c.currentTime + 0.03
+  const o = c.createOscillator()
+  o.frequency.setValueAtTime(190, t)
+  o.frequency.exponentialRampToValueAtTime(70, t + 0.25)
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.6, t)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3)
+  o.connect(g).connect(out)
+  o.start(t)
+  o.stop(t + 0.32)
+  for (let i = 0; i < 8; i++) burst(c, out, t + 0.45 + i * 0.09 + Math.random() * 0.05, { type: 'bandpass', freq: 600 + Math.random() * 500, q: 3, level: 0.25, decay: 0.06 })
+}
+
+// A crow's "caw, caw": harsh, falling.
+function caw() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 1.1)
+  const t = c.currentTime + 0.03
+  for (const at of [0, 0.38]) {
+    voice(c, out, t + at, 0.26, 520, 380, { formant: 1300, q: 2, level: 0.5 })
+    burst(c, out, t + at, { type: 'bandpass', freq: 1600, q: 1.5, level: 0.12, decay: 0.24 })
+  }
+}
+
+// Acorns: wooden tocks, bouncing quicker as they settle.
+function tocks() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 1)
+  let at = c.currentTime + 0.3
+  for (let i = 0; i < 9; i++) {
+    const o = c.createOscillator()
+    o.type = 'triangle'
+    o.frequency.value = 650 + Math.random() * 350
+    const g = c.createGain()
+    g.gain.setValueAtTime(0.35, at)
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.06)
+    o.connect(g).connect(out)
+    o.start(at)
+    o.stop(at + 0.07)
+    at += 0.08 + Math.random() * 0.22
+  }
+}
+
+// Hooves clip-clopping, and a jingle of harness bells.
+function hooves() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 1)
+  const t = c.currentTime + 0.03
+  for (let i = 0; i < 8; i++) burst(c, out, t + i * 0.18, { type: 'bandpass', freq: i % 2 ? 900 : 1300, q: 6, level: 0.5, decay: 0.05 })
+  for (let i = 0; i < 10; i++) ping(c, out, t + 0.1 + Math.random() * 1.3, 2600 + Math.random() * 900, 0.05, 0.25)
+}
+
+// A music box: a little run of bell notes up and back.
+function musicBox() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 0.9)
+  const t = c.currentTime + 0.03
+  ;[1047, 1319, 1568, 2093, 1568, 1319, 1760, 2093].forEach((f, i) => ping(c, out, t + i * 0.16, f, 0.13, 1.1))
+}
+
+// A clock striking: three deep bongs, then a sparkle.
+function bongs() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 1)
+  const t = c.currentTime + 0.4
+  for (let i = 0; i < 3; i++) {
+    const at = t + i * 0.55
+    for (const [ratio, level, decay] of [[1, 0.35, 1.8], [2.76, 0.12, 1], [5.4, 0.05, 0.6]]) {
+      const o = c.createOscillator()
+      o.frequency.value = 196 * ratio
+      const g = c.createGain()
+      g.gain.setValueAtTime(0.0001, at)
+      g.gain.exponentialRampToValueAtTime(level, at + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.0001, at + decay)
+      o.connect(g).connect(out)
+      o.start(at)
+      o.stop(at + decay + 0.05)
+    }
+  }
+  for (let i = 0; i < 6; i++) ping(c, out, t + 1.7 + i * 0.07, 2093 + i * 260, 0.07, 0.5)
+}
+
+// A cork pops and the bottle fizzes.
+function champagnePop() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 1)
+  const t = c.currentTime + 0.6
+  burst(c, out, t, { type: 'bandpass', freq: 800, q: 1.2, level: 1, decay: 0.08 })
+  const fizz = c.createBufferSource()
+  fizz.buffer = whiteOf(c)
+  fizz.loop = true
+  const hi = c.createBiquadFilter()
+  hi.type = 'highpass'
+  hi.frequency.value = 5000
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.0001, t + 0.05)
+  g.gain.exponentialRampToValueAtTime(0.12, t + 0.2)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6)
+  fizz.connect(hi).connect(g).connect(out)
+  fizz.start(t + 0.05)
+  fizz.stop(t + 1.65)
+}
+
+// A fanfare on brass: four notes up, the last held.
+function fanfare() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 0.8)
+  const t = c.currentTime + 0.05
+  ;[[392, 0, 0.18], [523, 0.2, 0.18], [659, 0.4, 0.18], [784, 0.6, 0.8]].forEach(([f, at, len]) => {
+    for (const detune of [-6, 6]) {
+      const o = c.createOscillator()
+      o.type = 'sawtooth'
+      o.frequency.value = f
+      o.detune.value = detune
+      const lp = c.createBiquadFilter()
+      lp.type = 'lowpass'
+      lp.frequency.setValueAtTime(800, t + at)
+      lp.frequency.linearRampToValueAtTime(2400, t + at + 0.06)
+      const g = c.createGain()
+      g.gain.setValueAtTime(0.0001, t + at)
+      g.gain.exponentialRampToValueAtTime(0.16, t + at + 0.04)
+      g.gain.setValueAtTime(0.16, t + at + len * 0.8)
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + len + 0.1)
+      o.connect(lp).connect(g).connect(out)
+      o.start(t + at)
+      o.stop(t + at + len + 0.15)
+    }
+  })
+}
+
+// An eagle's cry: high, gliding up and down, a little ragged.
+function screech() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 0.9)
+  const t = c.currentTime + 0.3
+  const { o } = voice(c, out, t, 0.9, 2000, 1500, { formant: 2400, q: 2, level: 0.35 })
+  o.frequency.setValueAtTime(2000, t)
+  o.frequency.exponentialRampToValueAtTime(2700, t + 0.2)
+  o.frequency.exponentialRampToValueAtTime(1500, t + 0.9)
+  const lfo = c.createOscillator()
+  lfo.frequency.value = 22
+  const depth = c.createGain()
+  depth.gain.value = 60
+  lfo.connect(depth).connect(o.frequency)
+  lfo.start(t)
+  lfo.stop(t + 0.92)
+}
+
+// A sparkler: a hiss with crackles through it.
+function sparklerHiss() {
+  const c = ready()
+  if (!c) return
+  const out = master(c, 0.9)
+  const t = c.currentTime + 0.03
+  const hiss = c.createBufferSource()
+  hiss.buffer = whiteOf(c)
+  hiss.loop = true
+  const hi = c.createBiquadFilter()
+  hi.type = 'highpass'
+  hi.frequency.value = 4000
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(0.1, t + 0.2)
+  g.gain.setValueAtTime(0.1, t + 2.2)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6)
+  hiss.connect(hi).connect(g).connect(out)
+  hiss.start(t)
+  hiss.stop(t + 2.65)
+  for (let i = 0; i < 22; i++) burst(c, out, t + Math.random() * 2.4, { type: 'highpass', freq: 3000 + Math.random() * 3000, level: 0.1, decay: 0.02 })
+}
+
+const MORE_SOUNDS = {
+  sleigh: () => sleighBells(),
+  reindeer: hooves,
+  tree: musicBox,
+  witch: cackle,
+  cat: meow,
+  candy: () => plinks(12),
+  harvest: thump,
+  scarecrow: caw,
+  acorns: tocks,
+  midnight: bongs,
+  champagne: champagnePop,
+  confetti: () => popper(),
+  goldworks: () => firework(),
+  fireworks: () => {
+    firework()
+    setTimeout(() => soundOn() && firecrackers(), 1300)
+  },
+  flag: fanfare,
+  eagle: screech,
+  sparkler: sparklerHiss,
+}
+
+// ---------- seasonal greetings (components/Greetings.jsx) ----------
+
+// One sound to each character, as in Plait. The seasons' own for the ones
+// that come from them: Christmas's sleigh bells for the snow, Halloween's
+// ghost and thunder, Thanksgiving's gobble and clinking glasses.
+export function effectSound(kind) {
+  if (!soundOn()) return
+  if (MORE_SOUNDS[kind]) return MORE_SOUNDS[kind]()
+  if (kind === 'flurry') return sleighBells()
+  if (kind === 'ghost') return ghost()
+  if (kind === 'pumpkin') return thunder()
+  if (kind === 'turkey') return gobble()
+  if (kind === 'pie') return clink()
+  const c = ready()
+  if (!c) return
+  const t = c.currentTime + 0.03
+  const out = master(c, 0.9)
+  // One short note: `type` at `f`, from `at`, ringing `len`.
+  const note = (f, at, len, level, type = 'sine') => {
+    const o = c.createOscillator()
+    o.type = type
+    o.frequency.value = f
+    const g = c.createGain()
+    g.gain.setValueAtTime(0.0001, at)
+    g.gain.exponentialRampToValueAtTime(level, at + 0.01)
+    g.gain.exponentialRampToValueAtTime(0.0001, at + len)
+    o.connect(g).connect(out)
+    o.start(at)
+    o.stop(at + len + 0.02)
+    return o
+  }
+  if (kind === 'gingerbread') {
+    // Little wooden feet running, a quick pitter-patter, and a hop at the end.
+    for (let i = 0; i < 8; i++) note(1150 + (i % 2) * 240 + Math.random() * 60, t + i * 0.085, 0.07, 0.22, 'triangle')
+    const hop = note(320, t + 0.75, 0.32, 0.3)
+    hop.frequency.setValueAtTime(320, t + 0.75)
+    hop.frequency.exponentialRampToValueAtTime(980, t + 0.98)
+  } else if (kind === 'penguin') {
+    // A slide whistle: up as it pushes off, a wobble as it glides, down to a stop.
+    const o = c.createOscillator()
+    o.type = 'sine'
+    const g = c.createGain()
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.06)
+    g.gain.setValueAtTime(0.3, t + 1.05)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4)
+    o.frequency.setValueAtTime(480, t)
+    o.frequency.exponentialRampToValueAtTime(1350, t + 0.45)
+    o.frequency.setValueAtTime(1350, t + 0.8)
+    o.frequency.exponentialRampToValueAtTime(620, t + 1.35)
+    const lfo = c.createOscillator()
+    lfo.frequency.value = 6
+    const depth = c.createGain()
+    depth.gain.value = 22
+    lfo.connect(depth).connect(o.frequency)
+    o.connect(g).connect(out)
+    o.start(t)
+    lfo.start(t)
+    o.stop(t + 1.45)
+    lfo.stop(t + 1.45)
+  } else if (kind === 'bats') {
+    // Squeaks, high and quick, from all over, as the flock goes past.
+    for (let i = 0; i < 9; i++) {
+      const at = t + Math.random() * 1.4
+      const o = note(3200 + Math.random() * 900, at, 0.07, 0.12)
+      o.frequency.exponentialRampToValueAtTime(2100, at + 0.06)
+    }
+  } else if (kind === 'spider') {
+    // Down the thread with a zip, and a springy bounce at the bottom.
+    const zip = note(1500, t, 0.5, 0.16)
+    zip.frequency.exponentialRampToValueAtTime(260, t + 0.48)
+    const boing = note(170, t + 0.52, 0.55, 0.3)
+    const wob = c.createOscillator()
+    wob.frequency.value = 9
+    const wd = c.createGain()
+    wd.gain.value = 26
+    wob.connect(wd).connect(boing.frequency)
+    wob.start(t + 0.52)
+    wob.stop(t + 1.1)
+  } else if (kind === 'leaves') {
+    // A gust: air rising and falling through a sweeping filter, and a rustle.
+    const air = c.createBufferSource()
+    air.buffer = whiteOf(c)
+    air.loop = true
+    const sweep = c.createBiquadFilter()
+    sweep.type = 'bandpass'
+    sweep.Q.value = 0.9
+    sweep.frequency.setValueAtTime(380, t)
+    sweep.frequency.exponentialRampToValueAtTime(1900, t + 0.7)
+    sweep.frequency.exponentialRampToValueAtTime(520, t + 1.6)
+    const g = c.createGain()
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.exponentialRampToValueAtTime(0.5, t + 0.5)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.7)
+    air.connect(sweep).connect(g).connect(out)
+    air.start(t)
+    air.stop(t + 1.75)
+    for (let i = 0; i < 6; i++) burst(c, out, t + 0.3 + Math.random(), { type: 'highpass', freq: 3500, level: 0.12, decay: 0.05 })
+  } else if (kind === 'squirrel') {
+    // A chitter: two quick bursts of little clicks.
+    for (const [start, n] of [[0, 7], [0.55, 5]]) {
+      for (let i = 0; i < n; i++) note(2300 + Math.random() * 500, t + start + i * 0.045, 0.03, 0.14, 'triangle')
+    }
+  } else if (kind === 'snowman') {
+    // "Hel-lo there": three warm notes, rising, the last one held.
+    for (const [f, at, len] of [[392, 0, 0.3], [523, 0.18, 0.3], [659, 0.36, 0.9]]) {
+      note(f, t + at, len, 0.26, 'triangle')
+      note(f * 2, t + at, len * 0.6, 0.05)
+    }
+  } else {
+    // The gift: the lid pops, then the stars inside sparkle out.
+    burst(c, out, t, { type: 'bandpass', freq: 900, level: 0.5, decay: 0.07 })
+    const thump = note(520, t, 0.12, 0.35)
+    thump.frequency.exponentialRampToValueAtTime(110, t + 0.1)
+    for (let i = 0; i < 7; i++) note(2100 + Math.random() * 1500, t + 0.12 + i * 0.075 + Math.random() * 0.03, 0.35, 0.09)
+  }
+}
+
 // Christmas's recordings, fetched ahead so the first one plays on time.
 export function preloadSeason(season) {
   if (season !== 'christmas') return

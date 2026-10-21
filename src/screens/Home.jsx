@@ -3,7 +3,9 @@ import { navigate } from '../App'
 import {
   AlbumName, AlbumsInvite, ago, CoverCycle, Editorial, leadOf, Mosaic, News, openAlbum, Stack, Who,
 } from '../components/HomeLayouts'
+import AlbumChooser from '../components/AlbumChooser'
 import Avatar from '../components/Avatar'
+import Camera from '../components/Camera'
 import Icon from '../components/Icon'
 import Logo from '../components/Logo'
 import NotifyNudge from '../components/NotifyNudge'
@@ -12,13 +14,14 @@ import SeasonDecor from '../components/SeasonDecor'
 import Sheet from '../components/Sheet'
 import { greeting, newsSince, rememberNow } from '../lib/activity'
 import { favouritePhotos, refreshFavourites, useReactionCounts } from '../lib/collections'
-import { useCloud, usePinned, userName } from '../lib/cloud'
-import { countText, isVideo } from '../lib/images'
+import { me as adder, useCloud, usePinned, userName } from '../lib/cloud'
+import { countText, importMedia, isVideo } from '../lib/images'
 import { fadeIn } from '../lib/motion'
 import { adderOf, usePeople } from '../lib/people'
-import { announceAlbum } from '../lib/push'
+import { announceAlbum, announceUpload } from '../lib/push'
+import { celebrateAdded } from '../lib/feedback'
 import { useActiveSeason, useLayout } from '../lib/theme'
-import { addedAt, createAlbum, lastUpload, uploaderName, useStore } from '../lib/store'
+import { addedAt, addImages, addToAlbum, createAlbum, lastUpload, useStore } from '../lib/store'
 
 // The Classic layout: the newest album leads as one wide cover; the rest follow in a grid.
 function AlbumCard({ album, images, featured, index, pinned }) {
@@ -87,7 +90,7 @@ function NewestPhotos({ albums, images }) {
       <div className="section-head"><h2>Newest photos</h2></div>
       <div className="newest-row">
         {shown.map(({ id, album }) => {
-          const by = uploaderName(album.addedBy?.[id]).split(' ')[0]
+          const by = (adderOf(people, album.addedBy?.[id])?.name ?? '').split(' ')[0]
           return (
             <button key={id} className="newest-tile" onClick={() => navigate(`/album/${album.id}?photo=${encodeURIComponent(id)}`)}>
               <img className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
@@ -163,6 +166,25 @@ export default function Home() {
   const layout = useLayout()
   useActiveSeason() // redraws with the season's greeting when it changes
   const [namingAlbum, setNamingAlbum] = useState(false)
+  // The camera: first which album (the last one used leads), then the camera.
+  const [cameraFor, setCameraFor] = useState(null) // 'choose', or the album
+  const lastCameraAlbum = () => {
+    try {
+      return localStorage.getItem('seamline:cameraAlbum')
+    } catch {
+      return null
+    }
+  }
+  const sendFromCamera = async (file) => {
+    const album = cameraFor
+    const record = await importMedia(file)
+    addImages([record])
+    addToAlbum(album.id, [record.id], adder())
+    announceUpload(album, [record])
+    celebrateAdded(1)
+    setCameraFor(null)
+    navigate(`/album/${album.id}`)
+  }
   const [albumName, setAlbumName] = useState('')
 
   // "3 albums · 41 photos · 2 videos", under the logo.
@@ -277,6 +299,29 @@ export default function Home() {
 
       {/* New here, or notifications still off on this device: ask once in a while. */}
       <NotifyNudge />
+
+      {albums.length > 0 && (
+        <button className="primary home-camera" onClick={() => setCameraFor('choose')} aria-label="Take a photo or video">
+          <Icon name="camera" size={24} />
+        </button>
+      )}
+      <AlbumChooser
+        open={cameraFor === 'choose'}
+        onClose={() => setCameraFor(null)}
+        title="Which album is it for?"
+        first={lastCameraAlbum()}
+        onPick={(a) => {
+          try {
+            localStorage.setItem('seamline:cameraAlbum', a.id)
+          } catch {
+            // Storage blocked: the newest album leads next time.
+          }
+          setCameraFor(a)
+        }}
+      />
+      {cameraFor && cameraFor !== 'choose' && (
+        <Camera albumName={cameraFor.name} onSend={sendFromCamera} onClose={() => setCameraFor(null)} />
+      )}
 
       <Sheet open={namingAlbum} onClose={() => setNamingAlbum(false)} title="New album" modal>
         <input

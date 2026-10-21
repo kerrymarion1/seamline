@@ -125,21 +125,25 @@ export async function updateChat(chat, patch) {
 
 // Send text, a photo (an imported image record), or both. The photo goes
 // online first; the others hear about it once it is sent.
-export async function sendMessage(chat, { text = '', image = null }) {
+// `effect` is a seasonal greeting (components/Greetings.jsx) sent with it, or on its own.
+export async function sendMessage(chat, { text = '', image = null, effect = null }) {
   const body = text.trim()
-  if (!body && !image) return null
+  if (!body && !image && !effect) return null
   const photo = image ? await uploadMessagePhoto(image) : null
   const { data, error } = await supabase
     .from('seamline_messages')
-    .insert({ chat: chat.id, body, photo })
+    .insert({ chat: chat.id, body, photo, ...(effect ? { effect } : null) })
     .select()
     .single()
+  // A greeting this database doesn't take yet: said plainly, not as the database puts it.
+  if (error?.message?.includes('effect_check')) throw new Error("That greeting can't be sent yet. Try another one.")
   if (error) throw new Error(error.message)
   markRead(chat.id).catch(() => {})
   if (getCloud().features.push) {
-    supabase.functions.invoke('seamline-notify', { body: { chat: chat.id, text: body, photo: !!photo } }).catch(() => {})
+    supabase.functions.invoke('seamline-notify', { body: { chat: chat.id, text: body, photo: !!photo, ...(effect ? { effect } : null) } }).catch(() => {})
   }
-  chats = chats.map((c) => (c.id === chat.id ? { ...c, last_at: data.created_at, last_text: body || 'Sent a photo', last_by: myId() } : c))
+  const line = body || (photo ? 'Sent a photo' : 'Sent a greeting')
+  chats = chats.map((c) => (c.id === chat.id ? { ...c, last_at: data.created_at, last_text: line, last_by: myId() } : c))
   emit()
   return data
 }

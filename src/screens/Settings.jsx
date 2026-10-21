@@ -10,10 +10,10 @@ import { renderEdit } from '../lib/edit'
 import { celebrateAdded, setVibrateOn, vibrateOn } from '../lib/feedback'
 import { setSoundOn, soundOn } from '../lib/sounds'
 import {
-  addInvite, answerRequest, avatarOf, deleteInvite, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, setPinned, usePinned, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
+  addInvite, answerRequest, avatarOf, createInvite, deleteInvite, fetchMyInvites, renameMember, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, setPinned, usePinned, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
   storageUsed, getCloud, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
 } from '../lib/cloud'
-import { refreshPeople } from '../lib/people'
+import { personIn, refreshPeople, usePeople } from '../lib/people'
 import { pushStatus, turnOffPush, turnOnPush } from '../lib/push'
 import { renameUploader, setImportAlbum, useStore } from '../lib/store'
 import {
@@ -302,10 +302,25 @@ const USER_STATUS = {
 }
 const day = (t) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
-function Users({ canSwitch }) {
+function Users({ canSwitch, canRename }) {
   const [users, setUsers] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(null) // whose role is changing
+  const [renaming, setRenaming] = useState(null) // { id, name } while the admin renames someone
+  // The name everyone sees for them: in chats, on photos they added, everywhere.
+  const saveName = async () => {
+    setBusy(renaming.id)
+    setError(null)
+    try {
+      await renameMember(renaming.id, renaming.name)
+      setRenaming(null)
+      await load()
+      refreshPeople(true)
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(null)
+  }
   const load = () => fetchUsers().then(setUsers).catch((e) => setError(e.message))
   useEffect(() => {
     load()
@@ -343,10 +358,27 @@ function Users({ canSwitch }) {
       <h2>Users</h2>
       <p className="hint">{summary}</p>
       {users?.map((u) => (
-        <div key={u.id} className="person-row user-row">
+        <div key={u.id} className={`person-row user-row ${renaming?.id === u.id ? 'renaming' : ''}`}>
           <Avatar person={{ name: u.name || u.email, avatar: u.avatar }} size={36} />
           <div className="person-who">
-            <span className="person-email">{u.name || u.email}</span>
+            {renaming?.id === u.id ? (
+              <form
+                className="rename-row"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  saveName()
+                }}
+              >
+                <input
+                  className="field" value={renaming.name} maxLength={60} autoFocus aria-label="Their name"
+                  onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+                />
+                <button className="pill-btn" disabled={busy === u.id || !renaming.name.trim()}>Save</button>
+                <button type="button" className="text-btn" onClick={() => setRenaming(null)}>Cancel</button>
+              </form>
+            ) : (
+              <span className="person-email">{u.name || u.email}</span>
+            )}
             <small>
               {[
                 u.name && u.email,
@@ -363,6 +395,9 @@ function Users({ canSwitch }) {
                 {busy === u.id ? 'Changing…' : u.status === 'guest' ? 'Make member' : 'Make guest'}
               </button>
             )}
+            {canRename && ['admin', 'member', 'guest'].includes(u.status) && renaming?.id !== u.id && (
+              <button className="text-btn user-switch" onClick={() => setRenaming({ id: u.id, name: u.name || '' })}>Rename</button>
+            )}
           </div>
         </div>
       ))}
@@ -372,6 +407,85 @@ function Users({ canSwitch }) {
         </p>
       )}
       {users?.some((u) => u.status === 'waiting') && <p className="note">Approve people waiting under People, above.</p>}
+      {error && <p className="preview-error" role="alert">{error}</p>}
+    </section>
+  )
+}
+
+// Inviting someone, for anyone in Hugpix but a guest: a link that works
+// once, for 30 days, and needs no code (see createInvite). They make an
+// account, or sign in if they already use Plait, and they are in as a guest.
+function InviteSomeone() {
+  const people = usePeople()
+  const [invites, setInvites] = useState(null)
+  const [made, setMade] = useState(null) // { url } just made
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState(null)
+  const load = () => fetchMyInvites().then(setInvites).catch(() => setInvites([]))
+  useEffect(() => {
+    load()
+  }, [])
+  const make = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setMade(await createInvite())
+      load()
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(false)
+  }
+  const send = () => navigator.share({ title: 'Join us on Hugpix', text: 'Join our family photos on Hugpix', url: made.url }).catch(() => {})
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(made.url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setError('Could not copy it. Press and hold the link to copy it instead.')
+    }
+  }
+  const nameOf = (id) => personIn(people, id)?.name ?? 'Someone'
+  return (
+    <section className="panel">
+      <h2>Invite someone</h2>
+      <p className="hint">
+        Make a link and send it to them. It works once, for 30 days, and needs no code: they make an account (or sign in, if they
+        already use Plait) and they are in.
+      </p>
+      {made ? (
+        <div className="invite-made">
+          <input className="field" readOnly value={made.url} onFocus={(e) => e.target.select()} aria-label="Invite link" />
+          <div className="invite-made-btns">
+            {typeof navigator.share === 'function' && (
+              <button className="primary" onClick={send}><Icon name="share" size={18} /> Send</button>
+            )}
+            <button className="secondary" onClick={copy}>{copied ? 'Copied' : 'Copy link'}</button>
+          </div>
+          <button className="text-btn" onClick={() => setMade(null)}>Make another</button>
+        </div>
+      ) : (
+        <button className="primary block" onClick={make} disabled={busy}>{busy ? 'Making…' : 'Make an invite link'}</button>
+      )}
+      {invites?.length > 0 && (
+        <>
+          <div className="label">Your invites</div>
+          <ul className="invite-list">
+            {invites.map((i) => (
+              <li key={i.token}>
+                <span>
+                  {i.used_by ? `${nameOf(i.used_by)} joined` : Date.parse(i.expires_at) < Date.now() ? 'Not used, now expired' : 'Not used yet'}
+                </span>
+                <small>
+                  {i.used_by ? day(i.used_at) : `made ${day(i.created_at)}${Date.parse(i.expires_at) > Date.now() ? `, good until ${day(i.expires_at)}` : ''}`}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {error && <p className="preview-error" role="alert">{error}</p>}
     </section>
   )
@@ -852,7 +966,8 @@ export default function Settings() {
           <>
             <Notifications cloud={cloud} />
             {cloud.admin && cloud.features.people && <People requests={cloud.requests} />}
-            {cloud.admin && cloud.features.users && <Users canSwitch={!!cloud.features.roles} />}
+            {cloud.uploader && !cloud.guest && cloud.features.memberInvites && <InviteSomeone />}
+            {cloud.admin && cloud.features.users && <Users canSwitch={!!cloud.features.roles} canRename={!!cloud.features.rename} />}
             {cloud.admin && <Invites canDelete={!!cloud.features.inviteDelete} />}
             <SyncPanel cloud={cloud} />
 

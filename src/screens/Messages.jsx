@@ -3,6 +3,7 @@ import { navigate } from '../App'
 import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
 import Avatar from '../components/Avatar'
 import { ago } from '../components/HomeLayouts'
+import { GreetingFace, GreetingPicker, greetingLabel, greetingSeason, markPlayed, playGreeting, SeasonFace, unplayed } from '../components/Greetings'
 import Icon from '../components/Icon'
 import Linkify from '../components/Linkify'
 import PeoplePicker from '../components/PeoplePicker'
@@ -15,6 +16,7 @@ import {
 import { publicUrl, useCloud } from '../lib/cloud'
 import { importFile } from '../lib/images'
 import { personIn, usePeople } from '../lib/people'
+import { useActiveSeason } from '../lib/theme'
 import { pushStatus, turnOnPush } from '../lib/push'
 
 // Messages: "/messages" lists the chats, newest first; "/messages/:id" is one
@@ -226,6 +228,11 @@ function Chat({ chatId, people }) {
   const [reactingTo, setReactingTo] = useState(null) // the message whose reactions are open
   const [confirming, setConfirming] = useState(null) // my message about to be deleted
   const [clearing, setClearing] = useState(false) // asking before the chat is deleted for me
+  // Seasonal greetings (components/Greetings.jsx): offered while a season
+  // with them is on; played for everyone in the chat, whatever their season.
+  const season = useActiveSeason()
+  const greetSeason = features.greetings ? greetingSeason(season, !!features.moreGreetings) : null
+  const [greeting, setGreeting] = useState(false)
   const list = useRef(null)
   const fileInput = useRef(null)
   const line = useRef(null)
@@ -312,6 +319,22 @@ function Chat({ chatId, people }) {
     }
   }, [chatId])
 
+  // Each greeting plays by itself once: as it arrives, or on opening the
+  // chat for the newest one not yet played here (from the last three days).
+  const opened = useRef(false)
+  useEffect(() => {
+    if (!messages) return
+    const opening = !opened.current
+    opened.current = true
+    const withOne = messages.filter((m) => m.effect)
+    if (!withOne.length) return
+    const due = withOne.filter(
+      (m) => m.sender !== me && unplayed([`msg:${m.id}`]).length && (!opening || Date.now() - Date.parse(m.created_at) < 3 * 864e5),
+    )
+    markPlayed(withOne.map((m) => `msg:${m.id}`))
+    if (due.length) playGreeting(due.at(-1).effect)
+  }, [messages, me])
+
   // "Typing…" fades if nothing more comes for a few seconds.
   useEffect(() => {
     if (!typingBy) return
@@ -391,16 +414,21 @@ function Chat({ chatId, people }) {
     }
   }
 
-  const send = async (e) => {
+  // What is typed, the photo picked, and a greeting if one was chosen.
+  const send = async (e, effect = null) => {
     e?.preventDefault()
-    if (!chat || sending || (!text.trim() && !photo)) return
+    if (!chat || sending || (!text.trim() && !photo && !effect)) return
     setSending(true)
     setError(null)
     try {
-      const sent = await sendMessage(chat, { text, image: photo })
+      const sent = await sendMessage(chat, { text, image: photo, effect })
       setText('')
       setPhoto(null)
       if (sent) setMessages((m) => (m?.some((x) => x.id === sent.id) ? m : [...(m ?? []), sent]))
+      if (sent?.effect) {
+        markPlayed([`msg:${sent.id}`])
+        playGreeting(sent.effect)
+      }
     } catch (err) {
       setError(err.message || 'Could not send that.')
     }
@@ -478,7 +506,7 @@ function Chat({ chatId, people }) {
                 // A tap on a message (not its photo) offers the reactions, and
                 // on my own messages a way to delete it.
                 onClick={(e) => {
-                  if ((!canReact && !mine) || e.target.closest('a, .bubble-photo, .reaction-chips, .bubble-tools')) return
+                  if ((!canReact && !mine) || e.target.closest('a, .bubble-photo, .reaction-chips, .bubble-tools, .greeting-alone, .greeting-tag')) return
                   setConfirming(null)
                   setReactingTo((r) => (r === m.id ? null : m.id))
                 }}
@@ -492,7 +520,18 @@ function Chat({ chatId, people }) {
                     />
                   </button>
                 )}
+                {m.effect && !m.body && !m.photo && (
+                  <button type="button" className="greeting-alone" onClick={() => playGreeting(m.effect)} aria-label={`${greetingLabel(m.effect)}, play again`}>
+                    <GreetingFace kind={m.effect} size={56} />
+                    <span>{greetingLabel(m.effect)}</span>
+                  </button>
+                )}
                 {m.body && <p><Linkify text={m.body} /></p>}
+                {m.effect && (m.body || m.photo) && (
+                  <button type="button" className="greeting-tag" onClick={() => playGreeting(m.effect)} aria-label={`${greetingLabel(m.effect)}, play again`}>
+                    <GreetingFace kind={m.effect} size={18} /> {greetingLabel(m.effect)}
+                  </button>
+                )}
                 <time>{timeOf(m.created_at)}</time>
                 <ReactionChips
                   reactions={reactions.filter((r) => r.message === m.id)}
@@ -554,6 +593,11 @@ function Chat({ chatId, people }) {
           <button type="button" className="icon-btn" onClick={() => setChoosing(true)} aria-label="Add a photo" disabled={sending}>
             <Icon name="photo" size={22} />
           </button>
+          {greetSeason && (
+            <button type="button" className="icon-btn composer-greet" onClick={() => setGreeting(true)} aria-label="Seasonal greetings" disabled={sending}>
+              <SeasonFace season={greetSeason} size={22} />
+            </button>
+          )}
           <div className="composer-box">
             {photo && (
               <span className="composer-photo">
@@ -581,6 +625,21 @@ function Chat({ chatId, people }) {
             {sending ? <i className="spinner" /> : <Icon name="up" size={20} />}
           </button>
         </form>
+      )}
+
+      {greetSeason && (
+        <GreetingPicker
+          season={greetSeason}
+          more={!!features.moreGreetings}
+          open={greeting}
+          onClose={() => setGreeting(false)}
+          busy={sending}
+          note="Sent with your message, or on its own. Everyone in the chat sees it and hears it."
+          onPick={(kind) => {
+            setGreeting(false)
+            send(null, kind)
+          }}
+        />
       )}
 
       <Sheet open={choosing} onClose={() => setChoosing(false)} title="Send a photo" modal>

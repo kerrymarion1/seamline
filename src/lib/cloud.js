@@ -168,6 +168,13 @@ async function refresh(session, claimed = false) {
     supabase.rpc('seamline_features'),
     supabase.from('seamline_members').select('role').eq('user_id', session.user.id).maybeSingle(),
   ])
+  // Invited by a member's link: joining now (see seamline_invite_claim).
+  const invite = pendingInvite()
+  if (!memberError && !isMember && !claimed && invite && features?.memberInvites) {
+    const { data: joined } = await supabase.rpc('seamline_invite_claim', { p_token: invite })
+    rememberInvite(null)
+    if (joined) return refresh(session, true)
+  }
   // Approved by email before this account existed: becoming a guest now
   // (see seamline_claim_guest), then reading everything again as one.
   if (!memberError && !isMember && !claimed && features?.guests) {
@@ -301,7 +308,8 @@ export async function signUp(name, email, password, code) {
       // `app` picks Seamline's version of the confirmation email (see the
       // "Confirm signup" template in Supabase, which checks .Data.app).
       data: { app: 'seamline', invite_code: code.trim(), ...(who ? { seamline_name: who, display_name: who } : null) },
-      emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
+      // Back here after confirming, with any invite still on it.
+      emailRedirectTo: `${window.location.origin}${window.location.pathname}${pendingInvite() ? `?invite=${encodeURIComponent(pendingInvite())}` : ''}`,
     },
   })
   // The invite check fails inside the database, which Supabase reports only as this.
@@ -1116,6 +1124,65 @@ export async function deleteInvite(code) {
 
 // Opens the sign-up with the code already filled in (see SignIn).
 export const inviteUrl = (code) => `${window.location.origin}/?invite=${encodeURIComponent(code)}`
+
+// ---------- invites from members (see 20261021_greetings_invites.sql) ----------
+// A member's invite is a one-use link: its token is also a one-use code, so
+// the new account is made without typing one, and once signed in the person
+// joins this library (seamline_invite_claim). The token from a link is kept
+// on the device until then, past the email confirmation and any sign-in.
+const INVITE = 'seamline:invite'
+export const pendingInvite = () => {
+  try {
+    return localStorage.getItem(INVITE)
+  } catch {
+    return null
+  }
+}
+export function rememberInvite(token) {
+  try {
+    if (token) localStorage.setItem(INVITE, token)
+    else localStorage.removeItem(INVITE)
+  } catch {
+    // Storage blocked: the link itself still carries it.
+  }
+}
+{
+  const fromLink = new URLSearchParams(window.location.search).get('invite')
+  if (fromLink) rememberInvite(fromLink.trim().toLowerCase())
+}
+
+// A new invite link of my own.
+export async function createInvite() {
+  const { data, error } = await supabase.rpc('seamline_invite_create')
+  if (error) throw new Error(error.message)
+  return { token: data, url: inviteUrl(data) }
+}
+
+// Signed out: who sent this invite ({ from }), or null if it's no good (or
+// is one of the admin's codes, which still asks for the code as before).
+export async function peekInvite(token) {
+  if (!supabase || !token) return null
+  const { data, error } = await supabase.rpc('seamline_invite_peek', { p_token: token })
+  return error ? null : data ?? null
+}
+
+// The invites I have sent, newest first.
+export async function fetchMyInvites() {
+  const { data, error } = await supabase
+    .from('seamline_invites')
+    .select('token, created_at, expires_at, used_by, used_at')
+    .eq('invited_by', state.session.user.id)
+    .order('created_at', { ascending: false })
+    .limit(10)
+  if (error) throw new Error(error.message)
+  return data
+}
+
+// The admin renames someone: the name everyone sees for them.
+export async function renameMember(userId, name) {
+  const { data, error } = await supabase.rpc('seamline_set_member_name', { p_user: userId, p_name: name })
+  if (error || data?.error) throw new Error(data?.error ?? error.message)
+}
 
 // Someone with no code asks for one from the welcome page; Kerry is emailed
 // (see seamline-code-request). Signed out, so it carries only the public key.

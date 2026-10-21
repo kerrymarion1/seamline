@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { navigate } from '../App'
-import { requestPasswordReset, setNewPassword, signIn, signUp } from '../lib/cloud'
+import { peekInvite, requestPasswordReset, setNewPassword, signIn, signUp } from '../lib/cloud'
 
 // The sign-in and new-account form, and the new-password form after a reset
 // link: shared by the front door (Gate), the shared page and Settings. Kept
@@ -9,9 +9,14 @@ import { requestPasswordReset, setNewPassword, signIn, signUp } from '../lib/clo
 // Signing in, or making a new account with any email address. `intro`
 // replaces the line under the heading, for the shared page. An invite link
 // (see inviteUrl) opens straight on the new account, with its code filled in,
-// and so does "Join with your code" on the welcome page (?join).
+// and so does "Join with your code" on the welcome page (?join). A member's
+// invite link needs no code at all: the box isn't shown, only who sent it.
 export function SignIn({ intro }) {
   const [invited] = useState(() => new URLSearchParams(window.location.search).get('invite') ?? '')
+  const [inviter, setInviter] = useState(null) // the first name on a member's invite
+  useEffect(() => {
+    if (invited) peekInvite(invited).then((p) => p?.from && setInviter(p.from)).catch(() => {})
+  }, [invited])
   const [creating, setCreating] = useState(() => !!invited || new URLSearchParams(window.location.search).has('join'))
   const [name, setName] = useState('')
   const [code, setCode] = useState(invited)
@@ -72,9 +77,13 @@ export function SignIn({ intro }) {
   // the password and fill it in next time.
   return (
     <form className="panel" onSubmit={submit} autoComplete="on">
-      <h2>{creating ? 'Create an account' : 'Sign in'}</h2>
+      <h2>{inviter ? `${inviter} invited you to Hugpix` : creating ? 'Create an account' : 'Sign in'}</h2>
       <p className="hint">
-        {creating
+        {inviter
+          ? creating
+            ? 'Make an account with any email address; we will send a link to confirm it. Already use Plait? Sign in with it instead, and you are in.'
+            : 'Sign in with your Hugpix or Plait account to join.'
+          : creating
           ? `${invited && code === invited
               ? 'You have been invited. Any email address works; we will send a link to confirm it.'
               : 'Any email address works, with the invite code you were given. We will send a link to confirm the address.'} Already use Plait? You have an account: sign in with it instead.`
@@ -101,10 +110,12 @@ export function SignIn({ intro }) {
       {creating ? (
         <>
           <p className="note">At least 6 characters.</p>
-          <input
-            className="field" name="invite" autoComplete="off" autoCapitalize="none" spellCheck={false}
-            placeholder="Invite code" value={code} onChange={(e) => setCode(e.target.value)} required
-          />
+          {!inviter && (
+            <input
+              className="field" name="invite" autoComplete="off" autoCapitalize="none" spellCheck={false}
+              placeholder="Invite code" value={code} onChange={(e) => setCode(e.target.value)} required
+            />
+          )}
         </>
       ) : (
         <label className="check-row">

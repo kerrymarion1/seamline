@@ -77,6 +77,14 @@ export function announceAlbum(album) {
 
 // Someone here just added `records` to `album`: tell the others. Fire and
 // forget; a failure only means no notification.
+// People just added to a private album: tell them it was shared with them.
+export function announceShared(album, people) {
+  const cloud = getCloud()
+  if (!supabase || !cloud.canSync || !cloud.features.push || !people.length) return
+  supabase.functions
+    .invoke('seamline-notify', { body: { album: album.id, name: album.name, shared: people } })
+    .catch(() => {})
+}
 export function announceUpload(album, records) {
   const cloud = getCloud()
   if (!supabase || !cloud.canSync || !cloud.features.push || !records.length) return
