@@ -14,6 +14,7 @@ import {
   storageUsed, getCloud, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
 } from '../lib/cloud'
 import { personIn, refreshPeople, usePeople } from '../lib/people'
+import { codeMessage, inviteMessage } from '../lib/pitch'
 import { pushStatus, turnOffPush, turnOnPush } from '../lib/push'
 import { renameUploader, setImportAlbum, useStore } from '../lib/store'
 import {
@@ -437,10 +438,12 @@ function InviteSomeone() {
     }
     setBusy(false)
   }
-  const send = () => navigator.share({ title: 'Join us on Hugpix', text: 'Join our family photos on Hugpix', url: made.url }).catch(() => {})
+  // The link goes with a few lines about Hugpix (lib/pitch.js), inside the
+  // text rather than as `url`, which some apps take on its own.
+  const send = () => navigator.share({ title: 'Join us on Hugpix', text: inviteMessage(made.url) }).catch(() => {})
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(made.url)
+      await navigator.clipboard.writeText(inviteMessage(made.url))
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -462,7 +465,7 @@ function InviteSomeone() {
             {typeof navigator.share === 'function' && (
               <button className="primary" onClick={send}><Icon name="share" size={18} /> Send</button>
             )}
-            <button className="secondary" onClick={copy}>{copied ? 'Copied' : 'Copy link'}</button>
+            <button className="secondary" onClick={copy}>{copied ? 'Copied' : 'Copy invite'}</button>
           </div>
           <button className="text-btn" onClick={() => setMade(null)}>Make another</button>
         </div>
@@ -539,7 +542,7 @@ function Invites({ canDelete }) {
     })
   }
 
-  const message = (code) => `You're invited to Hugpix, our family photo albums. Make your account here: ${inviteUrl(code)}\n\nInvite code: ${code}`
+  const message = (code) => codeMessage(inviteUrl(code), code)
   const copy = async (code) => {
     await navigator.clipboard.writeText(message(code)).catch(() => {})
     setCopied(code)
