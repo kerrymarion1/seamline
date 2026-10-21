@@ -13,6 +13,11 @@
 //   { chat, message, reaction }          someone reacted to a message
 //   { album, name, shared: [ids] }       someone shared a private album with
 //                                        these people (added them to it)
+//   { album, name, photo, tagged: [ids], video? }
+//                                        someone tagged these people in a photo
+//
+// Someone tagged hears only if the album on the server has them tagged in
+// that photo, and (in a secret album) only if they are in the album.
 //
 // An album is everyone's news unless it is secret: then only the people in
 // it hear. A message is heard only by the people in its chat. A heart goes
@@ -60,7 +65,7 @@ Deno.serve(async (req: Request) => {
   let body: {
     album?: string; name?: string; photos?: number; videos?: number; made?: boolean; members?: unknown[]; shared?: unknown[];
     chat?: string; text?: string; photo?: boolean | string; heart?: boolean; comment?: string; effect?: string;
-    message?: string; reaction?: string;
+    message?: string; reaction?: string; tagged?: unknown[]; video?: boolean;
   };
   try {
     body = await req.json();
@@ -103,6 +108,40 @@ Deno.serve(async (req: Request) => {
       url: `/messages/${chat.id}`,
       tag: `chat-${chat.id}`,
     }, auth.user.id, chat.members);
+    return reply({ ok: true });
+  }
+
+  // People tagged in one photo in an album the caller can see.
+  if (typeof body.photo === "string" && Array.isArray(body.tagged)) {
+    const albumId = String(body.album ?? "");
+    const photo = body.photo;
+    if (!/^[\w-]{1,64}$/.test(albumId) || !/^[\w-]{1,64}$/.test(photo)) return reply({ error: "Bad request" }, 400);
+    const { data: doc } = await admin.from("seamline_docs").select("data")
+      .eq("library", library).eq("kind", "album").eq("id", albumId).maybeSingle();
+    const data = doc?.data;
+    if (!data || !(data.imageIds ?? []).includes(photo)) return reply({ error: "No such photo." }, 404);
+    const secret = data.secret === true;
+    const members: string[] = (data.members ?? []).map(String);
+    if (secret && !members.includes(auth.user.id)) {
+      const { data: isAdmin } = await caller.rpc("seamline_is_admin");
+      if (!isAdmin) return reply({ error: "Not in that album." }, 403);
+    }
+    const tags: string[] = (data.tags?.[photo] ?? []).map(String);
+    const named = body.tagged.map(String)
+      .filter((id) => /^[0-9a-f-]{36}$/.test(id) && id !== auth.user.id && tags.includes(id) && (!secret || members.includes(id)))
+      .slice(0, 50);
+    if (named.length) {
+      const { data: rows } = await admin.from("seamline_members").select("user_id").eq("library", library).in("user_id", named);
+      const to = (rows ?? []).map((r) => String(r.user_id));
+      if (to.length) {
+        await notifyLibrary(admin, library, {
+          title: String(data.name ?? body.name ?? "An album").trim().slice(0, 80) || "An album",
+          body: `${firstName(auth.user)} tagged you in a ${body.video === true ? "video" : "photo"}`,
+          url: `/album/${albumId}?photo=${encodeURIComponent(photo)}`,
+          tag: `tagged-${albumId}-${photo}`,
+        }, auth.user.id, to);
+      }
+    }
     return reply({ ok: true });
   }
 

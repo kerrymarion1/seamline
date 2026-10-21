@@ -104,8 +104,9 @@ export async function setUserName(name) {
   if (data?.user && state.session) set({ session: { ...state.session, user: data.user } })
 }
 
-// A profile photo: the middle square of `file`, 320 pixels across, put online
-// and kept on the account (seamline_avatar). No file takes it off.
+// A profile photo: the middle square of `file`, up to 640 pixels across (so it
+// stays sharp when tapped open big), put online and kept on the account
+// (seamline_avatar). No file takes it off.
 export async function setAvatar(file) {
   let url = ''
   if (file) {
@@ -113,9 +114,10 @@ export async function setAvatar(file) {
       throw new Error('That file could not be read as a photo.')
     })
     const side = Math.min(bitmap.width, bitmap.height)
+    const out = Math.min(640, side)
     const canvas = document.createElement('canvas')
-    canvas.width = canvas.height = 320
-    canvas.getContext('2d').drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 320, 320)
+    canvas.width = canvas.height = out
+    canvas.getContext('2d').drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, out, out)
     bitmap.close?.()
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
     if (!blob) throw new Error('Could not prepare that photo.')

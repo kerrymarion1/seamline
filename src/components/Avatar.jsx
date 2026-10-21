@@ -1,6 +1,10 @@
 // A person's profile photo, or, when they haven't set one, their initials on
 // a colour of their own (the same colour for them everywhere, picked from
 // their account, else their name). `person` is { id, name, avatar }.
+// A photo opens big when tapped (AvatarZoom), even inside a button, unless
+// `zoom` is false: where tapping it already means something else (your own
+// picture as the way to Settings, picking someone, changing your photo).
+import { zoomAvatar } from './AvatarZoom'
 
 const COLOURS = [
   ['#ff8a4c', '#e8456b'],
@@ -23,10 +27,20 @@ function initials(name, two) {
   return letters.toUpperCase()
 }
 
-export default function Avatar({ person, size = 30, className = '' }) {
+export default function Avatar({ person, size = 30, className = '', zoom = true }) {
   const box = { width: size, height: size }
   if (person?.avatar) {
-    return <img className={`avatar ${className}`} src={person.avatar} alt="" style={box} draggable={false} />
+    const open = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      zoomAvatar(person)
+    }
+    return (
+      <img
+        className={`avatar ${zoom ? 'zooms' : ''} ${className}`} src={person.avatar} alt="" style={box} draggable={false}
+        onClick={zoom ? open : undefined}
+      />
+    )
   }
   const name = (person?.name ?? '').trim()
   const text = name ? initials(name, size >= 26) : '?'

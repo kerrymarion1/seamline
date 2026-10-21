@@ -120,7 +120,7 @@ export function Who({ name }) {
       onClick={() => navigate(waiting ? '/settings#people' : '/settings')}
       aria-label={label.filter(Boolean).join('. ')}
     >
-      {(avatar || name) && <Avatar person={{ id: session?.user.id, name, avatar }} size={28} />}
+      {(avatar || name) && <Avatar person={{ id: session?.user.id, name, avatar }} size={28} zoom={false} />}
       {waiting > 0 && (
         <b className="who-bell" aria-hidden="true">
           <Icon name="bell" size={16} />

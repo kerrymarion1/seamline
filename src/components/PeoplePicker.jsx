@@ -69,7 +69,7 @@ export default function PeoplePicker({ people, value, onChange, locked = [], pla
       <div className="people-box" onClick={() => input.current?.focus()}>
         {value.map((id) => (
           <span key={id} className="people-chip">
-            <Avatar person={personOf(id)} size={22} />
+            <Avatar person={personOf(id)} size={22} zoom={false} />
             {personOf(id)?.name ?? 'Someone'}
             {!locked.includes(id) && (
               <button type="button" aria-label={`Take ${personOf(id)?.name ?? 'them'} off`} onClick={() => remove(id)}>
@@ -110,7 +110,7 @@ export default function PeoplePicker({ people, value, onChange, locked = [], pla
                 onMouseEnter={() => setActive(i)}
                 onClick={() => add(p)}
               >
-                <Avatar person={p} size={30} />
+                <Avatar person={p} size={30} zoom={false} />
                 {p.name}
                 {p.role === 'guest' && <small>guest</small>}
               </button>

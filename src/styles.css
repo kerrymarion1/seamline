@@ -3348,6 +3348,38 @@ img.fade.in { opacity: 1; }
   object-fit: cover;
 }
 img.avatar { background: var(--surface-2); }
+img.avatar.zooms { cursor: zoom-in; }
+
+/* A profile photo, big, over everything (components/AvatarZoom.jsx). */
+.avatar-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: calc(var(--safe-t) + 56px) 16px calc(var(--safe-b, 0px) + 56px);
+  background: rgb(0 0 0 / 0.86);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  cursor: zoom-out;
+  animation: avatar-zoom-fade 0.18s ease-out both;
+}
+.avatar-zoom img {
+  width: min(78vw, 56vh, 380px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-2);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.14), 0 18px 50px rgb(0 0 0 / 0.55);
+  animation: avatar-zoom-pop 0.26s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+.avatar-zoom p { margin: 0; color: #fff; font-size: 20px; font-weight: 700; text-align: center; overflow-wrap: anywhere; }
+.avatar-zoom-close { position: absolute; top: calc(var(--safe-t) + 8px); right: 8px; color: #fff; }
+@keyframes avatar-zoom-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes avatar-zoom-pop { from { transform: scale(0.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .profile-photo { display: flex; align-items: center; gap: 14px; }
 .profile-photo-pick { position: relative; flex: none; border-radius: 50%; }
 .profile-photo-pick:active { transform: scale(0.96); }

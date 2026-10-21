@@ -1,5 +1,6 @@
 import { getCloud, supabase } from './cloud'
 import { isVideo } from './images'
+import { afterSync } from './sync'
 
 // Notifications on this device when someone else in the library adds photos
 // or videos. Turning them on stores this device's push address in
@@ -75,8 +76,6 @@ export function announceAlbum(album) {
     .catch(() => {})
 }
 
-// Someone here just added `records` to `album`: tell the others. Fire and
-// forget; a failure only means no notification.
 // People just added to a private album: tell them it was shared with them.
 export function announceShared(album, people) {
   const cloud = getCloud()
@@ -85,6 +84,22 @@ export function announceShared(album, people) {
     .invoke('seamline-notify', { body: { album: album.id, name: album.name, shared: people } })
     .catch(() => {})
 }
+
+// People in Hugpix just tagged in a photo: tell them they're in it. Only once
+// the tags have reached the server, which checks they really are tagged there.
+export function announceTagged(album, photo, people, video) {
+  const cloud = getCloud()
+  if (!supabase || !cloud.canSync || !cloud.features.push || !people.length) return
+  afterSync()
+    .then(() =>
+      supabase.functions.invoke('seamline-notify', {
+        body: { album: album.id, name: album.name, photo, tagged: people, ...(video ? { video: true } : null) },
+      }))
+    .catch(() => {})
+}
+
+// Someone here just added `records` to `album`: tell the others. Fire and
+// forget; a failure only means no notification.
 export function announceUpload(album, records) {
   const cloud = getCloud()
   if (!supabase || !cloud.canSync || !cloud.features.push || !records.length) return

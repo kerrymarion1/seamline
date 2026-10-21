@@ -232,16 +232,41 @@ async function fetchMissing() {
 
 let running = false
 let again = false
+// Cycles started so far, and who is waiting for one to push.
+let cycles = 0
+let waiting = []
+
+// Resolves once a cycle that began after this call has pushed, so whatever
+// changed here before it is on the server (or as far as it got: a failed
+// cycle resolves too). Starts one now.
+export function afterSync() {
+  const after = cycles
+  const done = new Promise((resolve) => waiting.push({ after, resolve }))
+  syncNow()
+  return done
+}
 
 // One full cycle. Safe to call often: a call during a cycle queues one more.
 export async function syncNow() {
   const cloud = getCloud()
-  if (!supabase || !cloud.session || !cloud.canSync || !cloud.uploader) return
+  if (!supabase || !cloud.session || !cloud.canSync || !cloud.uploader) {
+    // Nothing will sync: nobody should wait for it.
+    waiting.forEach((w) => w.resolve())
+    waiting = []
+    return
+  }
   if (running) {
     again = true
     return
   }
   running = true
+  const cycle = ++cycles
+  // Whoever was waiting for this cycle (see afterSync).
+  const release = () => {
+    const ready = waiting.filter((w) => w.after < cycle)
+    waiting = waiting.filter((w) => w.after >= cycle)
+    ready.forEach((w) => w.resolve())
+  }
   setStatus({ state: 'syncing', error: null })
   try {
     const synced = read('synced', {})
@@ -250,6 +275,7 @@ export async function syncNow() {
     await dropHidden(synced)
     await push(synced)
     write('synced', synced)
+    release()
     await fetchMissing()
     await ensureThumbs(getState().images)
     const used = new Set()
@@ -263,6 +289,7 @@ export async function syncNow() {
     setStatus({ state: 'idle', error: err.message || 'Could not sync' })
   }
   running = false
+  release()
   if (again) {
     again = false
     syncNow()

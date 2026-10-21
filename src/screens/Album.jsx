@@ -584,7 +584,7 @@ export default function Album({ albumId }) {
         <button className="secret-bar" onClick={limited ? undefined : openPeople} disabled={limited}>
           <Icon name="lock" size={14} />
           <span className="secret-faces">
-            {(album.members ?? []).slice(0, 5).map((id) => <Avatar key={id} person={personIn(people, id) ?? { id, name: nameOf(id) }} size={20} />)}
+            {(album.members ?? []).slice(0, 5).map((id) => <Avatar key={id} person={personIn(people, id) ?? { id, name: nameOf(id) }} size={20} zoom={false} />)}
           </span>
           <span>
             Secret · {(album.members ?? []).map((id) => (id === myId ? 'you' : nameOf(id).split(' ')[0])).join(', ')}
@@ -856,7 +856,7 @@ export default function Album({ albumId }) {
               <button className="seen-by" onClick={() => setSeenList(true)}>
                 <span className="seen-faces">
                   {seenHere.slice(0, 4).map((r) => (
-                    <Avatar key={r.user_id} person={personIn(people, r.user_id) ?? { id: r.user_id, name: nameOf(r.user_id) }} size={20} />
+                    <Avatar key={r.user_id} person={personIn(people, r.user_id) ?? { id: r.user_id, name: nameOf(r.user_id) }} size={20} zoom={false} />
                   ))}
                 </span>
                 <span>

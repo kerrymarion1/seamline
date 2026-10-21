@@ -717,7 +717,7 @@ function ProfilePhoto({ session }) {
   return (
     <div className="profile-photo">
       <button className="profile-photo-pick" disabled={busy} onClick={() => input.current.click()} aria-label={avatar ? 'Change your profile photo' : 'Add a profile photo'}>
-        <Avatar person={{ id: session.user.id, name: userName(session), avatar }} size={64} />
+        <Avatar person={{ id: session.user.id, name: userName(session), avatar }} size={64} zoom={false} />
         <span className="profile-photo-badge" aria-hidden="true"><Icon name="photo" size={14} /></span>
       </button>
       <div>
