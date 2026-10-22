@@ -88,6 +88,9 @@ Deno.serve(async (req: Request) => {
   }
 
   if (body.action === "delete") {
+    // Guests add to the library but never remove from it.
+    const { data: guest } = await user.rpc("seamline_is_guest");
+    if (guest) return reply({ error: "Guests cannot remove anything." }, 403);
     const paths = body.paths ?? [];
     if (paths.length > 200) return reply({ error: "Bad request" }, 400);
     const prefix = `${PUBLIC_URL}/${library}/`;
