@@ -1,4 +1,4 @@
-import { AlbumName } from './HomeLayouts'
+import { AlbumName, focusStyle, photosOf } from './HomeLayouts'
 import Icon from './Icon'
 import Sheet from './Sheet'
 import { countText } from '../lib/images'
@@ -21,12 +21,12 @@ export default function AlbumChooser({ open, onClose, title, note, exclude, firs
       ) : (
         <ul className="layer-list">
           {list.map((a) => {
-            const shown = a.imageIds.filter((id) => images[id])
+            const shown = photosOf(a, images)
             return (
               <li key={a.id}>
                 <button className="layer-pick album-pick add-to" onClick={() => onPick(a)}>
                   {shown[0] ? (
-                    <img src={images[shown[0]].previewUrl} alt="" draggable={false} />
+                    <img src={images[shown[0]].previewUrl} style={focusStyle(a, shown[0])} alt="" draggable={false} />
                   ) : (
                     <span className="add-to-blank"><Icon name="photo" size={18} /></span>
                   )}

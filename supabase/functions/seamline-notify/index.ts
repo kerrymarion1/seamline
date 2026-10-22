@@ -81,17 +81,19 @@ Deno.serve(async (req: Request) => {
     const { data: chat } = await admin.from("seamline_chats").select("id, library, members, title").eq("id", chatId).maybeSingle();
     if (!chat || chat.library !== library || !chat.members.includes(auth.user.id)) return reply({ error: "Not in that chat." }, 403);
 
-    // A reaction to a message: only whoever sent it hears.
+    // A reaction to a message (one of the six, or a seasonal greeting): only
+    // whoever sent the message hears.
     if (body.message) {
       const messageId = String(body.message);
       const emoji = String(body.reaction ?? "");
-      if (!/^[0-9a-f-]{36}$/.test(messageId) || !REACTIONS.includes(emoji)) return reply({ error: "Bad request" }, 400);
+      if (!/^[0-9a-f-]{36}$/.test(messageId) || !(REACTIONS.includes(emoji) || GREETINGS[emoji])) return reply({ error: "Bad request" }, 400);
       const { data: message } = await admin.from("seamline_messages").select("sender, body, photo").eq("id", messageId).eq("chat", chat.id).maybeSingle();
       if (!message || message.sender === auth.user.id) return reply({ ok: true });
       const what = message.body ? `“${String(message.body).replace(/\s+/g, " ").trim().slice(0, 60)}”` : "your photo";
+      const about = message.body ? `your message ${what}` : what;
       await notifyLibrary(admin, library, {
         title: chat.members.length > 2 ? (chat.title || "Group chat") : nameOf(auth.user),
-        body: `${firstName(auth.user)} ${emoji} ${message.body ? `your message ${what}` : what}`,
+        body: GREETINGS[emoji] ? `${firstName(auth.user)} sent a ${GREETINGS[emoji]} for ${about}` : `${firstName(auth.user)} ${emoji} ${about}`,
         url: `/messages/${chat.id}`,
         tag: `chat-${chat.id}-react`,
       }, auth.user.id, [String(message.sender)]);

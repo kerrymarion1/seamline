@@ -1484,12 +1484,22 @@ select.field { appearance: none; -webkit-appearance: none; }
 .viewer-tools { flex: none; display: flex; }
 .viewer > .topbar:has(.viewer-tools > :nth-child(2)) .preview-title { padding-left: 40px; }
 .viewer > .topbar:has(.viewer-tools > :nth-child(3)) .preview-title { padding-left: 80px; }
+/* Under the photo, in order: the reactions; who added it, when, and who has
+   seen it (one quiet line); who is in it and where; the caption and
+   comments; then one row of things to do, and one for the covers. */
+.viewer-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 12px; color: var(--text-2); font-size: 12.5px; }
+.viewer-meta .added-line { display: inline-flex; align-items: center; gap: 6px; }
+.viewer-meta .seen-by { padding: 2px 8px 2px 2px; }
 /* Comment and caption: small buttons until tapped. */
-.viewer-write { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.viewer-write .chip { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 13px; color: var(--text-2); font-size: 13px; }
+.viewer-write { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+.viewer-write .chip { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; color: var(--text-2); font-size: 13px; }
 .viewer-write .chip.share { color: var(--accent); }
-/* Who is in a photo, under it: a tap shows every photo they're in. */
-.viewer-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.viewer-write .chip.on { background: var(--text); color: var(--bg); }
+.viewer-write .chip svg { flex: none; }
+.cover-row { margin-top: 2px; }
+/* Who is in a photo, under it (a tap shows every photo they're in), and where it was. */
+.viewer-tags { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+.viewer-tags .place-line { height: 28px; padding: 0 11px; border-radius: 14px; background: var(--surface-2); font-size: 13px; }
 .tag-chip {
   display: inline-flex;
   align-items: center;
@@ -1699,6 +1709,18 @@ img.fade.in { opacity: 1; }
 /* Top left of a tile: who added it, and how many notes it has. */
 .tile-tags { position: absolute; left: 6px; top: 6px; right: 34px; display: flex; flex-wrap: wrap; gap: 4px; }
 .tile-tags .said { position: static; }
+/* The photo chosen to stand for the album. */
+.cover-mark {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.text-btn.on { color: var(--accent); }
 .by {
   max-width: 100%;
   display: inline-flex;
@@ -1950,6 +1972,10 @@ img.fade.in { opacity: 1; }
 .person-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 8px 0; border-top: 1px solid var(--line); }
 .person-email { min-width: 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
 .person-row .chips { align-items: center; }
+/* What someone may do: a tick and "Can", or a cross and "Can't" with a hollow look. */
+.person-row .chip.right { display: inline-flex; align-items: center; gap: 5px; }
+.person-row .chip.right svg { flex: none; }
+.person-row .chip.right.off { background: transparent; box-shadow: inset 0 0 0 1px var(--edge); color: var(--text-2); }
 .person-who { display: flex; flex-direction: column; min-width: 0; }
 .person-who small { color: var(--text-2); font-size: 12px; }
 .person-row .approve { background: var(--accent); color: var(--on-accent); }
@@ -2005,6 +2031,64 @@ img.fade.in { opacity: 1; }
 }
 .newest-tile:active { transform: scale(0.97); }
 .newest-tile > img { width: 100%; height: 100%; object-fit: cover; }
+/* The newest photos breathe: each slowly looms and settles, on its own beat. */
+.newest-tile > img { animation: breathe 14s ease-in-out infinite alternate; animation-delay: calc(var(--i, 0) * -2.3s); }
+@keyframes breathe { to { transform: scale(1.09); } }
+
+/* ---------- life on the front page: who's here, what just happened ---------- */
+/* Quiet on purpose: small grey lines with a tiny face, no pill, no glow. */
+.live { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin-top: 8px; }
+.live-here, .live-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+}
+.live-here:disabled { opacity: 1; }
+.live-faces { display: flex; }
+.live-faces > * { margin-left: -6px; border: 1.5px solid var(--bg); border-radius: 50%; }
+.live-faces > :first-child { margin-left: 0; }
+.live-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #3fb37f; animation: live-dot 2.4s ease-out infinite; }
+@keyframes live-dot { from { box-shadow: 0 0 0 0 rgb(63 179 127 / 0.5); } to { box-shadow: 0 0 0 6px rgb(63 179 127 / 0); } }
+.live-line { animation: live-in 0.45s var(--spring) both; }
+@keyframes live-in { from { opacity: 0; transform: translateY(6px); } }
+.live-line .live-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.live-line .live-text b { color: var(--text); font-weight: 600; }
+.live-line small { flex: none; font-size: 11px; font-weight: 400; opacity: 0.8; }
+/* Something that just happened: it steps to the front with a small mark, nothing more. */
+.live-line.fresh::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.mo-live { padding: 0 10px; }
+
+/* A quiet way to the app's cover photo, under the greeting. */
+.cover-line { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; padding: 2px 0; color: var(--text-2); font-size: 12.5px; font-weight: 500; }
+.cover-line:active { color: var(--text); }
+.mo-live .cover-line { margin-top: 0; }
+
+/* A pinned photo as the big picture, on its own: the picture, and nothing written on it. */
+.mo-banner > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mo-banner::after { background: linear-gradient(transparent, rgba(0, 0, 0, 0.3)); }
+.banner-card .album-cover > img { grid-column: 1 / -1; grid-row: 1 / -1; }
+.ed-banner {
+  display: block;
+  width: 100%;
+  height: clamp(180px, 50vw, 380px);
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface-2);
+  animation: rise 0.5s var(--spring) both;
+}
+.ed-banner img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.mo-live:empty { display: none; }
+.mo-live .live { margin-top: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .newest-tile > img, .live-dot, .live-line { animation: none; }
+}
 .newest-label {
   position: absolute;
   left: 0;
@@ -2083,6 +2167,17 @@ img.fade.in { opacity: 1; }
   top: 50%;
   border: 2px solid rgb(255 255 255 / 0.85);
   border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.62);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+/* Framing an album's cover: a window the shape of the front page's big picture. */
+.framer-window {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 2px solid rgb(255 255 255 / 0.85);
+  border-radius: 22px;
   box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.62);
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -2782,37 +2877,6 @@ img.fade.in { opacity: 1; }
   stroke-opacity: 0.35;
   stroke-width: 0.9;
 }
-/* Bats crossing the page now and then: across in the first part of each
-   cycle, dipping and rising as they go, then out of sight until the next. */
-.season-decor .flyer {
-  position: absolute;
-  left: 0;
-  opacity: 0.75;
-  animation-name: bat-cross;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-.season-decor .flyer.reverse { animation-name: bat-cross-back; }
-.season-decor .flyer svg { display: block; width: 100%; fill: #3d2e4c; animation: bat-flap 0.32s ease-in-out infinite alternate; }
-.season-decor .flyer.reverse svg { scale: -1 1; }
-@keyframes bat-cross {
-  0% { transform: translate(-40px, 0); }
-  10% { transform: translate(28vw, -18px); }
-  20% { transform: translate(58vw, 10px); }
-  30% { transform: translate(86vw, -12px); }
-  36%, 100% { transform: translate(calc(100vw + 40px), 0); }
-}
-@keyframes bat-cross-back {
-  0% { transform: translate(calc(100vw + 40px), 0); }
-  10% { transform: translate(70vw, 14px); }
-  20% { transform: translate(40vw, -10px); }
-  30% { transform: translate(12vw, 16px); }
-  36%, 100% { transform: translate(-40px, 0); }
-}
-@keyframes bat-flap {
-  from { transform: scaleY(1); }
-  to { transform: scaleY(0.55); }
-}
 /* Lightning: a dim violet wash over the page, flickering twice, and a faint
    bolt in the sky. Two flashes under a second, then quiet for 15 to 40. */
 .season-decor .lightning {
@@ -2952,7 +3016,6 @@ img.fade.in { opacity: 1; }
   .season-decor .bunting i { animation: none; }
   .season-decor .confetti { animation: none; top: var(--y); }
   .season-decor .bulbs i { animation: none; }
-  .season-decor .flyer { display: none; }
   /* Flakes stay where they are, scattered down the page. */
   .season-decor .flake { animation: none; top: var(--y); }
   /* Leaves rest where they are instead of falling. */
@@ -3228,8 +3291,6 @@ img.fade.in { opacity: 1; }
   100% { transform: translate(calc(var(--sway) * -0.4), 110cqh) rotate(var(--spin)) rotateX(720deg); }
 }
 .wl-season .season-decor .leaf { animation-name: wl-leaf-fall; animation-duration: 9s; }
-.wl-season .season-decor .flyer { animation-name: wl-bat-cross; }
-.wl-season .season-decor .flyer.reverse { animation-name: wl-bat-cross-back; }
 @keyframes wl-flake-fall {
   0% { transform: translate(0, 0); }
   30% { transform: translate(var(--sway), 30cqh); }
@@ -3242,20 +3303,6 @@ img.fade.in { opacity: 1; }
   50% { transform: translate(-12px, 60cqh) rotate(180deg); }
   75% { transform: translate(20px, 90cqh) rotate(270deg); }
   100% { transform: translate(0, 120cqh) rotate(360deg); }
-}
-@keyframes wl-bat-cross {
-  0% { transform: translate(-40px, 0); }
-  10% { transform: translate(28cqw, -18px); }
-  20% { transform: translate(58cqw, 10px); }
-  30% { transform: translate(86cqw, -12px); }
-  36%, 100% { transform: translate(calc(100cqw + 40px), 0); }
-}
-@keyframes wl-bat-cross-back {
-  0% { transform: translate(calc(100cqw + 40px), 0); }
-  10% { transform: translate(70cqw, 14px); }
-  20% { transform: translate(40cqw, -10px); }
-  30% { transform: translate(12cqw, 16px); }
-  36%, 100% { transform: translate(-40px, 0); }
 }
 
 /* A link in a message, collecting hearts. */
@@ -3976,9 +4023,23 @@ span.bubble-face:empty { visibility: hidden; }
   60% { transform: translate(3px, -1px); }
   80% { transform: translate(-1px, 0); }
 }
+/* Halloween's word in the greeting gives a shiver now and then: still for
+   most of each cycle, then a rattle of under a second with an orange flicker. */
+.spooky { display: inline-block; animation: spooky 9s ease-in-out infinite; }
+@keyframes spooky {
+  0%, 9%, 100% { transform: translate(0, 0) rotate(0); text-shadow: none; }
+  1% { transform: translate(-2px, 1px) rotate(-2.5deg); text-shadow: 0 0 12px rgb(255 140 50 / 0.9); }
+  2% { transform: translate(2px, -1px) rotate(2.5deg); }
+  3% { transform: translate(-2px, 1px) rotate(-2deg); text-shadow: 0 0 6px rgb(255 140 50 / 0.5); }
+  4% { transform: translate(2px, 0) rotate(2deg); text-shadow: 0 0 14px rgb(255 140 50 / 0.9); }
+  5% { transform: translate(-1.5px, -1px) rotate(-1.5deg); }
+  6% { transform: translate(1.5px, 1px) rotate(1.5deg); text-shadow: 0 0 8px rgb(255 140 50 / 0.6); }
+  7% { transform: translate(-1px, 0) rotate(-1deg); }
+  8% { transform: translate(0.5px, 0) rotate(0.5deg); text-shadow: 0 0 4px rgb(255 140 50 / 0.3); }
+}
 @media (prefers-reduced-motion: reduce) {
   .added-fx { display: none; }
-  :root[data-quake] #root { animation: none; }
+  :root[data-quake] #root, .spooky { animation: none; }
 }
 
 /* Choosing an album, each with its cover. */

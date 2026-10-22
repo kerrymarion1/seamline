@@ -5,10 +5,8 @@ import { useActiveSeason } from '../lib/theme'
 // and never in the way of a tap (see .season-decor in styles.css). Nothing
 // outside a season.
 
+// A bat, for the burst when photos are added (components/AddedFx.jsx).
 export const BAT = 'M32 10c-2-4-5-6-8-6 2 3 2 6 0 8-4-3-10-4-16-2 6 2 10 7 11 12 3-3 7-4 11-3 1-2 2-3 2-5 0 2 1 3 2 5 4-1 8 0 11 3 1-5 5-10 11-12-6-2-12-1-16 2-2-2-2-5 0-8-3 0-6 2-8 6z'
-const Bat = ({ className }) => (
-  <svg className={className} viewBox="0 0 64 32"><path d={BAT} /></svg>
-)
 
 // A maple leaf, and where each falling one starts (% across), how big it is
 // and how far through its fall it begins, so they never move in step.
@@ -106,26 +104,12 @@ function Fireworks({ colours, often }) {
   ))
 }
 
-// Halloween's bats that now and then flit across the page: each at its own
-// height, size, speed and direction, and off-screen most of the time.
-function makeFlyers(n) {
-  const rand = (a, b) => a + Math.random() * (b - a)
-  return Array.from({ length: n }, () => ({
-    top: `${rand(12, 70)}%`,
-    size: rand(14, 24),
-    time: rand(22, 38),
-    delay: -rand(0, 38),
-    reverse: Math.random() < 0.5,
-  }))
-}
-
 // `show` names a season to dress up as instead of the one that is on, for the
 // demo on the welcome page; there the first lightning comes almost at once.
 export default function SeasonDecor({ show }) {
   const active = useActiveSeason()
   const season = show ?? active
   const flakes = useMemo(() => makeFlakes(42), [])
-  const flyers = useMemo(() => makeFlyers(4), [])
   const confetti = useMemo(() => makeConfetti(26), [])
 
   // Halloween's lightning: at a random moment every 15 to 40 seconds, a soft
@@ -159,15 +143,6 @@ export default function SeasonDecor({ show }) {
           <path d="M0 0L70 10M0 0L76 40M0 0L40 76M0 0L10 70" />
           <path d="M18 3Q16 12 4 17M34 5Q30 24 7 33M52 8Q46 38 9 50M68 10Q60 52 11 66" />
         </svg>
-        {flyers.map((f, i) => (
-          <span
-            key={i}
-            className={`flyer ${f.reverse ? 'reverse' : ''}`}
-            style={{ top: f.top, width: f.size, animationDuration: `${f.time}s`, animationDelay: `${f.delay}s` }}
-          >
-            <Bat />
-          </span>
-        ))}
       </div>
     )
   }

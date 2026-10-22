@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
 import { navigate } from '../App'
 import {
-  AlbumName, AlbumsInvite, ago, CoverCycle, Editorial, leadOf, Mosaic, News, openAlbum, Stack, Who,
+  AlbumName, AlbumsInvite, ago, CoverCycle, CoverLine, cycleKey, Editorial, focusStyle, Greet, leadOf, Mosaic, News, openAlbum, openBanner, photosOf,
+  Stack, Who,
 } from '../components/HomeLayouts'
 import AlbumChooser from '../components/AlbumChooser'
+import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
 import Avatar from '../components/Avatar'
 import Camera from '../components/Camera'
+import CoverFramer from '../components/CoverFramer'
 import Icon from '../components/Icon'
+import LiveNow from '../components/LiveNow'
 import Logo from '../components/Logo'
 import NotifyNudge from '../components/NotifyNudge'
 import PeoplePicker from '../components/PeoplePicker'
@@ -14,22 +18,23 @@ import SeasonDecor from '../components/SeasonDecor'
 import Sheet from '../components/Sheet'
 import { greeting, newsSince, rememberNow } from '../lib/activity'
 import { favouritePhotos, refreshFavourites, useReactionCounts } from '../lib/collections'
-import { me as adder, useCloud, usePinned, userName } from '../lib/cloud'
+import { me as adder, setPinned, useCloud, useCovers, usePinned, userName } from '../lib/cloud'
 import { countText, importMedia, isVideo } from '../lib/images'
 import { fadeIn } from '../lib/motion'
 import { adderOf, usePeople } from '../lib/people'
 import { albumSpot } from '../lib/places'
 import { announceAlbum, announceUpload } from '../lib/push'
 import { celebrateAdded } from '../lib/feedback'
-import { useActiveSeason, useLayout } from '../lib/theme'
-import { addedAt, addImages, addToAlbum, createAlbum, lastUpload, useStore } from '../lib/store'
+import { SEASONS, useActiveSeason, useLayout } from '../lib/theme'
+import { addedAt, addImages, addToAlbum, createAlbum, lastUpload, setCoverFocus, useStore } from '../lib/store'
+import { ensureLocal } from '../lib/sync'
 
 // The Classic layout: the newest album leads as one wide cover; the rest follow in a grid.
-function AlbumCard({ album, images, featured, index, pinned }) {
+function AlbumCard({ album, images, featured, index }) {
   // The leading cover keeps two photos at the side and cycles the rest in the
-  // large spot, or holds the pinned photo there.
-  const lead = featured ? leadOf(album, images, pinned) : null
-  const ids = lead ? lead.ids : album.imageIds.filter((id) => images[id])
+  // large spot, or holds the album's chosen cover there.
+  const lead = featured ? leadOf(album, images) : null
+  const ids = lead ? lead.ids : photosOf(album, images)
   const cycle = lead?.cycle ?? null
   return (
     <button
@@ -40,14 +45,17 @@ function AlbumCard({ album, images, featured, index, pinned }) {
       onClick={(e) => openAlbum(album, e.currentTarget)}
     >
       <span className="album-cover">
-        {cycle && <CoverCycle key={cycle.join()} urls={cycle} />}
+        {cycle && <CoverCycle key={cycleKey(cycle)} pics={cycle} />}
         {ids.slice(cycle ? 1 : 0, featured ? 3 : 4).map((id) => (
-          <img key={id} className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
+          <img
+            key={id} className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} style={focusStyle(album, id)}
+            alt="" loading="lazy" decoding="async" draggable={false}
+          />
         ))}
         {ids.length === 0 && <Icon name="photo" size={featured ? 36 : 28} />}
       </span>
       <div className="album-caption">
-        {featured && <span className="eyebrow">{pinned && ids[0] === pinned ? 'Pinned' : 'Latest'}</span>}
+        {featured && <span className="eyebrow">Latest</span>}
         <h3><AlbumName album={album} /></h3>
         <p>
           {countText(ids.map((id) => images[id]))}
@@ -59,12 +67,19 @@ function AlbumCard({ album, images, featured, index, pinned }) {
   )
 }
 
-function Albums({ albums, images, onNew, pinned }) {
-  if (!albums.length) return <AlbumsInvite onNew={onNew} />
+// With a pinned photo, it leads as a wide picture on its own and every album
+// follows as an ordinary card.
+function Albums({ albums, images, onNew, banner }) {
+  if (!albums.length && !banner) return <AlbumsInvite onNew={onNew} />
   return (
     <div className="album-grid">
+      {banner && (
+        <button className="album-card featured banner-card" onClick={() => openBanner(banner)} aria-label="Open the pinned photo">
+          <span className="album-cover"><img src={banner.pic.url} style={banner.pic.style} alt="" draggable={false} /></span>
+        </button>
+      )}
       {albums.map((a, i) => (
-        <AlbumCard key={a.id} album={a} images={images} featured={i === 0} index={i} pinned={pinned} />
+        <AlbumCard key={a.id} album={a} images={images} featured={!banner && i === 0} index={i} />
       ))}
     </div>
   )
@@ -90,10 +105,10 @@ function NewestPhotos({ albums, images }) {
     <section className="newest">
       <div className="section-head"><h2>Newest photos</h2></div>
       <div className="newest-row">
-        {shown.map(({ id, album }) => {
+        {shown.map(({ id, album }, i) => {
           const by = (adderOf(people, album.addedBy?.[id])?.name ?? '').split(' ')[0]
           return (
-            <button key={id} className="newest-tile" onClick={() => navigate(`/album/${album.id}?photo=${encodeURIComponent(id)}`)}>
+            <button key={id} className="newest-tile" style={{ '--i': i }} onClick={() => navigate(`/album/${album.id}?photo=${encodeURIComponent(id)}`)}>
               <img className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
               {isVideo(images[id]) && <span className="newest-clip"><Icon name="play" size={12} /></span>}
               <span className="newest-label">
@@ -125,8 +140,8 @@ function FavouritePhotos({ albums, images }) {
         <button className="pill-btn" onClick={() => navigate('/favourites')}>See all</button>
       </div>
       <div className="newest-row">
-        {items.slice(0, 24).map(({ id, album, score }) => (
-          <button key={id} className="newest-tile" onClick={() => navigate(`/album/${album.id}?photo=${encodeURIComponent(id)}`)}>
+        {items.slice(0, 24).map(({ id, album, score }, i) => (
+          <button key={id} className="newest-tile" style={{ '--i': i }} onClick={() => navigate(`/album/${album.id}?photo=${encodeURIComponent(id)}`)}>
             <img className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
             {isVideo(images[id]) && <span className="newest-clip"><Icon name="play" size={12} /></span>}
             <span className="newest-label">
@@ -211,8 +226,15 @@ export default function Home() {
   const cloud = useCloud()
   const { session } = cloud
   const layout = useLayout()
-  useActiveSeason() // redraws with the season's greeting when it changes
+  const season = useActiveSeason() // redraws with the season's greeting when it changes
   const [namingAlbum, setNamingAlbum] = useState(false)
+  // Hugpix's cover photo (the banner): any photo from any album, one for each
+  // season, chosen here by a member, then framed, then kept for everyone.
+  const coverFor = season ? SEASONS.find((s) => s.id === season)?.name ?? '' : ''
+  const [choosingCover, setChoosingCover] = useState(false)
+  const [framingCover, setFramingCover] = useState(null) // { album, id } chosen, being framed
+  const onCover = !cloud.guest && cloud.features.pins ? () => setChoosingCover(true) : null
+  const coverCount = useCovers().length // they take turns, one a visit
   // The camera: first which album (the last one used leads), then the camera.
   const [cameraFor, setCameraFor] = useState(null) // 'choose', or the album
   const lastCameraAlbum = () => {
@@ -259,17 +281,35 @@ export default function Home() {
   useEffect(() => {
     if (cloud.activityLoaded) rememberNow(cloud)
   }, [cloud])
-  const hello = first ? `${greeting()}, ${first}` : greeting()
   // The album something was added to most recently leads; the rest follow in
-  // the same order. A pinned photo's album leads instead, while that photo is
-  // still in it.
+  // the same order. A pinned photo, while it is still in its album, is the
+  // big picture on its own (see openBanner); its album keeps its usual place.
   const pin = usePinned()
   const pinnedAlbum = pin && images[pin.image] && albums.find((a) => a.id === pin.album && a.imageIds.includes(pin.image))
-  const pinned = pinnedAlbum ? pin.image : null
-  const byLatest = [...albums].sort((a, b) => lastUpload(b) - lastUpload(a))
-  const latestFirst = pinnedAlbum ? [pinnedAlbum, ...byLatest.filter((a) => a !== pinnedAlbum)] : byLatest
-  const heroId = pinned ?? latestFirst[0]?.imageIds.find((id) => images[id])
+  const banner = pinnedAlbum
+    ? {
+        album: pinnedAlbum,
+        id: pin.image,
+        pic: {
+          url: images[pin.image].previewUrl,
+          // Framed as a cover, or else as it is for its album.
+          style: pin.focus ? { objectPosition: `${pin.focus[0]}% ${pin.focus[1]}%` } : focusStyle(pinnedAlbum, pin.image),
+        },
+      }
+    : null
+  const latestFirst = [...albums].sort((a, b) => lastUpload(b) - lastUpload(a))
+  const heroId = banner?.id ?? (latestFirst[0] && photosOf(latestFirst[0], images)[0])
   const heroUrl = heroId && images[heroId].previewUrl
+
+  // Shown large, the big picture should be sharp: the ones this device holds
+  // only a small copy of (added elsewhere) are fetched in full, once, and
+  // kept (lib/sync.js). The pinned photo, the held cover, or the whole cycle.
+  const lead = banner ? null : latestFirst[0]
+  const large = lead ? leadOf(lead, images) : null
+  const largeKey = banner ? banner.id : large ? (large.cycle?.length > 1 ? [large.ids[0], ...large.ids.slice(3, 9)] : large.ids.slice(0, 1)).join() : ''
+  useEffect(() => {
+    if (largeKey) ensureLocal(largeKey.split(','))
+  }, [largeKey])
 
   // A new album is everyone's, or secret: only the people chosen (and the
   // admin) ever see it.
@@ -292,7 +332,7 @@ export default function Home() {
   }
 
   const shared = {
-    albums: latestFirst, images, who: signedInAs, greet: greeting(), first, news, pinned,
+    albums: latestFirst, images, who: signedInAs, greet: greeting(), first, news, banner, onCover, coverFor, coverCount,
     onNewAlbum: () => setNamingAlbum(true),
   }
 
@@ -307,8 +347,10 @@ export default function Home() {
             <Who name={signedInAs} />
           </header>
           <section className="home-intro">
-            <p className="greeting">{hello}</p>
+            <p className="greeting"><Greet greet={greeting()} first={first} /></p>
             {news.length > 0 ? <News news={news} /> : <p className="home-sub">{summary}</p>}
+            <LiveNow />
+            <CoverLine onCover={onCover} coverFor={coverFor} count={coverCount} />
           </section>
         </>
       )}
@@ -329,7 +371,7 @@ export default function Home() {
                 </button>
               )}
             </div>
-            <Albums albums={latestFirst} images={images} onNew={shared.onNewAlbum} pinned={pinned} />
+            <Albums albums={latestFirst} images={images} onNew={shared.onNewAlbum} banner={banner} />
           </section>
         ) : (
           <div className="home-layout">
@@ -343,6 +385,32 @@ export default function Home() {
         <FavouritePhotos albums={latestFirst} images={images} />
         <PlacesCard albums={latestFirst} />
       </main>
+
+      {/* The cover photo: pick one from any album, frame it, and it is everyone's. */}
+      <AlbumPhotoPicker
+        open={choosingCover}
+        onClose={() => setChoosingCover(false)}
+        max={1}
+        title={`${coverCount ? 'Another cover' : "Hugpix's cover"}${coverFor ? ` for ${coverFor}` : ''}`}
+        action={(n) => (n ? 'Use this photo' : 'Tap a photo')}
+        onPick={(ids) => {
+          setChoosingCover(false)
+          const album = albums.find((a) => a.imageIds.includes(ids[0]))
+          if (album) setFramingCover({ album, id: ids[0] })
+        }}
+      />
+      {framingCover && images[framingCover.id] && (
+        <CoverFramer
+          image={images[framingCover.id]}
+          at={framingCover.album.focus?.[framingCover.id]}
+          onCancel={() => setFramingCover(null)}
+          onSave={(at) => {
+            setCoverFocus(framingCover.album.id, framingCover.id, at)
+            setPinned(framingCover.album.id, framingCover.id, at).catch(() => {})
+            setFramingCover(null)
+          }}
+        />
+      )}
 
       {/* New here, or notifications still off on this device: ask once in a while. */}
       <NotifyNudge />

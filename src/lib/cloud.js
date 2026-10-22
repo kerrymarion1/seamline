@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { thumbOf } from './images'
 import { spotNames } from './places'
 import { activeSeason, useActiveSeason } from './theme'
@@ -58,40 +58,92 @@ const subscribe = (l) => {
 }
 export const useCloud = () => useSyncExternalStore(subscribe, () => state)
 
-// ---------- the pinned front-page photo, shared by the whole library ----------
-// One per season ('everyday' outside them), in seamline_pins: everyone sees
-// it; members pin and unpin.
+// ---------- Hugpix's cover photos, shared by the whole library ----------
+// Any number for each season ('everyday' outside them), in seamline_pins:
+// everyone sees them, one each time the front page loads; members add and
+// take away. Until the "covers" switch is on, the table holds one a season.
 const pinSlot = () => activeSeason()?.id ?? 'everyday'
-
-export async function refreshPins() {
-  if (!supabase || !state.canSync || !state.features.pins) return
-  const { data } = await supabase.from('seamline_pins').select('season, album, image')
-  if (data) set({ pins: Object.fromEntries(data.map((p) => [p.season, { album: p.album, image: p.image }])) })
-}
-
-// Pin `image` of `album` for the season showing now; no album unpins it.
-export async function setPinned(album, image) {
-  const season = pinSlot()
-  const { error } = album
-    ? await supabase.from('seamline_pins').upsert({ library: state.library, season, album, image, updated_at: new Date().toISOString() })
-    : await supabase.from('seamline_pins').delete().eq('library', state.library).eq('season', season)
-  if (error) throw new Error(error.message)
+const stamp = () => new Date().toISOString()
+// A cover is the photo, whichever album it was chosen from.
+const covers = (season) => state.pins[season] ?? []
+const setCovers = (season, list) => {
   const pins = { ...state.pins }
-  if (album) pins[season] = { album, image }
+  if (list.length) pins[season] = list
   else delete pins[season]
   set({ pins })
 }
 
-// The pinned photo for the season showing now: { album, image }, or null.
+export async function refreshPins() {
+  if (!supabase || !state.canSync || !state.features.pins) return
+  const columns = state.features.covers ? 'season, album, image, focus' : 'season, album, image'
+  const { data } = await supabase.from('seamline_pins').select(columns).order('updated_at')
+  if (!data) return
+  const pins = {}
+  for (const p of data) (pins[p.season] ??= []).push({ album: p.album, image: p.image, focus: p.focus ?? null })
+  set({ pins })
+}
+
+// Make `image` (of `album`) a cover for the season showing now, framed at
+// `focus` ([x, y] percentages, or null for the middle). One already a cover
+// just takes the new framing. Where the database keeps one a season, it
+// takes the old one's place.
+export async function setPinned(album, image, focus = null) {
+  const season = pinSlot()
+  const here = covers(season)
+  if (!state.features.covers) {
+    const { error } = await supabase.from('seamline_pins').upsert({ library: state.library, season, album, image, updated_at: stamp() })
+    if (error) throw new Error(error.message)
+    setCovers(season, [{ album, image, focus: null }])
+    return
+  }
+  const { error } = here.some((c) => c.image === image)
+    ? await supabase.from('seamline_pins').update({ focus, updated_at: stamp() }).eq('library', state.library).eq('season', season).eq('image', image)
+    : await supabase.from('seamline_pins').insert({ library: state.library, season, album, image, focus, updated_at: stamp() })
+  if (error) throw new Error(error.message)
+  setCovers(season, here.some((c) => c.image === image)
+    ? here.map((c) => (c.image === image ? { ...c, focus } : c))
+    : [...here, { album, image, focus }])
+}
+
+// Frame a cover afresh (see setPinned); nothing where it isn't one.
+export async function setCoverFraming(image, focus) {
+  const season = pinSlot()
+  if (!state.features.covers || !covers(season).some((c) => c.image === image)) return
+  const { error } = await supabase.from('seamline_pins').update({ focus, updated_at: stamp() }).eq('library', state.library).eq('season', season).eq('image', image)
+  if (error) throw new Error(error.message)
+  setCovers(season, covers(season).map((c) => (c.image === image ? { ...c, focus } : c)))
+}
+
+// Take `image` off the covers for the season showing now.
+export async function unpin(image) {
+  const season = pinSlot()
+  const { error } = await supabase.from('seamline_pins').delete().eq('library', state.library).eq('season', season).eq('image', image)
+  if (error) throw new Error(error.message)
+  setCovers(season, covers(season).filter((c) => c.image !== image))
+}
+
+// The season's covers, [{ album, image, focus }], in the order they were added.
+export function useCovers() {
+  useActiveSeason() // the season decides which covers apply
+  const key = useSyncExternalStore(subscribe, () => JSON.stringify(covers(pinSlot())))
+  return useMemo(() => JSON.parse(key), [key])
+}
+
+// The cover for this visit: the covers take turns, one each time the page
+// loads (a count kept on the device), or the only one. Null for none.
+const TURN = 'seamline:coverTurn'
+const turn = (() => {
+  try {
+    const n = (Number(localStorage.getItem(TURN)) || 0) + 1
+    localStorage.setItem(TURN, String(n))
+    return n
+  } catch {
+    return Math.floor(Math.random() * 1e6)
+  }
+})()
 export function usePinned() {
-  useActiveSeason() // the season decides which pin applies
-  const key = useSyncExternalStore(subscribe, () => {
-    const p = state.pins[pinSlot()]
-    return p ? `${p.album}|${p.image}` : ''
-  })
-  if (!key) return null
-  const [album, image] = key.split('|')
-  return { album, image }
+  const covers = useCovers()
+  return covers.length ? covers[turn % covers.length] : null
 }
 
 // The signed-in person, for stamping on what they add. Their id goes with

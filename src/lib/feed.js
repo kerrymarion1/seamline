@@ -50,6 +50,20 @@ export async function refreshFeedSocial() {
   emit()
 }
 
+// Reactions and comments arrive the moment they happen, where the database
+// sends live updates; the minute-by-minute look carries on underneath.
+export function watchFeedSocial() {
+  const cloud = getCloud()
+  if (!supabase || !cloud.session || !cloud.features.social || !cloud.features.live) return () => {}
+  const look = () => refreshFeedSocial().catch(() => {})
+  const channel = supabase
+    .channel('feed')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'seamline_reactions' }, look)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'seamline_photo_comments' }, look)
+    .subscribe()
+  return () => supabase.removeChannel(channel)
+}
+
 // Re-render when the server's part changes, or when I look at the feed.
 export const useFeedSocial = () => useSyncExternalStore(subscribe, () => social)
 

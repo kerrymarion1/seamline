@@ -372,9 +372,10 @@ export const removeFromAlbum = (id, imageIds) =>
   patchAlbum(id, (a) => {
     const next = { ...a, imageIds: a.imageIds.filter((i) => !imageIds.includes(i)) }
     // What was noted about each photo goes with it.
-    for (const key of ['addedBy', 'tags', 'spots', 'edited']) {
+    for (const key of ['addedBy', 'tags', 'spots', 'edited', 'focus']) {
       if (a[key]) next[key] = Object.fromEntries(Object.entries(a[key]).filter(([i]) => !imageIds.includes(i)))
     }
+    if (a.cover && imageIds.includes(a.cover)) delete next.cover
     return next
   })
 
@@ -449,6 +450,25 @@ export const setTags = (id, imageId, tags) =>
 
 // A tag that is a person in Hugpix (their account id) rather than a name.
 export const isPersonTag = (tag) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(tag)
+
+// The photo that stands for an album wherever albums are shown; null goes
+// back to its newest photo. Removing the photo from the album does the same.
+export const setAlbumCover = (id, imageId) =>
+  patchAlbum(id, (a) => {
+    const { cover: _, ...rest } = a
+    return imageId ? { ...rest, cover: imageId } : rest
+  })
+
+// How a photo sits when it fills a frame for its album (the front page's big
+// picture, the album's tile): [x, y] percentages (see components/CoverFramer),
+// or null for the middle.
+export const setCoverFocus = (id, imageId, at) =>
+  patchAlbum(id, (a) => {
+    const focus = { ...a.focus }
+    if (at) focus[imageId] = at
+    else delete focus[imageId]
+    return { ...a, focus }
+  })
 
 // Where an album's photos were taken: { name, lat, lng }, or null for nowhere.
 export const setAlbumPlace = (id, place) =>

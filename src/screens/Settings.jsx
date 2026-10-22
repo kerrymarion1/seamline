@@ -10,7 +10,7 @@ import { renderEdit } from '../lib/edit'
 import { celebrateAdded, setVibrateOn, vibrateOn } from '../lib/feedback'
 import { setSoundOn, soundOn } from '../lib/sounds'
 import {
-  addInvite, answerRequest, avatarOf, createInvite, deleteInvite, fetchMyInvites, renameMember, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, setPinned, usePinned, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
+  addInvite, answerRequest, avatarOf, createInvite, deleteInvite, fetchMyInvites, renameMember, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, unpin, useCovers, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
   storageUsed, getCloud, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
 } from '../lib/cloud'
 import { personIn, refreshPeople, usePeople } from '../lib/people'
@@ -265,17 +265,18 @@ function People({ requests }) {
         <div key={p.email} className="person-row">
           <span className="person-email">{p.email}</span>
           <div className="chips">
+            {/* Each says what it is now; a tap switches it. */}
             <button
-              className={`chip small ${p.uploads ? 'on' : ''}`} aria-pressed={p.uploads} disabled={busy}
+              className={`chip small right ${p.uploads ? 'on' : 'off'}`} aria-pressed={p.uploads} disabled={busy}
               onClick={() => run(() => savePerson(p.email, { uploads: !p.uploads }))}
             >
-              Add photos
+              <Icon name={p.uploads ? 'check' : 'close'} size={14} /> {p.uploads ? 'Can add photos' : 'Can’t add photos'}
             </button>
             <button
-              className={`chip small ${p.comments ? 'on' : ''}`} aria-pressed={p.comments} disabled={busy}
+              className={`chip small right ${p.comments ? 'on' : 'off'}`} aria-pressed={p.comments} disabled={busy}
               onClick={() => run(() => savePerson(p.email, { comments: !p.comments }))}
             >
-              Leave notes
+              <Icon name={p.comments ? 'check' : 'close'} size={14} /> {p.comments ? 'Can leave notes' : 'Can’t leave notes'}
             </button>
             <button className="icon-btn" aria-label={`Take ${p.email} off the list`} disabled={busy} onClick={() => run(() => removePerson(p.email))}>
               <Icon name="close" size={16} />
@@ -284,7 +285,7 @@ function People({ requests }) {
         </div>
       ))}
       {people?.length > 0 && (
-        <p className="note">Highlighted means allowed. Taking someone off the list puts them back to the usual: notes yes, photos no.</p>
+        <p className="note">Tap one to switch it. Taking someone off the list puts them back to the usual: can leave notes, can’t add photos.</p>
       )}
       {error && <p className="preview-error" role="alert">{error}</p>}
     </section>
@@ -618,13 +619,13 @@ function Invites({ canDelete }) {
 // small sketch of its page.
 function Layout() {
   const layout = useLayout()
-  const pin = usePinned()
+  const covers = useCovers()
   // Read once, outside find(): a hook called per item would run a different
   // number of times for each season and break the page when it changes.
   const active = useActiveSeason()
   const season = SEASONS.find((s) => s.id === active)?.name
   const albums = useStore((s) => s.albums)
-  const pinnedFrom = pin && albums.find((a) => a.id === pin.album)?.name
+  const coversFrom = [...new Set(covers.map((c) => albums.find((a) => a.id === c.album)?.name).filter(Boolean))]
   const { guest, features } = useCloud()
   const canPin = !guest && features.pins
   return (
@@ -639,15 +640,23 @@ function Layout() {
         ))}
       </div>
       <p className="note">{LAYOUTS.find((l) => l.id === layout).note}.</p>
-      {pinnedFrom ? (
+      {covers.length > 0 ? (
         <div className="row">
-          <p className="note">A photo from {pinnedFrom} leads everyone's front page{season ? ` for ${season}` : ''}.</p>
-          {canPin && <button className="pill-btn" onClick={() => setPinned(null).catch(() => {})}>Unpin</button>}
+          <p className="note">
+            {covers.length === 1
+              ? `A photo from ${coversFrom[0] ?? 'an album'} is Hugpix's cover${season ? ` for ${season}` : ''}, for everyone.`
+              : `${covers.length} photos from ${coversFrom.join(', ') || 'the albums'} take turns as Hugpix's cover${season ? ` for ${season}` : ''}, one each visit.`}
+          </p>
+          {canPin && (
+            <button className="pill-btn" onClick={() => Promise.all(covers.map((c) => unpin(c.image))).catch(() => {})}>
+              {covers.length === 1 ? 'Take it off' : 'Take them all off'}
+            </button>
+          )}
         </div>
       ) : (
         canPin && (
           <p className="note">
-            To have a photo lead everyone's front page, open it in an album and tap “Pin to the front page”.
+            Hugpix's cover is chosen on the front page (“Choose a cover photo”), or from any photo in an album.
           </p>
         )
       )}

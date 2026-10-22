@@ -57,9 +57,11 @@ export function ReactionRow({ reactions, me, onPick, compact = false, season = n
   )
 }
 
-// Under a message: only the reactions given, "❤️ 2  😂 1", mine lit.
+// Under a message: only the reactions given, "❤️ 2  😂 1", mine lit; any
+// seasonal greetings given come after, as their faces.
 export function ReactionChips({ reactions, me, onPick }) {
-  const counts = REACTIONS.map((emoji) => ({ emoji, n: reactions.filter((r) => r.emoji === emoji).length })).filter((c) => c.n)
+  const kinds = [...REACTIONS, ...new Set(reactions.map((r) => r.emoji).filter(isGreeting))]
+  const counts = kinds.map((emoji) => ({ emoji, n: reactions.filter((r) => r.emoji === emoji).length })).filter((c) => c.n)
   if (!counts.length) return null
   const mine = reactions.find((r) => r.user_id === me)?.emoji
   return (

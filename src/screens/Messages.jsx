@@ -3,7 +3,7 @@ import { navigate } from '../App'
 import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
 import Avatar from '../components/Avatar'
 import { ago } from '../components/HomeLayouts'
-import { GreetingFace, GreetingPicker, greetingLabel, greetingSeason, markPlayed, playGreeting, SeasonFace, unplayed } from '../components/Greetings'
+import { GreetingFace, GreetingPicker, greetingLabel, greetingSeason, isGreeting, markPlayed, playGreeting, SeasonFace, unplayed } from '../components/Greetings'
 import Icon from '../components/Icon'
 import Linkify from '../components/Linkify'
 import PeoplePicker from '../components/PeoplePicker'
@@ -232,7 +232,8 @@ function Chat({ chatId, people }) {
   // with them is on; played for everyone in the chat, whatever their season.
   const season = useActiveSeason()
   const greetSeason = features.greetings ? greetingSeason(season, !!features.moreGreetings) : null
-  const [greeting, setGreeting] = useState(false)
+  const [greeting, setGreeting] = useState(false) // choosing one to send
+  const [greetingFor, setGreetingFor] = useState(null) // the message one is being given to, as a reaction
   const list = useRef(null)
   const fileInput = useRef(null)
   const line = useRef(null)
@@ -335,6 +336,25 @@ function Chat({ chatId, people }) {
     if (due.length) playGreeting(due.at(-1).effect)
   }, [messages, me])
 
+  // So does a greeting given to a message as a reaction: as it arrives, or on
+  // opening the chat for the newest not yet played here, on a recent message.
+  const sawReactions = useRef(false)
+  useEffect(() => {
+    if (!messages || !reactions.length) return
+    const opening = !sawReactions.current
+    sawReactions.current = true
+    const given = reactions.filter((r) => isGreeting(r.emoji) && r.user_id !== me)
+    if (!given.length) return
+    const keyOf = (r) => `mr:${r.message}:${r.user_id}:${r.emoji}`
+    const recent = (r) => {
+      const m = messages.find((x) => x.id === r.message)
+      return !!m && Date.now() - Date.parse(m.created_at) < 3 * 864e5
+    }
+    const due = given.filter((r) => unplayed([keyOf(r)]).length && (!opening || recent(r)))
+    markPlayed(given.map(keyOf))
+    if (due.length) playGreeting(due.at(-1).emoji)
+  }, [reactions, messages, me])
+
   // "Typing…" fades if nothing more comes for a few seconds.
   useEffect(() => {
     if (!typingBy) return
@@ -374,6 +394,18 @@ function Chat({ chatId, people }) {
       setError(e.message)
       setMessages((ms) => [...ms, m].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)))
     }
+  }
+
+  // A message's reactions, and the seasonal greeting I gave it, if one.
+  const reactionsOf = (m) => reactions.filter((r) => r.message === m.id)
+  const myGreetingOn = (m) => {
+    const emoji = reactionsOf(m).find((r) => r.user_id === me)?.emoji
+    return isGreeting(emoji) ? emoji : null
+  }
+  const greetCountsOn = (m) => {
+    const counts = {}
+    for (const r of reactionsOf(m)) if (isGreeting(r.emoji)) counts[r.emoji] = (counts[r.emoji] ?? 0) + 1
+    return counts
   }
 
   // A reaction to a message: shown at once, then saved.
@@ -541,7 +573,14 @@ function Chat({ chatId, people }) {
                 {reactingTo === m.id && (
                   <div className="bubble-tools">
                     {canReact && (
-                      <ReactionRow reactions={reactions.filter((r) => r.message === m.id)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact />
+                      <ReactionRow
+                        reactions={reactionsOf(m)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact
+                        // The season's greetings as a reaction; outside a season, a given one plays again.
+                        season={greetSeason}
+                        onGreet={features.greetings
+                          ? () => (greetSeason ? setGreetingFor(m) : playGreeting(reactionsOf(m).filter((r) => isGreeting(r.emoji)).at(-1)?.emoji))
+                          : null}
+                      />
                     )}
                     {mine && (
                       <button
@@ -627,17 +666,36 @@ function Chat({ chatId, people }) {
         </form>
       )}
 
+      {/* One picker for both: a greeting to send, or one given to a message as a reaction. */}
       {greetSeason && (
         <GreetingPicker
           season={greetSeason}
           more={!!features.moreGreetings}
-          open={greeting}
-          onClose={() => setGreeting(false)}
-          busy={sending}
-          note="Sent with your message, or on its own. Everyone in the chat sees it and hears it."
-          onPick={(kind) => {
+          open={greeting || !!greetingFor}
+          onClose={() => {
             setGreeting(false)
-            send(null, kind)
+            setGreetingFor(null)
+          }}
+          busy={sending && !greetingFor}
+          note={greetingFor
+            ? 'Your reaction to this message. Everyone in the chat sees it, and hears it play.'
+            : 'Sent with your message, or on its own. Everyone in the chat sees it and hears it.'}
+          counts={greetingFor ? greetCountsOn(greetingFor) : {}}
+          mine={greetingFor ? myGreetingOn(greetingFor) : null}
+          onPick={(kind) => {
+            if (greetingFor) {
+              const m = greetingFor
+              setGreetingFor(null)
+              if (myGreetingOn(m) === kind) {
+                reactTo(m, null)
+              } else {
+                reactTo(m, kind)
+                playGreeting(kind)
+              }
+            } else {
+              setGreeting(false)
+              send(null, kind)
+            }
           }}
         />
       )}
