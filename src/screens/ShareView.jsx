@@ -213,6 +213,17 @@ export default function ShareView({ token }) {
           />
         )}
         {!single && <p>{carousel ? `${index + 1} of ${items.length} · swipe to see the rest` : countText(items)}</p>}
+        {/* Where it was: a tap shows the spot on OpenStreetMap. */}
+        {share.place && (
+          <a
+            className="share-place"
+            href={`https://www.openstreetmap.org/?mlat=${share.place.lat}&mlon=${share.place.lng}#map=12/${share.place.lat}/${share.place.lng}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Icon name="pin" size={14} /> {share.place.name ?? 'See where on a map'}
+          </a>
+        )}
         {extras?.note && <p className="share-note">{extras.note}</p>}
       </header>
 
@@ -307,6 +318,10 @@ export default function ShareView({ token }) {
             onIndex={(i) => setViewing(items[i].path)}
           />
           <div className="viewer-notes">
+            {/* This photo's own place, when it differs from the page's. */}
+            {viewed.place && viewed.place !== share.place?.name && (
+              <p className="note centre place-note"><Icon name="pin" size={13} /> {viewed.place}</p>
+            )}
             {viewed.caption && <p className="caption">{viewed.caption}</p>}
             {extras && (
               <>

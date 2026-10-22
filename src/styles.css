@@ -2097,13 +2097,13 @@ img.fade.in { opacity: 1; }
 .place-map .topbar .preview-title { flex: 1; }
 .map-box { flex: 1; min-height: 0; background: #0e0e10; }
 .map-note { flex: none; padding: 10px 16px calc(var(--safe-b) + 12px); color: var(--text-2); font-size: 13px; text-align: center; }
-.place-map .leaflet-container { background: #0e0e10; font: inherit; }
+.place-map .leaflet-container, .pin-map .leaflet-container { background: #0e0e10; font: inherit; }
 /* OpenStreetMap's light map, turned dark. */
-.place-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55); }
-.place-map .leaflet-control-attribution { background: rgb(0 0 0 / 0.55); color: #9a978f; font-size: 10px; }
-.place-map .leaflet-control-attribution a { color: #c9c6bf; }
-.place-map .leaflet-bar { border: 1px solid var(--edge); border-radius: 12px; overflow: hidden; }
-.place-map .leaflet-bar a { width: 38px; height: 38px; border-bottom-color: var(--edge); background: var(--surface-2); color: var(--text); line-height: 38px; }
+.place-map .leaflet-tile-pane, .pin-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55); }
+.place-map .leaflet-control-attribution, .pin-map .leaflet-control-attribution { background: rgb(0 0 0 / 0.55); color: #9a978f; font-size: 10px; }
+.place-map .leaflet-control-attribution a, .pin-map .leaflet-control-attribution a { color: #c9c6bf; }
+.place-map .leaflet-bar, .pin-map .leaflet-bar { border: 1px solid var(--edge); border-radius: 12px; overflow: hidden; }
+.place-map .leaflet-bar a, .pin-map .leaflet-bar a { width: 38px; height: 38px; border-bottom-color: var(--edge); background: var(--surface-2); color: var(--text); line-height: 38px; }
 .map-pin { border: 0; background: none; }
 .map-pin-photo {
   position: relative;
@@ -2142,6 +2142,67 @@ img.fade.in { opacity: 1; }
   text-align: center;
 }
 .map-photos { margin: 8px 0 14px; }
+/* An album's trip from spot to spot (Leaflet's own stroke colour gives way to the accent). */
+.trip-line { stroke: var(--accent); }
+
+/* The glimpse of the map on the Places card: tiles around everything placed, a dot per album. */
+.places-thumb { position: relative; flex: none; width: 48px; height: 48px; border-radius: 14px; overflow: hidden; background: #0e0e10; }
+.places-thumb img {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  max-width: none;
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55);
+}
+.places-thumb i {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+  transform: translate(-50%, -50%);
+}
+
+/* A small map in a sheet, the pin held at its middle: dragging the map moves the pin. */
+.pin-map { position: relative; flex: none; height: 240px; border-radius: 16px; overflow: hidden; background: #0e0e10; }
+.pin-map-box { position: absolute; inset: 0; }
+.pin-map .hint.centre { position: absolute; inset: 0; display: grid; place-items: center; padding: 0; }
+.pin-map-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1001;
+  color: var(--accent);
+  filter: drop-shadow(0 4px 8px rgb(0 0 0 / 0.6));
+  transform: translate(-50%, -87.5%); /* the pin's point is 21/24 of the way down */
+  pointer-events: none;
+}
+.pin-map-pin svg { display: block; fill: var(--surface); stroke-width: 2; }
+
+/* Where a photo was taken, under it: a tap shows it on the map. */
+.place-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  align-self: center;
+  max-width: 100%;
+  padding: 2px 10px;
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+.place-line svg { flex: none; }
+.place-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.place-line:active { background: var(--surface-2); }
+/* The same on a shared page, where it opens OpenStreetMap. */
+.share-place { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; color: var(--accent); font-size: 14px; font-weight: 600; text-decoration: none; }
+.place-note { display: flex; align-items: center; justify-content: center; gap: 5px; }
+/* In the camera: where you are will go with the photo. */
+.camera-here { display: inline-flex; color: var(--accent); }
 
 /* The way to the map, at the very end of the front page. */
 .places-card {

@@ -27,6 +27,7 @@ import { editPhoto } from '../lib/edit'
 import { clock, countText, importFile, importMedia, isVideo } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
 import { adderOf, personIn, usePeople } from '../lib/people'
+import { nameOf as nameOfSpot, photoPlace, spotNames } from '../lib/places'
 import { announceShared, announceUpload } from '../lib/push'
 import { addPhotoComment, fetchAlbumSocial, removePhotoComment, setReaction, watchAlbumSocial } from '../lib/social'
 import { syncNow } from '../lib/sync'
@@ -34,7 +35,7 @@ import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
   addedAt, addImages, addToAlbum, deleteAlbum, isPersonTag, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumNote, setAlbumPeople, setCaption,
-  getState, sortAlbum, useAlbum, useStore,
+  getState, setPhotoSpots, sortAlbum, useAlbum, useStore,
 } from '../lib/store'
 
 // Who added a photo and when, for under it: "Added by Kerry · today",
@@ -95,7 +96,8 @@ export default function Album({ albumId }) {
   const [writing, setWriting] = useState(null)
   const writingHere = writing?.photo === viewing ? writing.kind : null
   const [tagging, setTagging] = useState(false) // who is in the photo being looked at
-  const [placing, setPlacing] = useState(false) // where the album was
+  const [placing, setPlacing] = useState(null) // being put on the map: 'album', or the ids of some photos
+  const [named, setNamed] = useState({}) // names found for photos' spots in an album this person can't change
   const [sharingPhoto, setSharingPhoto] = useState(false) // the share sheet for the photo being looked at
   const [copying, setCopying] = useState(null) // photos on their way into another album
   const [shooting, setShooting] = useState(false) // the in-app camera is open
@@ -154,6 +156,26 @@ export default function Album({ albumId }) {
     }, 700)
     return () => clearTimeout(t)
   }, [viewing, social.hearts, albumId, session])
+
+  // A photo's own spot, read from the photo, has no name yet: ask where that
+  // is, once, and keep it with the album when this person may change it.
+  useEffect(() => {
+    const spot = album?.spots?.[viewing]
+    if (!viewing || !spot || spot[2] || named[viewing]) return
+    let live = true
+    nameOfSpot(spot[0], spot[1])
+      .then((name) => {
+        if (!live || !name) return
+        if (limited) setNamed((n) => ({ ...n, [viewing]: name }))
+        else setPhotoSpots(album.id, { [viewing]: [spot[0], spot[1], name] })
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+    // `named` is only read here, never a reason to ask again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewing, album?.spots, album?.id, limited])
 
   // Opened from a notification about one photo (?photo=): show that photo.
   const askedPhoto = useRef(new URLSearchParams(window.location.search).get('photo'))
@@ -220,6 +242,7 @@ export default function Album({ albumId }) {
   // Whoever added it, by the name they go by now (the admin may have renamed them).
   const addedLine = viewed ? addedText(adderOf(people, addedBy[viewing])?.name ?? '', addedAt(viewing)) : ''
   const tagsHere = album.tags?.[viewing] ?? []
+  const placeHere = viewed ? photoPlace(album, viewing) : null // where it sits on the map, if anywhere
   // Who else has seen it, the first to see it first.
   const seenHere = views
     .filter((r) => r.photo === viewing && r.user_id !== session?.user.id)
@@ -354,9 +377,11 @@ export default function Album({ albumId }) {
     setDupes(new Map())
   }
 
-  // Taken with the in-app camera: straight in, no review sheet.
-  const sendFromCamera = async (file) => {
+  // Taken with the in-app camera: straight in, no review sheet. Where the
+  // phone was goes with it, unless the file already says.
+  const sendFromCamera = async (file, spot) => {
     const record = await importMedia(file)
+    if (spot && !record.gps) record.gps = spot
     addImages([record])
     addToAlbum(album.id, [record.id], me())
     announceUpload(album, [record])
@@ -428,6 +453,7 @@ export default function Album({ albumId }) {
   const linkPhoto = () =>
     setLinking({
       kind: 'photo', sourceId: viewing, title: (viewed.name ?? 'Photo').replace(/\.[^.]+$/, ''), imageIds: [viewing], captions,
+      place: photoPlace(album, viewing),
     })
   // Turning and cropping changes the photo for everyone; a guest can't.
   const canEditViewed = !guest && !!viewed && !isVideo(viewed)
@@ -465,6 +491,8 @@ export default function Album({ albumId }) {
       title: `${album.name} · ${chosen.length} photo${chosen.length === 1 ? '' : 's'}`,
       imageIds: chosen,
       captions,
+      place: album.place ?? null,
+      places: spotNames(album),
     })
   }
 
@@ -639,7 +667,7 @@ export default function Album({ albumId }) {
               {(!limited || album.place) && (
                 <button
                   className={`chip small place-btn ${album.place ? 'set' : ''}`}
-                  onClick={() => (limited ? navigate('/map') : setPlacing(true))}
+                  onClick={() => (limited ? navigate('/map') : setPlacing('album'))}
                 >
                   <Icon name="pin" size={15} /> <span>{album.place?.name ?? 'Add place'}</span>
                 </button>
@@ -759,6 +787,10 @@ export default function Album({ albumId }) {
               </button>
               {!limited && (
                 <>
+                  <button className="tool" disabled={!picked.length} onClick={() => setPlacing(picked)}>
+                    <Icon name="pin" />
+                    <span>Place</span>
+                  </button>
                   {/* Moving only makes sense with the whole album in view. */}
                   <button className="tool" disabled={!picked.length || picked.length === ids.length || onlyLiked} onClick={() => setMoving(true)}>
                     <Icon name="move" />
@@ -812,6 +844,12 @@ export default function Album({ albumId }) {
                 {addedBy[viewing] && <Avatar person={adderOf(people, addedBy[viewing])} size={20} />}
                 {addedLine}
               </p>
+            )}
+            {/* Where it was taken: a tap shows it on the map. */}
+            {placeHere && (
+              <button className="place-line" onClick={() => navigate(`/map?at=${placeHere.lat},${placeHere.lng}`)}>
+                <Icon name="pin" size={14} /> <span>{placeHere.name ?? named[viewing] ?? 'On the map'}</span>
+              </button>
             )}
             {/* The caption, when there is one: a tap edits it. */}
             {captions[viewing] && writingHere !== 'caption' && (
@@ -898,6 +936,7 @@ export default function Album({ albumId }) {
                     <button className="chip small" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>Caption</button>
                   )}
                   {!limited && <button className="chip small" onClick={() => setTagging(true)}>{tagsHere.length ? 'Tags' : 'Tag'}</button>}
+                  {!limited && <button className="chip small" onClick={() => setPlacing([viewing])}>Place</button>}
                   <button className="chip small share" onClick={() => setSharingPhoto(true)}>
                     <Icon name="share" size={14} /> Share
                   </button>
@@ -1033,7 +1072,17 @@ export default function Album({ albumId }) {
         />
       )}
 
-      <PlaceSheet key={placing ? 'open' : 'closed'} open={placing} album={album} onClose={() => setPlacing(false)} />
+      <PlaceSheet
+        key={placing ? (Array.isArray(placing) ? placing.join() : 'album') : 'closed'}
+        open={!!placing}
+        album={album}
+        photoIds={Array.isArray(placing) ? placing : null}
+        onClose={(saved) => {
+          // Photos placed from Select are done with.
+          if (saved && Array.isArray(placing) && selecting) stopSelecting()
+          setPlacing(null)
+        }}
+      />
 
       <TagSheet key={tagging ? viewing : 'closed'} open={tagging && !!viewed} album={album} photoId={viewing} onClose={() => setTagging(false)} />
 
@@ -1118,7 +1167,10 @@ export default function Album({ albumId }) {
               className="secondary block"
               onClick={() => {
                 setChoosingPeople(false)
-                setLinking({ kind: 'album', sourceId: album.id, title: album.name, imageIds: photoIds, captions, note: album.note ?? '' })
+                setLinking({
+                  kind: 'album', sourceId: album.id, title: album.name, imageIds: photoIds, captions, note: album.note ?? '',
+                  place: album.place ?? null, places: spotNames(album),
+                })
               }}
             >
               <Icon name="link" size={18} /> Link to this album

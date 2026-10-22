@@ -457,8 +457,9 @@ export const setAlbumPlace = (id, place) =>
     return place ? { ...rest, place } : rest
   })
 
-// Where single photos were taken, read from the photos themselves:
-// { [imageId]: [lat, lng] }.
+// Where single photos were taken: { [imageId]: [lat, lng] } read from the
+// photos themselves, [lat, lng, name] put there by hand, or null for one
+// taken off the map on purpose (see lib/places.js).
 export const setPhotoSpots = (id, spots) => patchAlbum(id, (a) => ({ ...a, spots: { ...a.spots, ...spots } }))
 
 // A photo's picture changed (cropped or turned): the time it did, so other

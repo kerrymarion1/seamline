@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { useSyncExternalStore } from 'react'
 import { thumbOf } from './images'
+import { spotNames } from './places'
 import { activeSeason, useActiveSeason } from './theme'
 
 // Everything online lives in one "library" that its members share: photos in
@@ -401,14 +402,16 @@ export const findShare = (shares, kind, sourceId) =>
 // Photos that visitors added are not part of that comparison.
 export const visitorItems = (share) => (share?.items ?? []).filter((it) => it.visitor)
 // `captions` (by photo id) and `note` count too, when they are given.
-export const outOfDate = (share, imageIds, { captions = {}, note } = {}) => {
+export const outOfDate = (share, imageIds, { captions = {}, note, place, places = {} } = {}) => {
   const own = share.items.filter((it) => !it.visitor)
   return (
     own.length !== imageIds.length ||
-    own.some((it, i) => it.id !== imageIds[i] || (it.caption ?? '') !== (captions[it.id] ?? '')) ||
-    (!!state.features.notes && note != null && (share.note ?? '') !== note)
+    own.some((it, i) => it.id !== imageIds[i] || (it.caption ?? '') !== (captions[it.id] ?? '') || (it.place ?? '') !== (places[it.id] ?? '')) ||
+    (!!state.features.notes && note != null && (share.note ?? '') !== note) ||
+    (!!state.features.places && place !== undefined && !samePlace(share.place, place))
   )
 }
+const samePlace = (a, b) => (a?.name ?? '') === (b?.name ?? '') && (a?.lat ?? null) === (b?.lat ?? null) && (a?.lng ?? null) === (b?.lng ?? null)
 
 // A JPEG copy sized for sharing. Originals on the device are never touched.
 async function uploadCopy(image) {
@@ -657,8 +660,9 @@ export function syncShare(target, onProgress = () => {}) {
   return run
 }
 
-// `captions` (by photo id) ride along on each photo; `note` is the album's.
-async function doSync({ kind, sourceId, title, images, captions = {}, note }, onProgress) {
+// `captions` and `places` (names, by photo id) ride along on each photo;
+// `note` and `place` ({ name, lat, lng }, or null for nowhere) are the album's.
+async function doSync({ kind, sourceId, title, images, captions = {}, note, place, places = {} }, onProgress) {
   // Read the links afresh: a visitor may have added photos since they were loaded.
   await refreshShares()
   const existing = findShare(state.shares, kind, sourceId)
@@ -691,12 +695,20 @@ async function doSync({ kind, sourceId, title, images, captions = {}, note }, on
     // In the order given, then whatever visitors have added.
     const own = images.map((img) => {
       const item = made.get(img.id) ?? onlineItem(img.id)
-      return item && captions[img.id] ? { ...item, caption: captions[img.id] } : item
+      if (!item) return null
+      // A photo already online may come from another link, with that link's words on it.
+      const { caption: _c, place: _p, ...bare } = item
+      return {
+        ...bare,
+        ...(captions[img.id] ? { caption: captions[img.id] } : null),
+        ...(places[img.id] ? { place: places[img.id] } : null),
+      }
     })
     const items = [...own.filter(Boolean), ...fromVisitors]
     const row = {
       kind, source_id: sourceId, title, items,
       ...(state.features.notes && note != null ? { note } : null),
+      ...(state.features.places && place !== undefined ? { place } : null),
       bytes: items.reduce((n, it) => n + it.bytes, 0),
       updated_at: new Date().toISOString(),
     }
@@ -751,7 +763,7 @@ export async function syncAlbums(albums, images) {
       const photos = linkable(wanted, images)
       if (!photos.length || photos.length !== wanted.length) continue
       const share = findShare(state.shares, 'album', album.id)
-      const extras = { captions: album.captions ?? {}, note: album.note ?? '' }
+      const extras = { captions: album.captions ?? {}, note: album.note ?? '', place: album.place ?? null, places: spotNames(album) }
       if (share && share.title === album.name && !outOfDate(share, photos.map((ph) => ph.id), extras)) continue
       set({ syncing: { id: album.id, done: 0, total: 0 }, syncError: null })
       await syncShare(

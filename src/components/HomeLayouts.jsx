@@ -8,6 +8,7 @@ import { avatarOf, refreshPins, refreshRequests, useCloud } from '../lib/cloud'
 import { refreshFeedSocial, useFeedCount } from '../lib/feed'
 import { countText } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
+import { placeName } from '../lib/places'
 import { lastUpload } from '../lib/store'
 
 // The front page's ways of showing the albums, picked in Settings (see
@@ -46,6 +47,9 @@ export function CoverCycle({ urls }) {
 
 // The photos of an album that are on hand, in order.
 export const photosOf = (album, images) => album.imageIds.filter((id) => images[id])
+
+// The small line under an album's name: how many or how old, then where it was.
+const meta = (album, ...parts) => [...parts, placeName(album)].filter(Boolean).join(' · ')
 
 // The pictures the leading album's cover moves through: the first, then from
 // the fourth on, leaving the second and third for the smaller spots beside it.
@@ -225,7 +229,7 @@ export function Stack({ albums, images, who, greet, first, news, summary, onNewA
                 {cycle ? <CoverCycle key={cycle.join()} urls={cycle} /> : <Icon name="photo" size={36} />}
                 {ids.length > 0 && <span className="print-count">{countText(ids.map((id) => images[id]))}</span>}
               </span>
-              <em>{ids.length ? `added ${ago(lastUpload(lead))}` : 'nothing yet'}</em>
+              <em>{ids.length ? meta(lead, `added ${ago(lastUpload(lead))}`) : 'nothing yet'}</em>
             </span>
           </button>
           <span className="kicker">{pinned && ids[0] === pinned ? 'Pinned' : 'Latest'}</span>
@@ -253,7 +257,7 @@ export function Stack({ albums, images, who, greet, first, news, summary, onNewA
                 <button key={a.id} className="print-tile" style={{ '--i': Math.min(i, 8) }} data-album={a.id} onClick={(e) => openAlbum(a, e.currentTarget)}>
                   <span className="print-pic">{pics[0] ? <Pic image={images[pics[0]]} /> : <Icon name="photo" size={24} />}</span>
                   <b><AlbumName album={a} /></b>
-                  <small>{countText(pics.map((id) => images[id]))}</small>
+                  <small>{meta(a, countText(pics.map((id) => images[id])))}</small>
                 </button>
               )
             })}
@@ -293,7 +297,7 @@ export function Editorial({ albums, images, who, greet, first, stats, news, onNe
                       <span className="ed-top">
                         <i>{n}</i>
                         <strong><AlbumName album={a} /></strong>
-                        <small>{ids.length ? ago(lastUpload(a)) : 'empty'}</small>
+                        <small>{ids.length ? meta(a, ago(lastUpload(a))) : 'empty'}</small>
                       </span>
                       {cycle && (
                         <span className="ed-strip">
@@ -312,7 +316,7 @@ export function Editorial({ albums, images, who, greet, first, stats, news, onNe
                       <i>{n}</i>
                       <span className="ed-name">
                         <strong><AlbumName album={a} /></strong>
-                        <small>{countText(ids.map((id) => images[id]))}</small>
+                        <small>{meta(a, countText(ids.map((id) => images[id])))}</small>
                       </span>
                       <span className="ed-thumb">{ids[0] && <Pic image={images[ids[0]]} />}</span>
                     </button>
@@ -352,10 +356,7 @@ export function Mosaic({ albums, images, who, greet, first, news, onNewAlbum, pi
           <span className="mo-caption">
             <span className="eyebrow">{pinned && ids[0] === pinned ? 'Pinned' : 'Latest'}</span>
             <strong><AlbumName album={lead} /></strong>
-            <small>
-              {countText(ids.map((id) => images[id]))}
-              {ids.length > 0 && ` · added ${ago(lastUpload(lead))}`}
-            </small>
+            <small>{meta(lead, countText(ids.map((id) => images[id])), ids.length > 0 && `added ${ago(lastUpload(lead))}`)}</small>
           </span>
           {ids.length > 1 && (
             <span className="mo-dots" aria-hidden="true">
@@ -383,7 +384,7 @@ export function Mosaic({ albums, images, who, greet, first, news, onNewAlbum, pi
               {pics[0] ? <Pic image={images[pics[0]]} /> : <Icon name="photo" size={28} />}
               <span className="mo-label">
                 <b><AlbumName album={a} /></b>
-                <small>{countText(pics.map((id) => images[id]))}</small>
+                <small>{meta(a, countText(pics.map((id) => images[id])))}</small>
               </span>
             </button>
           </Fragment>

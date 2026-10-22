@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
+import { whereAmI } from '../lib/places'
 
 // Taking a photo or a video inside Hugpix, over the whole screen: the live
 // camera, a shutter, and front and back. What was taken shows first, with
-// Retake or Send; Send hands it over (`onSend(file)`) to go straight into the
-// album. Where the live camera isn't allowed (or a phone has none to give a
-// web page), the phone's own camera opens instead.
+// Retake or Send; Send hands it over (`onSend(file, spot)`) to go straight
+// into the album, with where the phone is (if it will say), so the photo
+// lands on the map. Where the live camera isn't allowed (or a phone has none
+// to give a web page), the phone's own camera opens instead.
 
 const LONGEST = 120 // seconds of video, at most
 
@@ -28,8 +30,10 @@ export default function Camera({ albumName, onSend, onClose }) {
   const [facing, setFacing] = useState('environment')
   const [failed, setFailed] = useState(null) // why the live camera can't be used
   const [recording, setRecording] = useState(0) // seconds so far, while recording
-  const [taken, setTaken] = useState(null) // { file, url } waiting for Send
+  const [taken, setTaken] = useState(null) // { file, url, spot } waiting for Send
   const [sending, setSending] = useState(false)
+  const [here, setHere] = useState(null) // where the phone is, [lat, lng], once the camera is allowed
+  const located = useRef(false)
 
   // The live camera: again when it flips, or video wants the microphone too.
   useEffect(() => {
@@ -51,6 +55,11 @@ export default function Camera({ albumName, onSend, onClose }) {
         }
         stream.current = s
         setFailed(null)
+        // The camera allowed, ask once where we are, so the photo can go on the map.
+        if (!located.current) {
+          located.current = true
+          whereAmI().then(setHere)
+        }
         if (view.current) {
           view.current.srcObject = s
           view.current.play().catch(() => {})
@@ -99,7 +108,7 @@ export default function Camera({ albumName, onSend, onClose }) {
         canvas.width = canvas.height = 0
         if (!blob) return
         const file = new File([blob], `IMG_${stamp()}.jpg`, { type: 'image/jpeg' })
-        setTaken({ file, url: URL.createObjectURL(file) })
+        setTaken({ file, url: URL.createObjectURL(file), spot: here })
       },
       'image/jpeg',
       0.92,
@@ -119,7 +128,7 @@ export default function Camera({ albumName, onSend, onClose }) {
       const kind = r.mimeType || type || 'video/webm'
       const blob = new Blob(chunks.current, { type: kind.split(';')[0] })
       const file = new File([blob], `VID_${stamp()}.${kind.includes('mp4') ? 'mp4' : 'webm'}`, { type: blob.type })
-      setTaken({ file, url: URL.createObjectURL(file) })
+      setTaken({ file, url: URL.createObjectURL(file), spot: here })
     }
     r.start(1000)
     recorder.current = r
@@ -134,7 +143,7 @@ export default function Camera({ albumName, onSend, onClose }) {
   const send = async () => {
     setSending(true)
     try {
-      await onSend(taken.file)
+      await onSend(taken.file, taken.spot)
     } finally {
       setSending(false)
     }
@@ -146,7 +155,10 @@ export default function Camera({ albumName, onSend, onClose }) {
     <div className="camera" role="dialog" aria-label="Camera">
       <header className="camera-top">
         <button className="icon-btn" onClick={() => (recording ? stop() : onClose())} aria-label="Close the camera"><Icon name="close" /></button>
-        <span className="camera-where">{taken ? `Send to ${albumName}?` : recording ? <><i className="camera-dot" /> {clock}</> : albumName}</span>
+        <span className="camera-where">
+          {taken ? `Send to ${albumName}?` : recording ? <><i className="camera-dot" /> {clock}</> : albumName}
+          {!taken && !recording && here && <i className="camera-here" aria-label="Where you are goes with the photo"><Icon name="pin" size={14} /></i>}
+        </span>
         {!taken && !recording && !failed ? (
           <button className="icon-btn" onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))} aria-label="Switch camera">
             <Icon name="rotate" />
@@ -209,7 +221,7 @@ export default function Camera({ albumName, onSend, onClose }) {
         onChange={(e) => {
           const file = e.target.files[0]
           e.target.value = ''
-          if (file) setTaken({ file, url: URL.createObjectURL(file) })
+          if (file) setTaken({ file, url: URL.createObjectURL(file), spot: here })
         }}
       />
     </div>

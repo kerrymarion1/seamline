@@ -18,6 +18,7 @@ import { me as adder, useCloud, usePinned, userName } from '../lib/cloud'
 import { countText, importMedia, isVideo } from '../lib/images'
 import { fadeIn } from '../lib/motion'
 import { adderOf, usePeople } from '../lib/people'
+import { albumSpot } from '../lib/places'
 import { announceAlbum, announceUpload } from '../lib/push'
 import { celebrateAdded } from '../lib/feedback'
 import { useActiveSeason, useLayout } from '../lib/theme'
@@ -139,17 +140,63 @@ function FavouritePhotos({ albums, images }) {
   )
 }
 
-// The very end: the way to the map of where the albums were.
+const THUMB = 48 // the glimpse of the map, in pixels, square
+
+// A glimpse of the map for the Places card: OpenStreetMap's tiles around the
+// middle of everything placed, as close in as still shows every album, with
+// a dot for each. Darkened like the map itself (see .places-thumb in styles.css).
+function MapThumb({ spots }) {
+  // Web Mercator: a point's pixel on a world 256·2^z pixels across.
+  const px = (lat, lng, z) => {
+    const n = 256 * 2 ** z
+    const r = (lat * Math.PI) / 180
+    return [((lng + 180) / 360) * n, ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n]
+  }
+  // Zoom out from town level until every dot fits.
+  const room = THUMB / 2 - 5
+  let z = 10
+  let mid
+  for (;;) {
+    const pts = spots.map(([lat, lng]) => px(lat, lng, z))
+    const xs = pts.map((p) => p[0])
+    const ys = pts.map((p) => p[1])
+    mid = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]
+    if (z === 1 || pts.every((p) => Math.abs(p[0] - mid[0]) <= room && Math.abs(p[1] - mid[1]) <= room)) break
+    z--
+  }
+  const n = 2 ** z
+  const left = mid[0] - THUMB / 2
+  const top = mid[1] - THUMB / 2
+  const tiles = []
+  for (let tx = Math.floor(left / 256); tx <= Math.floor((left + THUMB - 1) / 256); tx++) {
+    for (let ty = Math.floor(top / 256); ty <= Math.floor((top + THUMB - 1) / 256); ty++) {
+      if (ty < 0 || ty >= n) continue
+      tiles.push({ key: `${tx},${ty}`, url: `https://tile.openstreetmap.org/${z}/${((tx % n) + n) % n}/${ty}.png`, x: tx * 256 - left, y: ty * 256 - top })
+    }
+  }
+  const dots = spots.map(([lat, lng]) => {
+    const [x, y] = px(lat, lng, z)
+    return { x: x - left, y: y - top }
+  })
+  return (
+    <span className="places-thumb" aria-hidden="true">
+      {tiles.map((t) => <img key={t.key} src={t.url} alt="" style={{ left: t.x, top: t.y }} loading="lazy" draggable={false} />)}
+      {dots.map((d, i) => <i key={i} style={{ left: d.x, top: d.y }} />)}
+    </span>
+  )
+}
+
+// The very end: the way to the map of where the albums were, with a glimpse of it.
 function PlacesCard({ albums }) {
-  const placed = albums.filter((a) => a.place || Object.keys(a.spots ?? {}).length).length
+  const spots = albums.map(albumSpot).filter(Boolean)
   if (!albums.length) return null
   return (
     <section>
       <button className="places-card" onClick={() => navigate('/map')}>
-        <span className="places-icon"><Icon name="pin" size={22} /></span>
+        {spots.length ? <MapThumb spots={spots} /> : <span className="places-icon"><Icon name="pin" size={22} /></span>}
         <span className="places-text">
           <b>Places</b>
-          <small>{placed ? `${placed} album${placed === 1 ? '' : 's'} on the map` : 'Put your albums on a map'}</small>
+          <small>{spots.length ? `${spots.length} album${spots.length === 1 ? '' : 's'} on the map · © OpenStreetMap` : 'Put your albums on a map'}</small>
         </span>
         <span className="places-go" aria-hidden="true"><Icon name="back" size={16} /></span>
       </button>
