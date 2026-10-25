@@ -321,6 +321,54 @@ function Turkey({ size }) {
   )
 }
 
+// The greeting buttons' faces for Thanksgiving and Christmas: small, facing
+// out, one wing or mitten raised and waving (see .wave-arm in styles.css).
+function WavingTurkey({ size = 26 }) {
+  return (
+    <svg viewBox="0 0 32 32" width={size} height={size} aria-hidden="true">
+      {/* The tail, fanned out behind. */}
+      {[-70, -35, 0, 35, 70].map((a, i) => (
+        <ellipse key={a} cx="16" cy="8" rx="4" ry="8.5" transform={`rotate(${a} 16 18)`} fill={['#c2452d', '#e07a2e', '#f2b45a', '#e07a2e', '#c2452d'][i]} />
+      ))}
+      <ellipse cx="16" cy="22" rx="7.5" ry="7" fill="#6b3d22" />
+      <ellipse cx="16" cy="24" rx="4.4" ry="3.6" fill="#8a5230" />
+      <g className="wave-arm" style={{ transformOrigin: '21px 21px' }}>
+        <path d="M20.5 21.5C23 19 25.5 15.5 26.5 12.5 27.6 14.6 26.4 19 22.6 23Z" fill="#5a321c" />
+      </g>
+      <path d="M11.6 22.6C9.6 21.6 8 19.6 7.6 17.6 9.8 18.4 11.6 20 12.6 21.6Z" fill="#5a321c" />
+      <circle cx="16" cy="13.5" r="4.4" fill="#c9d3dc" />
+      <circle cx="14.4" cy="12.8" r=".9" fill="#1b1012" /><circle cx="17.6" cy="12.8" r=".9" fill="#1b1012" />
+      <path d="M14.8 14.4 17.2 14.4 16 16.4Z" fill="#f0a63a" />
+      <path d="M16.6 15.6C17.6 16.4 17.4 18.4 16.4 18.8 16 17.8 16.1 16.6 16.6 15.6Z" fill="#d8323a" />
+      <g stroke="#f0a63a" strokeWidth="1.2" strokeLinecap="round"><path d="M13.6 28.6v2.2M18.4 28.6v2.2" /></g>
+    </svg>
+  )
+}
+
+function WavingSanta({ size = 26 }) {
+  return (
+    <svg viewBox="0 0 32 32" width={size} height={size} aria-hidden="true">
+      {/* The red coat's shoulders, and the waving arm with its white cuff and mitten. */}
+      <path d="M5 32C5 25 10 22 16 22S27 25 27 32Z" fill="#d42a2a" />
+      <g className="wave-arm" style={{ transformOrigin: '24px 25px' }}>
+        <path d="M23 25.5 27.6 17.6 30 19 25.8 27Z" fill="#d42a2a" />
+        <rect x="26.4" y="15.4" width="4.4" height="2.6" rx="1.2" transform="rotate(30 28.6 16.7)" fill="#f4f1ea" />
+        <circle cx="29.6" cy="13.4" r="2.6" fill="#2e7d4f" />
+      </g>
+      <circle cx="16" cy="15" r="6.4" fill="#f2c6a0" />
+      {/* Beard and moustache. */}
+      <path d="M9.4 15.6C9.4 23 13 26 16 26S22.6 23 22.6 15.6C21 18 19 18.6 16 18.6S11 18 9.4 15.6Z" fill="#f4f1ea" />
+      <path d="M12.6 18.2C14 17 15.4 17.2 16 18 16.6 17.2 18 17 19.4 18.2 18 19.4 16.6 19 16 18.6 15.4 19 14 19.4 12.6 18.2Z" fill="#e8e3d8" />
+      <circle cx="13.8" cy="14" r=".85" fill="#2a1a12" /><circle cx="18.2" cy="14" r=".85" fill="#2a1a12" />
+      <circle cx="16" cy="16.2" r="1.1" fill="#e89a86" />
+      {/* Hat, flopping to one side, with its white brim and bobble. */}
+      <path d="M9.6 11C10 5 15 2.6 20 3.6 23 4.2 25 6.4 25.6 9.4L23 10.6C22.6 8.4 21.4 7 20 6.6 22 8.4 22.6 10 22.4 11Z" fill="#d42a2a" />
+      <rect x="8.8" y="9.8" width="14.4" height="3.2" rx="1.6" fill="#f4f1ea" />
+      <circle cx="25.6" cy="10.2" r="2" fill="#f4f1ea" />
+    </svg>
+  )
+}
+
 function Pie({ size = 96 }) {
   return (
     <svg viewBox="0 0 56 44" width={size} height={size * 0.79} aria-hidden="true">
@@ -380,7 +428,9 @@ function face(kind, size) {
 // burst of gold, a star.
 export function SeasonFace({ season, size = 22 }) {
   if (season === 'halloween') return <Pumpkin size={size + 2} />
-  if (season === 'thanksgiving') return <Leaf size={size} />
+  if (season === 'thanksgiving') return <WavingTurkey size={size + 4} />
+  // Christmas's greetings are the 'holiday' set.
+  if (season === 'christmas' || season === 'holiday') return <WavingSanta size={size + 4} />
   if (season === 'newyear') return <SeasonBurst size={size} />
   if (season === 'july4') return <SeasonStar size={size} />
   return <Flake size={size - 2} />

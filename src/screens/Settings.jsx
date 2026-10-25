@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { navigate } from '../App'
 import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
+import CoverFramer from '../components/CoverFramer'
 import Avatar from '../components/Avatar'
 import AvatarFramer from '../components/AvatarFramer'
-import { ago } from '../components/HomeLayouts'
+import { ago, focusStyleOf } from '../components/HomeLayouts'
 import Icon from '../components/Icon'
 import { createBackup, restoreBackup } from '../lib/backup'
 import { renderEdit } from '../lib/edit'
-import { celebrateAdded, setVibrateOn, vibrateOn } from '../lib/feedback'
+import { celebrateAdded, reactionFxOn, setReactionFxOn, setVibrateOn, vibrateOn } from '../lib/feedback'
 import { setSoundOn, soundOn } from '../lib/sounds'
 import {
-  addInvite, answerRequest, avatarOf, createInvite, deleteInvite, fetchMyInvites, renameMember, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, unpin, useCovers, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
+  addInvite, answerRequest, avatarOf, createInvite, deleteInvite, fetchMyInvites, renameMember, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, setPinned, unpin, useAllCovers, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
   storageUsed, getCloud, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
 } from '../lib/cloud'
 import { personIn, refreshPeople, usePeople } from '../lib/people'
 import { codeMessage, inviteMessage } from '../lib/pitch'
+import PauseBar from '../components/PauseBar'
 import { pushStatus, turnOffPush, turnOnPush } from '../lib/push'
-import { renameUploader, setImportAlbum, useStore } from '../lib/store'
+import { renameUploader, setCoverFocus, setImportAlbum, useStore } from '../lib/store'
 import {
   COLOURS, LAYOUTS, SEASONS, setColour, setLayout, setSeason, useActiveSeason, useColour, useLayout, useSeason,
 } from '../lib/theme'
@@ -68,6 +70,12 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 const monthName = (m) => new Date(2000, m, 1).toLocaleString(undefined, { month: 'long' })
 const CALENDAR = SEASONS.filter((s) => s.month != null).map((s) => `${s.name} in ${monthName(s.month)}`).join(', ')
 
+// The names too long for a small tile: one shortened, one allowed to break.
+const SEASON_LABEL = { july4: '4th of July', thanksgiving: 'Thanks­giving' }
+
+// Which season dresses the app: a row of small tiles, each a dot of its
+// colour in a dark circle, the chosen one outlined (the way Plait's theme
+// picker looks). First in Settings, above the account.
 function Season() {
   const chosen = useSeason()
   const showing = useActiveSeason()
@@ -78,21 +86,30 @@ function Season() {
       : chosen === 'everyday'
         ? 'Your own colour, all year round.'
         : `${name(chosen)} stays on until you change it.`
+  // The dot: a season's own colour; your colour for everyday; for Auto, whatever is on now.
+  const dotOf = (s) => s.accent ?? (s.id === 'auto' && showing ? SEASONS.find((x) => x.id === showing)?.accent : null) ?? 'var(--accent)'
   return (
     <section className="panel">
       <h2>Season</h2>
       <div className="season-pick" role="radiogroup" aria-label="Season">
-        {SEASONS.map((s) => (
-          <button
-            key={s.id}
-            role="radio"
-            aria-checked={chosen === s.id}
-            className={`${s.id} ${chosen === s.id ? 'on' : ''}`}
-            onClick={() => setSeason(s.id)}
-          >
-            {s.name}
-          </button>
-        ))}
+        {SEASONS.map((s) => {
+          const on = chosen === s.id
+          return (
+            <button
+              key={s.id}
+              role="radio"
+              aria-checked={on}
+              aria-label={s.name}
+              title={s.name}
+              className={on ? 'on' : ''}
+              style={{ '--dot': dotOf(s) }}
+              onClick={() => setSeason(s.id)}
+            >
+              <span className="season-dot" aria-hidden="true"><i /></span>
+              <span className="season-label">{SEASON_LABEL[s.id] ?? s.name}</span>
+            </button>
+          )
+        })}
       </div>
       <p className="note">{hint}</p>
     </section>
@@ -104,12 +121,13 @@ function Season() {
 function Feedback() {
   const [sound, setSound] = useState(soundOn)
   const [vibrate, setVibrate] = useState(vibrateOn)
+  const [reactionFx, setReactionFx] = useState(reactionFxOn)
   const showing = useActiveSeason()
   const name = SEASONS.find((s) => s.id === showing)?.name
   return (
     <section className="panel">
-      <h2>Sounds and vibration</h2>
-      <div className="chips">
+      <h2>Sounds, vibration and animations</h2>
+      <div className="chips wrap">
         <button
           className={`chip small ${sound ? 'on' : ''}`}
           aria-pressed={sound}
@@ -131,10 +149,21 @@ function Feedback() {
           Vibrate {vibrate ? 'on' : 'off'}
         </button>
         <button className="chip small" onClick={() => celebrateAdded(1)}>Try it</button>
+        <button
+          className={`chip small ${reactionFx ? 'on' : ''}`}
+          aria-pressed={reactionFx}
+          onClick={() => {
+            setReactionFxOn(!reactionFx)
+            setReactionFx(!reactionFx)
+          }}
+        >
+          Reaction animations {reactionFx ? 'on' : 'off'}
+        </button>
       </div>
       <p className="note">
         When photos go into an album: {name ? `${name}'s` : 'a'} sound, a pulse (Android phones; iPhones can't vibrate for web pages) and
-        a burst on screen. The chime for a new message follows these too.
+        a burst on screen. The chime for a new message follows these too. Reaction animations play over a photo, as it opens, the reactions
+        it has had; the phone's own reduce-motion setting stops them as well.
       </p>
     </section>
   )
@@ -205,6 +234,8 @@ function Notifications({ cloud }) {
           {status === 'on' ? 'Turn off' : 'Turn on'}
         </button>
       )}
+      {/* For a while, or until turned back on, on every device (lib/quiet.js). */}
+      <PauseBar />
     </section>
   )
 }
@@ -619,15 +650,6 @@ function Invites({ canDelete }) {
 // small sketch of its page.
 function Layout() {
   const layout = useLayout()
-  const covers = useCovers()
-  // Read once, outside find(): a hook called per item would run a different
-  // number of times for each season and break the page when it changes.
-  const active = useActiveSeason()
-  const season = SEASONS.find((s) => s.id === active)?.name
-  const albums = useStore((s) => s.albums)
-  const coversFrom = [...new Set(covers.map((c) => albums.find((a) => a.id === c.album)?.name).filter(Boolean))]
-  const { guest, features } = useCloud()
-  const canPin = !guest && features.pins
   return (
     <section className="panel">
       <h2>Front page</h2>
@@ -640,25 +662,80 @@ function Layout() {
         ))}
       </div>
       <p className="note">{LAYOUTS.find((l) => l.id === layout).note}.</p>
-      {covers.length > 0 ? (
-        <div className="row">
-          <p className="note">
-            {covers.length === 1
-              ? `A photo from ${coversFrom[0] ?? 'an album'} is Hugpix's cover${season ? ` for ${season}` : ''}, for everyone.`
-              : `${covers.length} photos from ${coversFrom.join(', ') || 'the albums'} take turns as Hugpix's cover${season ? ` for ${season}` : ''}, one each visit.`}
-          </p>
-          {canPin && (
-            <button className="pill-btn" onClick={() => Promise.all(covers.map((c) => unpin(c.image))).catch(() => {})}>
-              {covers.length === 1 ? 'Take it off' : 'Take them all off'}
-            </button>
-          )}
-        </div>
-      ) : (
-        canPin && (
-          <p className="note">
-            Hugpix's cover is chosen on the front page (“Choose a cover photo”), or from any photo in an album.
-          </p>
-        )
+    </section>
+  )
+}
+
+// Hugpix's cover photos, theme by theme: the ones each has, with a way to
+// take one off, and a way to add one from the albums (framed first) for any
+// theme, not only the one that is on. Members only; everyone sees the result.
+function ThemeCovers() {
+  const { admin, features } = useCloud()
+  const images = useStore((s) => s.images)
+  const albums = useStore((s) => s.albums)
+  const pins = useAllCovers()
+  const [adding, setAdding] = useState(null) // the theme a cover is being chosen for
+  const [framing, setFraming] = useState(null) // { season, album, id } chosen, being framed
+  const [error, setError] = useState(null)
+  if (!admin || !features.pins) return null
+  const themes = SEASONS.filter((s) => s.id !== 'auto')
+  const nameOf = (id) => themes.find((t) => t.id === id)?.name ?? ''
+  return (
+    <section className="panel">
+      <h2>Cover photos</h2>
+      <p className="hint">
+        The big picture at the top of everyone's front page: Hugpix's own (Everyday), and one for each theme that takes its place
+        while that theme is on. Any photos from the albums, taking turns one a visit.
+      </p>
+      <ul className="theme-covers">
+        {themes.map((t) => {
+          const list = pins[t.id] ?? []
+          return (
+            <li key={t.id}>
+              <span className="theme-name">
+                {t.name}
+                {list.length > 1 && <small> · {list.length} take turns</small>}
+              </span>
+              <span className="theme-pics">
+                {list.map((c) => (
+                  <span key={c.image} className="theme-pic">
+                    {images[c.image] ? <img src={images[c.image].previewUrl} style={focusStyleOf(c.focus)} alt="" draggable={false} /> : <i />}
+                    <button onClick={() => unpin(c.image, t.id).catch((e) => setError(e.message))} aria-label={`Take this off ${t.name}'s covers`}>
+                      <Icon name="close" size={12} />
+                    </button>
+                  </span>
+                ))}
+                <button className="theme-add" onClick={() => setAdding(t.id)} aria-label={`Add a cover for ${t.name}`}><Icon name="plus" size={18} /></button>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      {error && <p className="note warn">{error}</p>}
+      <AlbumPhotoPicker
+        open={!!adding}
+        onClose={() => setAdding(null)}
+        max={1}
+        title={`A cover for ${nameOf(adding)}`}
+        action={(n) => (n ? 'Use this photo' : 'Tap a photo')}
+        onPick={(ids) => {
+          const season = adding
+          const album = albums.find((a) => a.imageIds.includes(ids[0]))
+          setAdding(null)
+          if (album) setFraming({ season, album, id: ids[0] })
+        }}
+      />
+      {framing && images[framing.id] && (
+        <CoverFramer
+          image={images[framing.id]}
+          at={framing.album.focus?.[framing.id]}
+          onCancel={() => setFraming(null)}
+          onSave={(at) => {
+            setCoverFocus(framing.album.id, framing.id, at)
+            setPinned(framing.album.id, framing.id, at, framing.season).catch((e) => setError(e.message))
+            setFraming(null)
+          }}
+        />
       )}
     </section>
   )
@@ -946,6 +1023,7 @@ export default function Settings() {
       </header>
 
       <main className="settings-body">
+        <Season />
         {cloud.session && !cloud.loading && !cloud.recovering && (
           <section className="panel">
             <h2>Account</h2>
@@ -957,10 +1035,10 @@ export default function Settings() {
             <button className="secondary block" onClick={() => turnOffPush().catch(() => {}).finally(signOut)}>Sign out</button>
           </section>
         )}
-        <Season />
         <Feedback />
         <Colour />
         <Layout />
+        <ThemeCovers />
         <Backup />
         <Library />
         {!cloud.configured ? (

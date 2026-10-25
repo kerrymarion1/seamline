@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { navigate } from '../App'
 import {
-  AlbumName, AlbumsInvite, ago, CoverCycle, CoverLine, cycleKey, Editorial, focusStyle, Greet, leadOf, Mosaic, News, openAlbum, openBanner, photosOf,
-  Stack, Who,
+  AlbumName, AlbumsInvite, ago, CoverCycle, CoverLine, cycleKey, Editorial, focusStyle, focusStyleOf, Greet, leadOf, Mosaic, News, openAlbum, openBanner,
+  photosOf, Stack, Who,
 } from '../components/HomeLayouts'
 import AlbumChooser from '../components/AlbumChooser'
 import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
@@ -112,7 +112,7 @@ function NewestPhotos({ albums, images }) {
               <img className="fade" onLoad={fadeIn} onError={fadeIn} src={images[id].previewUrl} alt="" loading="lazy" decoding="async" draggable={false} />
               {isVideo(images[id]) && <span className="newest-clip"><Icon name="play" size={12} /></span>}
               <span className="newest-label">
-                {by && <b className="newest-by"><Avatar person={adderOf(people, album.addedBy[id])} size={18} />{by}</b>}
+                {by && <b className="newest-by"><Avatar person={adderOf(people, album.addedBy[id])} size={14} zoom={false} />{by}</b>}
                 <small><AlbumName album={album} /></small>
               </span>
             </button>
@@ -155,6 +155,7 @@ function FavouritePhotos({ albums, images }) {
   )
 }
 
+const PAGE = 8 // albums on the front page at a time
 const THUMB = 48 // the glimpse of the map, in pixels, square
 
 // A glimpse of the map for the Places card: OpenStreetMap's tiles around the
@@ -233,7 +234,7 @@ export default function Home() {
   const coverFor = season ? SEASONS.find((s) => s.id === season)?.name ?? '' : ''
   const [choosingCover, setChoosingCover] = useState(false)
   const [framingCover, setFramingCover] = useState(null) // { album, id } chosen, being framed
-  const onCover = !cloud.guest && cloud.features.pins ? () => setChoosingCover(true) : null
+  const onCover = cloud.admin && cloud.features.pins ? () => setChoosingCover(true) : null // the admin's to choose
   const coverCount = useCovers().length // they take turns, one a visit
   // The camera: first which album (the last one used leads), then the camera.
   const [cameraFor, setCameraFor] = useState(null) // 'choose', or the album
@@ -293,11 +294,14 @@ export default function Home() {
         pic: {
           url: images[pin.image].previewUrl,
           // Framed as a cover, or else as it is for its album.
-          style: pin.focus ? { objectPosition: `${pin.focus[0]}% ${pin.focus[1]}%` } : focusStyle(pinnedAlbum, pin.image),
+          style: focusStyleOf(pin.focus) ?? focusStyle(pinnedAlbum, pin.image),
         },
       }
     : null
   const latestFirst = [...albums].sort((a, b) => lastUpload(b) - lastUpload(a))
+  // Eight at a time, the most recent first; Load more brings the next eight.
+  const [limit, setLimit] = useState(PAGE)
+  const visible = latestFirst.slice(0, limit)
   const heroId = banner?.id ?? (latestFirst[0] && photosOf(latestFirst[0], images)[0])
   const heroUrl = heroId && images[heroId].previewUrl
 
@@ -332,7 +336,7 @@ export default function Home() {
   }
 
   const shared = {
-    albums: latestFirst, images, who: signedInAs, greet: greeting(), first, news, banner, onCover, coverFor, coverCount,
+    albums: visible, total: latestFirst.length, images, who: signedInAs, greet: greeting(), first, news, banner, onCover, coverFor, coverCount,
     onNewAlbum: () => setNamingAlbum(true),
   }
 
@@ -371,7 +375,7 @@ export default function Home() {
                 </button>
               )}
             </div>
-            <Albums albums={latestFirst} images={images} onNew={shared.onNewAlbum} banner={banner} />
+            <Albums albums={visible} images={images} onNew={shared.onNewAlbum} banner={banner} />
           </section>
         ) : (
           <div className="home-layout">
@@ -379,6 +383,11 @@ export default function Home() {
             {layout === 'stack' && <Stack {...shared} summary={summary} />}
             {layout === 'mosaic' && <Mosaic {...shared} />}
           </div>
+        )}
+        {latestFirst.length > limit && (
+          <button className="secondary block load-more" onClick={() => setLimit((n) => n + PAGE)}>
+            Load more · {latestFirst.length - limit} more album{latestFirst.length - limit === 1 ? '' : 's'}
+          </button>
         )}
 
         <NewestPhotos albums={latestFirst} images={images} />

@@ -3,6 +3,7 @@ import { navigate } from '../App'
 import Avatar from '../components/Avatar'
 import { AlbumName, ago } from '../components/HomeLayouts'
 import Icon from '../components/Icon'
+import PauseBar from '../components/PauseBar'
 import { Emoji } from '../components/Reactions'
 import { useCloud, userName } from '../lib/cloud'
 import { buildFeed, feedSeenAt, markFeedSeen, refreshFeedSocial, useFeedSocial } from '../lib/feed'
@@ -44,13 +45,15 @@ export default function News() {
       : `/album/${item.album.id}`)
 
   return (
-    <div className="screen news">
+    // Not "news": that is the front page's row of news pills in styles.css.
+    <div className="screen whats-new">
       <header className="topbar">
         <button className="icon-btn" onClick={() => navigate('/')} aria-label="Back"><Icon name="back" /></button>
         <div className="preview-title">What's new</div>
         <span className="topbar-spacer" />
       </header>
       <main className="news-list">
+        <PauseBar />
         {items.length === 0 && (
           <div className="empty">
             <h2>Nothing new yet</h2>

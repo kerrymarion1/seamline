@@ -6,6 +6,7 @@ import Avatar from '../components/Avatar'
 import Camera from '../components/Camera'
 import CoverFramer from '../components/CoverFramer'
 import CropEditor from '../components/CropEditor'
+import Eyes from '../components/Eyes'
 import { GreetingPicker, greetingSeason, isGreeting, markPlayed, playGreeting, unplayed } from '../components/Greetings'
 import LinkSheet from '../components/LinkSheet'
 import Linkify from '../components/Linkify'
@@ -13,16 +14,17 @@ import PeoplePicker from '../components/PeoplePicker'
 import PhotoShareSheet from '../components/PhotoShareSheet'
 import PhotoPager from '../components/PhotoPager'
 import PlaceSheet from '../components/PlaceSheet'
-import { ReactionRow } from '../components/Reactions'
+import { ReactionChips, ReactionRow } from '../components/Reactions'
+import ReactionPlay from '../components/ReactionPlay'
 import {
   adoptVisitorItems, canLink, deleteComment, fetchMedia, findShare, me, progressText, publicUrl, refreshComments,
-  refreshHearts, refreshShares, removeVisitorItem, setCoverFraming, setPinned, setRights, stopShare, unpin, useCloud, useCovers, visitorItems,
+  refreshHearts, refreshShares, removeVisitorItem, setCoverFraming, setPinned, setRights, stopShare, unpin, useCloud, useCoversOf, visitorItems,
 } from '../lib/cloud'
 import Sheet from '../components/Sheet'
 import TagSheet from '../components/TagSheet'
 import { findDuplicates } from '../lib/dupes'
 import { fetchSeen, markSeen, seenTime } from '../lib/seen'
-import { celebrateAdded } from '../lib/feedback'
+import { celebrateAdded, reactionFxOn } from '../lib/feedback'
 import { editPhoto } from '../lib/edit'
 import { clock, countText, importFile, importMedia, isVideo } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
@@ -38,18 +40,15 @@ import {
   setCaption, setCoverFocus, getState, setPhotoSpots, sortAlbum, useAlbum, useStore,
 } from '../lib/store'
 
-// Who added a photo and when, for under it: "Added by Kerry · today",
-// "Added by Kerry · Oct 17", "Oct 17, 2024" from another year, or just
-// "Added Oct 17" when who isn't known.
-function addedText(by, t) {
+// When a photo was added, for under it: "today", "yesterday", "Oct 17", or
+// "Oct 17, 2024" from another year; '' when the time isn't believable.
+function addedDay(t) {
   const d = new Date(t)
   const now = new Date()
-  const day = !(t > Date.UTC(2020, 0) && t < Date.now() + 864e5) ? ''
+  return !(t > Date.UTC(2020, 0) && t < Date.now() + 864e5) ? ''
     : d.toDateString() === now.toDateString() ? 'today'
     : d.toDateString() === new Date(Date.now() - 864e5).toDateString() ? 'yesterday'
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' })
-  if (by) return day ? `Added by ${by} · ${day}` : `Added by ${by}`
-  return day && `Added ${day}`
 }
 
 const SORTS = [
@@ -67,9 +66,12 @@ export default function Album({ albumId }) {
   // guest made are theirs to change; on everyone else's they are `limited`.
   const { hearts, comments, features, shares, syncing, syncError, admin, guest, session } = useCloud()
   const limited = guest && album?.createdBy !== session?.user.id
-  // Hugpix's cover photos for the season showing now (see useCovers).
-  const covers = useCovers()
   const season = useActiveSeason()
+  // Hugpix's cover photos: the everyday ones, and the ones for the season
+  // showing now, which take their place while it is on (see useCovers). The
+  // admin chooses them; everyone's front page shows them in turn.
+  const everydayCovers = useCoversOf('everyday')
+  const seasonCovers = useCoversOf(season ?? 'everyday')
   const fileInput = useRef(null)
   const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState([])
@@ -103,6 +105,9 @@ export default function Album({ albumId }) {
   const [shooting, setShooting] = useState(false) // the in-app camera is open
   const [cropping, setCropping] = useState(null) // { busy, error } while turning or cropping the photo being looked at
   const [framing, setFraming] = useState(false) // choosing how the cover sits on the front page
+  const [replayFx, setReplayFx] = useState(null) // { photo, n }: play that photo's reactions again
+  const [picking, setPicking] = useState(false) // the whole row of reactions is out, to choose from
+  const [coverSheet, setCoverSheet] = useState(false) // the covers this photo can be, and its framing
   useEffect(() => {
     if (!features.social) return
     let live = true
@@ -241,7 +246,8 @@ export default function Album({ albumId }) {
   const captions = album.captions ?? {}
   const addedBy = album.addedBy ?? {}
   // Whoever added it, by the name they go by now (the admin may have renamed them).
-  const addedLine = viewed ? addedText(adderOf(people, addedBy[viewing])?.name ?? '', addedAt(viewing)) : ''
+  const adder = viewed ? adderOf(people, addedBy[viewing]) : null
+  const addedOn = viewed ? addedDay(addedAt(viewing)) : ''
   const tagsHere = album.tags?.[viewing] ?? []
   const placeHere = viewed ? photoPlace(album, viewing) : null // where it sits on the map, if anywhere
   // Who else has seen it, the first to see it first.
@@ -281,6 +287,7 @@ export default function Album({ albumId }) {
 
   // The family's reactions and comments on the photo being looked at.
   const reactedHere = social.hearts.filter((h) => h.photo === viewing)
+  const othersReacted = reactedHere.filter((h) => h.user_id !== session?.user.id)
   // The season's greetings, while one is on; given ones still show and play after it.
   const greetSeason = features.greetings ? greetingSeason(season, !!features.moreGreetings) : null
   const myReaction = reactedHere.find((h) => h.user_id === session?.user.id)?.emoji ?? null
@@ -292,6 +299,7 @@ export default function Album({ albumId }) {
   const firstOf = (id) => (id === myId ? 'You' : (personIn(people, id)?.name ?? 'Someone').split(' ')[0])
   const react = (emoji) => {
     const photo = viewing
+    setPicking(false)
     setSocial((s) => ({
       ...s,
       hearts: [...s.hearts.filter((h) => !(h.photo === photo && h.user_id === myId)), ...(emoji ? [{ photo, user_id: myId, emoji }] : [])],
@@ -468,7 +476,10 @@ export default function Album({ albumId }) {
       setCropping({ busy: false, error: e.message || 'Could not save the photo' })
     }
   }
-  const pinnedHere = covers.some((c) => c.image === viewing) // whichever album it was chosen from
+  // A cover is the photo, whichever album it was chosen from.
+  const everydayHere = everydayCovers.some((c) => c.image === viewing)
+  const seasonHere = !!season && seasonCovers.some((c) => c.image === viewing)
+  const pinnedHere = everydayHere || seasonHere
   const seasonName = SEASONS.find((s) => s.id === season)?.name
   // The album's cover, for wherever albums are shown: anyone who may change the album can choose it.
   const coverHere = album.cover === viewing
@@ -477,21 +488,22 @@ export default function Album({ albumId }) {
     setAlbumCover(album.id, coverHere ? null : viewing)
     setNotice({ text: coverHere ? `${album.name} shows its newest photo again` : `Now the cover of ${album.name}` })
   }
-  // The covers are the whole library's: everyone's front page shows them in turn.
-  const canPin = !guest && !secret && features.pins
-  const togglePin = () =>
-    (pinnedHere ? unpin(viewing) : setPinned(album.id, viewing, album.focus?.[viewing] ?? null))
+  // Only the admin chooses the covers; everyone's front page shows them.
+  const canPin = admin && !secret && features.pins
+  // `slot` is 'everyday' (Hugpix's own cover) or the season showing now.
+  const toggleHugpixCover = (slot, on, count) => {
+    const what = slot === 'everyday' ? "Hugpix's cover" : `the ${seasonName} cover`
+    return (on ? unpin(viewing, slot) : setPinned(album.id, viewing, album.focus?.[viewing] ?? null, slot))
       .then(() =>
         setNotice({
-          text: pinnedHere
-            ? covers.length > 1
-              ? `Taken off Hugpix's covers; ${covers.length - 1} left`
-              : 'No cover now: the newest album leads the front page again, for everyone.'
-            : features.covers && covers.length
-              ? `Added to Hugpix's covers${seasonName ? ` for ${seasonName}` : ''}: ${covers.length + 1} take turns`
-              : `Now Hugpix's cover${seasonName ? ` for ${seasonName}` : ''}, for everyone`,
+          text: on
+            ? count > 1 ? `Taken off ${what}s; ${count - 1} left` : `No longer ${what}`
+            : features.covers && count
+              ? `Added to ${what}s, for everyone: ${count + 1} take turns`
+              : `Now ${what}, for everyone`,
         }))
       .catch((e) => setNotice({ text: e.message }))
+  }
   // A few chosen photos get a page of their own, separate from the album's.
   const linkPicked = () => {
     const chosen = photoIds.filter((id) => picked.includes(id))
@@ -831,6 +843,12 @@ export default function Album({ albumId }) {
               {hearts.byItem[viewing] > 0 && <span className="hearts inline"><Icon name="heart" size={13} /> {hearts.byItem[viewing]}</span>}
             </div>
             <span className="viewer-tools">
+              {/* The covers this photo can be, and its framing, in one sheet. */}
+              {(canCover || canPin) && (
+                <button className={`icon-btn ${coverHere || pinnedHere ? 'active' : ''}`} onClick={() => setCoverSheet(true)} aria-label="Use as a cover">
+                  <Icon name="cover" size={20} />
+                </button>
+              )}
               {canEditViewed && (
                 <button className="icon-btn" onClick={() => setCropping({ busy: false, error: null })} aria-label="Crop and turn">
                   <Icon name="crop" size={20} />
@@ -850,33 +868,65 @@ export default function Album({ albumId }) {
             slides={shown.map((id) => ({ key: id, src: images[id].url, poster: images[id].previewUrl, video: isVideo(images[id]) }))}
             index={shown.indexOf(viewing)}
             onIndex={(i) => setViewing(shown[i])}
-          />
+          >
+            {/* The reactions it has had play over it as it opens; new ones as they arrive. */}
+            {features.social && (
+              <ReactionPlay
+                reactions={othersReacted}
+                people={people}
+                token={`${album.id}:${viewing}`}
+                replay={replayFx?.photo === viewing ? replayFx.n : 0}
+                nameOf={nameOf}
+              />
+            )}
+          </PhotoPager>
           <div className="viewer-notes">
-            {/* React first; then who added it, when, and who has seen it, on one quiet line. */}
+            {/* React first: the reactions given so far and a React button; the
+                whole row of choices pops in above when asked, and goes once one
+                is picked. Then who added it, when, and who has seen it, on one
+                quiet line. */}
             {features.social && (
               <div className="family-react">
-                <ReactionRow reactions={reactedHere} me={myId} onPick={react} season={greetSeason} onGreet={onGreet} />
+                {picking && (
+                  <ReactionRow
+                    reactions={reactedHere} me={myId} onPick={react} season={greetSeason}
+                    onGreet={onGreet ? () => { setPicking(false); onGreet() } : null} more={!!features.moreReactions} pop
+                  />
+                )}
+                <div className="react-line">
+                  <ReactionChips reactions={reactedHere} me={myId} onPick={react} />
+                  <button className={`chip small react-btn ${picking ? 'on' : ''}`} onClick={() => setPicking((p) => !p)} aria-expanded={picking}>
+                    {picking ? <Icon name="close" size={14} /> : <Icon name="plus" size={14} />} {picking ? 'Close' : 'React'}
+                  </button>
+                </div>
+                {othersReacted.some((h) => !isGreeting(h.emoji)) && reactionFxOn() && (
+                  <button className="replay-fx" onClick={() => setReplayFx((r) => ({ photo: viewing, n: (r?.photo === viewing ? r.n : 0) + 1 }))}>
+                    Play the reactions again
+                  </button>
+                )}
               </div>
             )}
-            {(addedLine || seenHere.length > 0) && (
-              <div className="viewer-meta">
-                {addedLine && (
+            {/* Who added it and when, then who has seen it (a pair of eyes and
+                their names; a tap lists them with times). Slides in afresh for
+                each photo. */}
+            {(adder || addedOn || seenHere.length > 0) && (
+              <div className="viewer-meta" key={viewing}>
+                {(adder || addedOn) && (
                   <span className="added-line">
-                    {addedBy[viewing] && <Avatar person={adderOf(people, addedBy[viewing])} size={18} />}
-                    {addedLine}
+                    {adder && <Avatar person={adder} size={20} />}
+                    <span>
+                      {adder ? <>Added by <b>{adder.name?.split(' ')[0]}</b></> : 'Added'}
+                      {addedOn && <i className="added-when">{addedOn}</i>}
+                    </span>
                   </span>
                 )}
                 {seenHere.length > 0 && (
-                  <button className="seen-by" onClick={() => setSeenList(true)}>
-                    <span className="seen-faces">
-                      {seenHere.slice(0, 4).map((r) => (
-                        <Avatar key={r.user_id} person={personIn(people, r.user_id) ?? { id: r.user_id, name: nameOf(r.user_id) }} size={18} zoom={false} />
-                      ))}
-                    </span>
+                  <button className="seen-by" onClick={() => setSeenList(true)} aria-label={`Seen by ${seenHere.map((r) => nameOf(r.user_id)).join(', ')}`}>
+                    <Eyes size={17} />
                     <span>
-                      Seen by {seenHere.length <= 2
+                      {seenHere.length <= 2
                         ? seenHere.map((r) => nameOf(r.user_id).split(' ')[0]).join(' and ')
-                        : `${seenHere.slice(0, 2).map((r) => nameOf(r.user_id).split(' ')[0]).join(', ')} and ${seenHere.length - 2} more`}
+                        : `${seenHere.slice(0, 2).map((r) => nameOf(r.user_id).split(' ')[0]).join(', ')} +${seenHere.length - 2}`}
                     </span>
                   </button>
                 )}
@@ -953,24 +1003,6 @@ export default function Album({ albumId }) {
                 </div>
               )
             )}
-            {/* Standing for the album, or for all of Hugpix: the covers, lit when this is one, and how it is framed. */}
-            {(canCover || canPin) && (
-              <div className="viewer-write cover-row">
-                {canCover && (
-                  <button className={`chip small ${coverHere ? 'on' : ''}`} onClick={toggleCover} aria-pressed={coverHere}>
-                    {coverHere && <Icon name="check" size={14} />} Album cover
-                  </button>
-                )}
-                {canPin && (
-                  <button className={`chip small ${pinnedHere ? 'on' : ''}`} onClick={togglePin} aria-pressed={pinnedHere}>
-                    {pinnedHere && <Icon name="check" size={14} />} Hugpix's cover
-                  </button>
-                )}
-                {!limited && (
-                  <button className="chip small" onClick={() => setFraming(true)}><Icon name="move" size={14} /> Framing</button>
-                )}
-              </div>
-            )}
             {said.length > 0 && <p className="note">From the shared link</p>}
             {said.length > 0 && (
               <ul className="comment-list">
@@ -1014,15 +1046,62 @@ export default function Album({ albumId }) {
 
       {shooting && <Camera albumName={album.name} onSend={sendFromCamera} onClose={() => setShooting(false)} />}
 
+      <Sheet open={coverSheet && !!viewed} onClose={() => setCoverSheet(false)} title="Use as a cover" modal>
+        <ul className="layer-list cover-picks">
+          {canCover && (
+            <li className={coverHere ? 'on' : ''}>
+              <button className="layer-pick" onClick={() => { toggleCover(); setCoverSheet(false) }} aria-pressed={coverHere}>
+                <span className="cover-pick-name"><b>Album cover</b><small>Stands for {album.name} everywhere</small></span>
+                {coverHere && <Icon name="check" size={18} />}
+              </button>
+            </li>
+          )}
+          {canPin && (
+            <li className={everydayHere ? 'on' : ''}>
+              <button
+                className="layer-pick"
+                onClick={() => { toggleHugpixCover('everyday', everydayHere, everydayCovers.length); setCoverSheet(false) }}
+                aria-pressed={everydayHere}
+              >
+                <span className="cover-pick-name"><b>Hugpix's cover</b><small>The big picture on everyone's front page</small></span>
+                {everydayHere && <Icon name="check" size={18} />}
+              </button>
+            </li>
+          )}
+          {canPin && season && (
+            <li className={seasonHere ? 'on' : ''}>
+              <button
+                className="layer-pick"
+                onClick={() => { toggleHugpixCover(season, seasonHere, seasonCovers.length); setCoverSheet(false) }}
+                aria-pressed={seasonHere}
+              >
+                <span className="cover-pick-name"><b>{seasonName} cover</b><small>In its place while {seasonName} is on</small></span>
+                {seasonHere && <Icon name="check" size={18} />}
+              </button>
+            </li>
+          )}
+          {!limited && (
+            <li>
+              <button className="layer-pick" onClick={() => { setCoverSheet(false); setFraming(true) }}>
+                <span className="cover-pick-name"><b>Adjust the framing</b><small>Zoom and move it in its frame</small></span>
+                <Icon name="move" size={18} />
+              </button>
+            </li>
+          )}
+        </ul>
+        <p className="note">Tap a cover again to stop using this photo for it.</p>
+      </Sheet>
+
       {framing && viewed && (
         <CoverFramer
           image={viewed}
           at={album.focus?.[viewing]}
           onCancel={() => setFraming(false)}
           onSave={(at) => {
-            // For the album's tile and cover; and for Hugpix's cover too, when it is one.
+            // For the album's tile and cover; and for Hugpix's or the season's cover too, where it is one.
             setCoverFocus(album.id, viewing, at)
-            setCoverFraming(viewing, at).catch((e) => setNotice({ text: e.message }))
+            setCoverFraming(viewing, at, 'everyday').catch((e) => setNotice({ text: e.message }))
+            if (season) setCoverFraming(viewing, at, season).catch((e) => setNotice({ text: e.message }))
             setFraming(false)
             setNotice({ text: pinnedHere || coverHere ? 'Framed. The front page shows it this way.' : 'Framed, for whenever it stands for the album.' })
           }}

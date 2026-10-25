@@ -37,7 +37,7 @@ const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
 const count = (n: unknown) => Math.max(0, Math.min(10000, Math.round(Number(n) || 0)));
-const REACTIONS = ["❤️", "😂", "😮", "😢", "👍", "🎉"];
+const REACTIONS = ["❤️", "😂", "😮", "😢", "👍", "🎉", "🤗", "🔥", "✨", "👏"];
 // Seasonal greetings (src/components/Greetings.jsx): sent in a message, or
 // given to a photo as a reaction.
 const GREETINGS: Record<string, string> = {

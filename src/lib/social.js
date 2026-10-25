@@ -12,6 +12,8 @@ const library = () => getCloud().library
 // The six ways to react, to a photo or a message. Each person has one at a
 // time on each, which they can change or take back.
 export const REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🎉']
+// Four more, once the database takes them (the "moreReactions" switch).
+export const EXTRA_REACTIONS = ['🤗', '🔥', '✨', '👏']
 
 // Everything for one album: { hearts: [{ photo, user_id, emoji }], comments }.
 // (`hearts` are all the reactions; before there were six they were all ❤️.)

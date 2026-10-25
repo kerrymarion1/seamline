@@ -26,6 +26,24 @@ export function setVibrateOn(on) {
   }
 }
 
+// The reactions a photo has had, played over it when it opens
+// (components/ReactionPlay.jsx): a switch in Settings; off with reduced motion.
+const REACTION_FX = 'seamline:reactionFx'
+export const reactionFxOn = () => {
+  try {
+    return localStorage.getItem(REACTION_FX) !== 'off'
+  } catch {
+    return true
+  }
+}
+export function setReactionFxOn(on) {
+  try {
+    localStorage.setItem(REACTION_FX, on ? 'on' : 'off')
+  } catch {
+    // Storage blocked: it stays on for now.
+  }
+}
+
 // A short double pulse, or a pattern of its own.
 export function buzz(pattern = [14, 40, 20]) {
   if (!vibrateOn()) return

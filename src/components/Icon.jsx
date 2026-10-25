@@ -107,6 +107,13 @@ const paths = {
     </>
   ),
   crop: <path d="M7 3v14h14M3 7h14v14" />,
+  // A photo with a ribbon on its corner: make it a cover.
+  cover: (
+    <>
+      <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
+      <path d="M3.5 15.5l4.5-4.5 4 4 2.5-2.5 6 6M14.5 5v5.5l1.75-1.3 1.75 1.3V5" />
+    </>
+  ),
   camera: (
     <>
       <path d="M4.5 8.5A1.5 1.5 0 016 7h2.2l1.4-2h4.8l1.4 2H18a1.5 1.5 0 011.5 1.5v9A1.5 1.5 0 0118 19H6a1.5 1.5 0 01-1.5-1.5z" />

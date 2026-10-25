@@ -83,12 +83,11 @@ export async function refreshPins() {
   set({ pins })
 }
 
-// Make `image` (of `album`) a cover for the season showing now, framed at
-// `focus` ([x, y] percentages, or null for the middle). One already a cover
-// just takes the new framing. Where the database keeps one a season, it
-// takes the old one's place.
-export async function setPinned(album, image, focus = null) {
-  const season = pinSlot()
+// Make `image` (of `album`) a cover for `season` (the one showing now unless
+// said), framed at `focus` ([x, y, zoom], or null for the middle). One
+// already a cover just takes the new framing. Where the database keeps one a
+// season, it takes the old one's place.
+export async function setPinned(album, image, focus = null, season = pinSlot()) {
   const here = covers(season)
   if (!state.features.covers) {
     const { error } = await supabase.from('seamline_pins').upsert({ library: state.library, season, album, image, updated_at: stamp() })
@@ -106,26 +105,41 @@ export async function setPinned(album, image, focus = null) {
 }
 
 // Frame a cover afresh (see setPinned); nothing where it isn't one.
-export async function setCoverFraming(image, focus) {
-  const season = pinSlot()
+export async function setCoverFraming(image, focus, season = pinSlot()) {
   if (!state.features.covers || !covers(season).some((c) => c.image === image)) return
   const { error } = await supabase.from('seamline_pins').update({ focus, updated_at: stamp() }).eq('library', state.library).eq('season', season).eq('image', image)
   if (error) throw new Error(error.message)
   setCovers(season, covers(season).map((c) => (c.image === image ? { ...c, focus } : c)))
 }
 
-// Take `image` off the covers for the season showing now.
-export async function unpin(image) {
-  const season = pinSlot()
+// Take `image` off the covers for `season` (the one showing now unless said).
+export async function unpin(image, season = pinSlot()) {
   const { error } = await supabase.from('seamline_pins').delete().eq('library', state.library).eq('season', season).eq('image', image)
   if (error) throw new Error(error.message)
   setCovers(season, covers(season).filter((c) => c.image !== image))
 }
 
-// The season's covers, [{ album, image, focus }], in the order they were added.
+// The covers for one slot ('everyday', or a season's id), [{ album, image, focus }].
+export function useCoversOf(season) {
+  const key = useSyncExternalStore(subscribe, () => JSON.stringify(covers(season)))
+  return useMemo(() => JSON.parse(key), [key])
+}
+
+// What the front page shows: the season's covers while it is on and has
+// some, otherwise the everyday ones (Hugpix's own cover).
+const showing = () => {
+  const own = covers(pinSlot())
+  return own.length ? own : covers('everyday')
+}
 export function useCovers() {
   useActiveSeason() // the season decides which covers apply
-  const key = useSyncExternalStore(subscribe, () => JSON.stringify(covers(pinSlot())))
+  const key = useSyncExternalStore(subscribe, () => JSON.stringify(showing()))
+  return useMemo(() => JSON.parse(key), [key])
+}
+
+// Every season's covers, { [season]: [{ album, image, focus }] }, for Settings.
+export function useAllCovers() {
+  const key = useSyncExternalStore(subscribe, () => JSON.stringify(state.pins))
   return useMemo(() => JSON.parse(key), [key])
 }
 

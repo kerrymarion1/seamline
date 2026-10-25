@@ -27,9 +27,23 @@ export function ago(t) {
 
 const COVER_SECONDS = 4.5
 
-// How a photo sits when it fills a frame for its album (album.focus, set in
-// components/CoverFramer): a style for the <img>, or nothing for the middle.
-export const focusStyle = (album, id) => (album.focus?.[id] ? { objectPosition: `${album.focus[id][0]}% ${album.focus[id][1]}%` } : undefined)
+// How a photo sits when it fills a frame: a framing [x, y, zoom] from
+// components/CoverFramer as a style for the <img>, or nothing for the
+// middle. The point x%, y% of the photo sits at that point of the frame
+// (object-position), and the photo is zoomed in about it (the `scale`
+// property, kept apart from `transform` so hover and drift leave it be).
+export function focusStyleOf(at) {
+  if (!at) return undefined
+  const [x, y, z = 1] = at
+  const style = { objectPosition: `${x}% ${y}%` }
+  if (z > 1) {
+    style.scale = String(z)
+    style.transformOrigin = `${x}% ${y}%`
+  }
+  return style
+}
+// ...for a photo standing for its album (album.focus).
+export const focusStyle = (album, id) => focusStyleOf(album.focus?.[id])
 
 // The large picture on the leading album: it moves slowly through the album's
 // photos, each fading in over the last. `pics` are the pictures to show in
@@ -258,7 +272,7 @@ export function AlbumsInvite({ onNew }) {
 
 // Stack: the latest album as a small fan of prints, the rest as tilted prints
 // beneath; or a pinned photo as one print, with every album beneath.
-export function Stack({ albums, images, who, greet, first, news, summary, onNewAlbum, banner, onCover, coverFor, coverCount }) {
+export function Stack({ albums, total, images, who, greet, first, news, summary, onNewAlbum, banner, onCover, coverFor, coverCount }) {
   const fan = useRef(null)
   const lead = banner ? null : albums[0]
   const rest = banner ? albums : albums.slice(1)
@@ -315,7 +329,7 @@ export function Stack({ albums, images, who, greet, first, news, summary, onNewA
       {rest.length > 0 && (
         <section className="prints">
           <div className="section-head">
-            <h2>Albums<span className="count">{albums.length}</span></h2>
+            <h2>Albums<span className="count">{total ?? albums.length}</span></h2>
             {onNewAlbum && (
               <button className="pill-btn" onClick={onNewAlbum}>
                 <Icon name="plus" size={16} /> New

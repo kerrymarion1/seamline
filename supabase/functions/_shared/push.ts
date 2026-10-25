@@ -23,7 +23,9 @@ export function countText(photos: number, videos: number) {
 
 // `except` is the person who did it: none of their own devices are told.
 // `only` sends to one person's devices, or to a list of people's (a secret
-// album's, a chat's), instead of everyone's.
+// album's, a chat's), instead of everyone's. Anyone who has paused their
+// notifications (seamline_quiet, until a time or for good) is skipped; the
+// app still shows them everything in What's new.
 export async function notifyLibrary(
   admin: SupabaseClient,
   library: string,
@@ -36,7 +38,7 @@ export async function notifyLibrary(
   if (!publicKey || !privateKey) return;
   webpush.setVapidDetails("https://seamline-app.netlify.app", publicKey, privateKey);
 
-  let query = admin.from("seamline_push").select("endpoint, p256dh, auth").eq("library", library);
+  let query = admin.from("seamline_push").select("endpoint, p256dh, auth, user_id").eq("library", library);
   if (except) query = query.neq("user_id", except);
   if (Array.isArray(only)) {
     if (!only.length) return;
@@ -44,9 +46,14 @@ export async function notifyLibrary(
   } else if (only) {
     query = query.eq("user_id", only);
   }
-  const { data } = await query;
+  const [{ data }, { data: paused }] = await Promise.all([
+    query,
+    // Before the table exists this simply finds no one.
+    admin.from("seamline_quiet").select("user_id").eq("library", library).gt("until", new Date().toISOString()),
+  ]);
+  const quiet = new Set((paused ?? []).map((q) => String(q.user_id)));
 
-  await Promise.all((data ?? []).map(async (device) => {
+  await Promise.all((data ?? []).filter((device) => !quiet.has(String(device.user_id))).map(async (device) => {
     try {
       await webpush.sendNotification(
         { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },

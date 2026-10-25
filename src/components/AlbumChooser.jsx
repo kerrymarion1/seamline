@@ -26,7 +26,7 @@ export default function AlbumChooser({ open, onClose, title, note, exclude, firs
               <li key={a.id}>
                 <button className="layer-pick album-pick add-to" onClick={() => onPick(a)}>
                   {shown[0] ? (
-                    <img src={images[shown[0]].previewUrl} style={focusStyle(a, shown[0])} alt="" draggable={false} />
+                    <span className="add-to-pic"><img src={images[shown[0]].previewUrl} style={focusStyle(a, shown[0])} alt="" draggable={false} /></span>
                   ) : (
                     <span className="add-to-blank"><Icon name="photo" size={18} /></span>
                   )}

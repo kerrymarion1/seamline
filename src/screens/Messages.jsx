@@ -574,7 +574,7 @@ function Chat({ chatId, people }) {
                   <div className="bubble-tools">
                     {canReact && (
                       <ReactionRow
-                        reactions={reactionsOf(m)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact
+                        reactions={reactionsOf(m)} me={me} onPick={(emoji) => reactTo(m, emoji)} compact more={!!features.moreReactions}
                         // The season's greetings as a reaction; outside a season, a given one plays again.
                         season={greetSeason}
                         onGreet={features.greetings
