@@ -107,6 +107,12 @@ const paths = {
     </>
   ),
   crop: <path d="M7 3v14h14M3 7h14v14" />,
+  search: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6" />
+      <path d="M15 15l5 5" />
+    </>
+  ),
   // A photo with a ribbon on its corner: make it a cover.
   cover: (
     <>

@@ -196,7 +196,7 @@ function Colour() {
 // Notifications on this device when someone else adds photos (see lib/push.js).
 // Hidden until the database and this copy of the app are set up for them.
 const PUSH_TEXT = {
-  on: 'On. This device hears when someone else adds photos or videos to an album, or a visitor adds photos through a link.',
+  on: 'This device hears when someone else adds photos or videos, reacts, comments or messages you.',
   off: 'Hear when someone else adds photos or videos to an album, or a visitor adds photos through a link.',
   install: 'On iPhone and iPad, first add Hugpix to the Home Screen (Share, then Add to Home Screen) and open it from there.',
   unsupported: 'This browser cannot show notifications from Hugpix.',
@@ -224,17 +224,25 @@ function Notifications({ cloud }) {
     await check()
     setBusy(false)
   }
+  // The test copy on this computer has no service worker, so it can never
+  // receive them; say that, rather than blaming the browser.
+  const text = status === 'unsupported' && import.meta.env.DEV
+    ? "This test copy on the computer can't receive notifications; your phone's Hugpix can. Pausing below still works for all your devices."
+    : PUSH_TEXT[status]
   return (
     <section className="panel">
       <h2>Notifications</h2>
-      <p className="hint">{PUSH_TEXT[status]}</p>
+      <p className="hint">{text}</p>
       {error && <p className="note warn">{error}</p>}
-      {(status === 'on' || status === 'off') && (
-        <button className="secondary block" onClick={toggle} disabled={busy}>
-          {status === 'on' ? 'Turn off' : 'Turn on'}
-        </button>
+      {/* Off: one button to turn them on. On: the pause bar alone does the
+          turning off. Pausing is for this person on every device (lib/quiet.js),
+          so it shows whatever this device can do. Without the pause table, the old button. */}
+      {status === 'off' && (
+        <button className="secondary block" onClick={toggle} disabled={busy}>Turn on</button>
       )}
-      {/* For a while, or until turned back on, on every device (lib/quiet.js). */}
+      {status === 'on' && !cloud.features.quiet && (
+        <button className="secondary block" onClick={toggle} disabled={busy}>Turn off</button>
+      )}
       <PauseBar />
     </section>
   )
@@ -1023,6 +1031,8 @@ export default function Settings() {
       </header>
 
       <main className="settings-body">
+        {/* In groups, each with a small heading, so the page reads at a glance. */}
+        <p className="settings-group">You</p>
         <Season />
         {cloud.session && !cloud.loading && !cloud.recovering && (
           <section className="panel">
@@ -1031,16 +1041,14 @@ export default function Settings() {
             <YourName session={cloud.session} />
             <p className="hint">Signed in as {cloud.session.user.email}</p>
             {!cloud.uploader && <p className="note warn">This account has not been given access to a library.</p>}
-            <p className="note">Signing out leaves what is already on this device in place.</p>
-            <button className="secondary block" onClick={() => turnOffPush().catch(() => {}).finally(signOut)}>Sign out</button>
+            <button className="secondary" onClick={() => turnOffPush().catch(() => {}).finally(signOut)}>Sign out</button>
           </section>
         )}
-        <Feedback />
+        <p className="settings-group">Look and feel</p>
         <Colour />
         <Layout />
         <ThemeCovers />
-        <Backup />
-        <Library />
+        <Feedback />
         {!cloud.configured ? (
           <section className="panel">
             <h2>Shared links</h2>
@@ -1054,11 +1062,14 @@ export default function Settings() {
           <SignIn />
         ) : (
           <>
+            <p className="settings-group">Notifications</p>
             <Notifications cloud={cloud} />
+            {(cloud.admin || (cloud.uploader && !cloud.guest && cloud.features.memberInvites)) && <p className="settings-group">People</p>}
             {cloud.admin && cloud.features.people && <People requests={cloud.requests} />}
             {cloud.uploader && !cloud.guest && cloud.features.memberInvites && <InviteSomeone />}
             {cloud.admin && cloud.features.users && <Users canSwitch={!!cloud.features.roles} canRename={!!cloud.features.rename} />}
             {cloud.admin && <Invites canDelete={!!cloud.features.inviteDelete} />}
+            <p className="settings-group">Sharing and storage</p>
             <SyncPanel cloud={cloud} />
 
             {/* Links and storage are the members' business, not a guest's. */}
@@ -1123,6 +1134,9 @@ export default function Settings() {
             </>}
           </>
         )}
+        <p className="settings-group">On this device</p>
+        <Backup />
+        <Library />
       </main>
     </div>
   )

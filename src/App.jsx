@@ -27,13 +27,14 @@ const Welcome = lazy(() => import('./screens/Welcome'))
 const Favourites = lazy(() => import('./screens/Wall').then((m) => ({ default: m.Favourites })))
 const Person = lazy(() => import('./screens/Wall').then((m) => ({ default: m.Person })))
 const PlaceMap = lazy(() => import('./screens/PlaceMap'))
+const Search = lazy(() => import('./screens/Search'))
 const splash = <div className="splash"><Logo as="div" loop /></div>
 
 // Minimal path router: "/" and "/albums" home, "/album/:id" one album,
 // "/p/:id" the editor, "/settings" account and storage, "/s/:code" a shared link,
 // "/messages" and "/messages/:id" chats between people, "/news" what's new,
 // "/favourites" the most loved photos, "/people/:tag" everyone tagged in
-// photos, "/map" where the albums were, "/welcome" what Hugpix is. Signed out, "/" is the welcome page too, and
+// photos, "/map" where the albums were, "/search" every photo by people, places and years, "/welcome" what Hugpix is. Signed out, "/" is the welcome page too, and
 // "/signin" (or any other address) the sign-in page.
 const subscribe = (cb) => {
   window.addEventListener('popstate', cb)
@@ -129,6 +130,8 @@ export default function App() {
           <Person key={personTag} tag={decodeURIComponent(personTag)} />
         ) : path === '/map' ? (
           <PlaceMap />
+        ) : path === '/search' ? (
+          <Search />
         ) : albumId ? (
           <Album key={albumId} albumId={albumId} />
         ) : (

@@ -1201,6 +1201,49 @@ h1, h2, h3, p {
   overflow-y: auto;
 }
 .settings-body > * { flex-shrink: 0; }
+
+/* Settings, kept quiet: small headings between groups of panels, slimmer
+   panels and controls, and each panel rising into place in turn. */
+.settings-body { gap: 10px; }
+.settings-group {
+  margin: 10px 4px -2px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.settings-group:first-child { margin-top: 2px; }
+.settings-body > * { animation: rise 0.45s var(--spring) both; }
+.settings-body > :nth-child(2) { animation-delay: 40ms; }
+.settings-body > :nth-child(3) { animation-delay: 80ms; }
+.settings-body > :nth-child(4) { animation-delay: 120ms; }
+.settings-body > :nth-child(5) { animation-delay: 160ms; }
+.settings-body > :nth-child(6) { animation-delay: 200ms; }
+.settings-body > :nth-child(7) { animation-delay: 240ms; }
+.settings-body > :nth-child(8) { animation-delay: 280ms; }
+.settings-body > :nth-child(n + 9) { animation-delay: 320ms; }
+.settings-body .panel { gap: 10px; padding: 14px 16px; border-radius: 16px; }
+.settings-body .panel h2 { font-size: 15px; }
+.settings-body .panel .hint { font-size: 13px; line-height: 1.4; }
+.settings-body .panel .note { font-size: 12px; line-height: 1.4; }
+.settings-body .panel .label { font-size: 13px; }
+/* Buttons no wider or taller than they need to be. */
+.settings-body .secondary, .settings-body .secondary.block, .settings-body .primary.block {
+  align-self: flex-start;
+  width: auto;
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 19px;
+  font-size: 14px;
+}
+.settings-body .primary.block { height: 40px; }
+.settings-body .pill-btn { height: 32px; padding: 0 13px; font-size: 13px; }
+.settings-body .chip.small { height: 32px; padding: 0 13px; font-size: 13px; }
+.settings-body .chips { gap: 6px; }
+.settings-body .field, .settings-body .text-input { padding: 11px 14px; font-size: 15px; }
+.settings-body .layout-sketch { max-width: 60px; }
+@media (prefers-reduced-motion: reduce) { .settings-body > * { animation: none; } }
 .panel {
   display: flex;
   flex-direction: column;
@@ -4797,3 +4840,37 @@ span.bubble-face:empty { visibility: hidden; }
   88% { opacity: 1; }
   100% { transform: translate(-50%, -50%) translate(40vw, -6vh); opacity: 0; }
 }
+
+/* Mosaic: every album tile, and the New album tile, the same square. */
+.mo-tile.mo-album, .mo-tile.mo-new { height: auto; aspect-ratio: 1; }
+
+/* ---------- search ---------- */
+.search-bar { gap: 6px; padding-right: 12px; }
+.search-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 6px 0 12px;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.search-field:focus-within { border-color: var(--accent); }
+.search-field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font: inherit; font-size: 15px; }
+.search-field input::placeholder { color: var(--text-2); }
+.search-field button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--text-2); }
+.search-ideas { display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 0; }
+.search-ideas .wall-sub { margin: 8px 2px 2px; }
+.search-help { margin-top: 14px; padding: 0 2px; }
+.search-albums { display: flex; flex-direction: column; gap: 2px; margin: 0 4px 12px; }
+.search-album { display: flex; align-items: center; gap: 12px; padding: 6px; border-radius: 12px; text-align: left; }
+.search-album:active { background: var(--surface); }
+.search-album-pic { flex: none; display: grid; place-items: center; width: 48px; height: 48px; overflow: hidden; border-radius: 10px; background: var(--surface-2); color: var(--text-2); }
+.search-album-pic img { width: 100%; height: 100%; object-fit: cover; }
+.search-album-name { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.search-album-name b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.search-album-name small { color: var(--text-2); font-size: 12px; }

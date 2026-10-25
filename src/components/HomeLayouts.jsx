@@ -160,6 +160,9 @@ export function Who({ name }) {
   const label = [name ? `Settings, signed in as ${name}` : 'Settings', waiting && `${waiting} waiting for approval`]
   return (
     <span className="who-wrap">
+    <button className="who-chat" onClick={() => navigate('/search')} aria-label="Search photos">
+      <Icon name="search" size={18} />
+    </button>
     {features.social && (
       <button className="who-chat" onClick={() => navigate('/news')} aria-label={fresh ? `What's new, ${fresh} new` : "What's new"}>
         <Icon name="photos" size={18} />
@@ -481,7 +484,7 @@ export function Mosaic({ albums, images, who, greet, first, news, onNewAlbum, ba
         return (
           <Fragment key={a.id}>
             <button
-              className={`mo-tile mo-album ${i % 5 === 0 ? 'tall' : ''}`}
+              className="mo-tile mo-album"
               style={{ '--i': Math.min(i, 8) }}
               data-album={a.id}
               onClick={(e) => openAlbum(a, e.currentTarget)}
