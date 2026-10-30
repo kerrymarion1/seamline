@@ -16,6 +16,7 @@ import {
   updateProject, useProject, useStore,
 } from '../lib/store'
 import { me } from '../lib/cloud'
+import { announceUpload } from '../lib/push'
 import { ensureLocal, photoIdsOf } from '../lib/sync'
 
 // Height of the on-screen keyboard, also published as --kb so fixed sheets
@@ -166,7 +167,8 @@ export default function Editor({ projectId }) {
       }
     }
     addImages(records)
-    fileImports(records.map((r) => r.id), me())
+    const filed = fileImports(records.map((r) => r.id), me())
+    if (filed) announceUpload(filed, records)
     placePhotos(records)
     setNotice(failed ? { text: `${failed} photo${failed > 1 ? 's' : ''} could not be read` } : null)
   }

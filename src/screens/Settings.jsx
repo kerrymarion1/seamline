@@ -1,121 +1,31 @@
-import { useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { navigate } from '../App'
+import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
+import CoverFramer from '../components/CoverFramer'
+import Avatar from '../components/Avatar'
+import AvatarFramer from '../components/AvatarFramer'
+import { ago, focusStyleOf } from '../components/HomeLayouts'
 import Icon from '../components/Icon'
 import { createBackup, restoreBackup } from '../lib/backup'
+import { renderEdit } from '../lib/edit'
+import { celebrateAdded, reactionFxOn, setReactionFxOn, setVibrateOn, vibrateOn } from '../lib/feedback'
+import { setSoundOn, soundOn } from '../lib/sounds'
 import {
-  expiryText, requestPasswordReset, setAutoSync, setNewPassword, shareUrl, signIn, signOut, stopShare, STORAGE_LIMIT,
-  storageUsed, getCloud, setUserName, useCloud, userName, VIDEO_LIMIT, videoStorageUsed, viewsText,
+  addInvite, answerRequest, avatarOf, createInvite, deleteInvite, fetchMyInvites, renameMember, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, setPinned, unpin, useAllCovers, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
+  storageUsed, getCloud, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
 } from '../lib/cloud'
-import { renameUploader, setImportAlbum, useStore } from '../lib/store'
-import { COLOURS, setColour, useColour } from '../lib/theme'
+import { personIn, refreshPeople, usePeople } from '../lib/people'
+import { codeMessage, inviteMessage } from '../lib/pitch'
+import PauseBar from '../components/PauseBar'
+import { pushStatus, turnOffPush, turnOnPush } from '../lib/push'
+import { renameUploader, setCoverFocus, setImportAlbum, useStore } from '../lib/store'
+import {
+  COLOURS, LAYOUTS, SEASONS, setColour, setLayout, setSeason, useActiveSeason, useColour, useLayout, useSeason,
+} from '../lib/theme'
 import { getSyncStatus, onSyncStatus, syncNow } from '../lib/sync'
+import { NewPassword, SignIn } from './SignIn'
 
 const mb = (bytes) => (bytes < 1024 ** 2 ? `${Math.max(bytes ? 1 : 0, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`)
-
-export function SignIn() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [show, setShow] = useState(false)
-  const [remember, setRemember] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
-  const [sent, setSent] = useState(null)
-
-  const submit = async (e) => {
-    e.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      await signIn(email, password, remember)
-    } catch (err) {
-      setError(err.message)
-    }
-    setBusy(false)
-  }
-
-  const forgot = async () => {
-    setError(null)
-    setSent(null)
-    if (!email.trim()) return setError('Type your email above first, then tap "Forgot password?" again.')
-    setBusy(true)
-    try {
-      await requestPasswordReset(email)
-      setSent(`If ${email.trim()} has an account, a reset link is on its way. Open it on this device.`)
-    } catch (err) {
-      setError(err.message)
-    }
-    setBusy(false)
-  }
-
-  // The names and autocomplete hints are what let the browser offer to save
-  // the password and fill it in next time.
-  return (
-    <form className="panel" onSubmit={submit} autoComplete="on">
-      <h2>Sign in</h2>
-      <p className="hint">
-        Use your Plait email and password. Signing in opens the app, keeps your albums and collages in step on every device and
-        lets you share links.
-      </p>
-      <input
-        className="field" type="email" name="email" id="seamline-email" autoComplete="username" inputMode="email"
-        placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required
-      />
-      <div className="password-row">
-        <input
-          className="field" type={show ? 'text' : 'password'} name="password" id="seamline-password"
-          autoComplete="current-password" placeholder="Password" value={password}
-          onChange={(e) => setPassword(e.target.value)} required
-        />
-        <button type="button" className="pill-btn" onClick={() => setShow((v) => !v)}>{show ? 'Hide' : 'Show'}</button>
-      </div>
-      <label className="check-row">
-        <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-        <span>
-          Keep me signed in
-          <small>{remember ? 'Stays signed in on this device until you sign out.' : 'Signs out when the app is closed.'}</small>
-        </span>
-      </label>
-      {error && <p className="preview-error" role="alert">{error}</p>}
-      {sent && <p className="note" role="status">{sent}</p>}
-      <button className="primary block" disabled={busy}>{busy ? 'Working…' : 'Sign in'}</button>
-      <button type="button" className="text-btn" onClick={forgot} disabled={busy}>Forgot password?</button>
-    </form>
-  )
-}
-
-// Shown after following the link in a password-reset email.
-export function NewPassword() {
-  const [password, setPassword] = useState('')
-  const [show, setShow] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
-  const submit = async (e) => {
-    e.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      await setNewPassword(password)
-    } catch (err) {
-      setError(err.message)
-    }
-    setBusy(false)
-  }
-  return (
-    <form className="panel" onSubmit={submit} autoComplete="on">
-      <h2>Choose a new password</h2>
-      <p className="hint">This changes the password for your account everywhere it is used, including Plait.</p>
-      <div className="password-row">
-        <input
-          className="field" type={show ? 'text' : 'password'} name="new-password" autoComplete="new-password"
-          placeholder="New password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required
-        />
-        <button type="button" className="pill-btn" onClick={() => setShow((v) => !v)}>{show ? 'Hide' : 'Show'}</button>
-      </div>
-      {error && <p className="preview-error" role="alert">{error}</p>}
-      <button className="primary block" disabled={busy || password.length < 8}>{busy ? 'Saving…' : 'Save password'}</button>
-    </form>
-  )
-}
 
 function SyncPanel({ cloud }) {
   const status = useSyncExternalStore(onSyncStatus, getSyncStatus)
@@ -155,9 +65,114 @@ function SyncPanel({ cloud }) {
 const LAST_BACKUP = 'seamline:lastBackup'
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 
+// The season, first thing in Settings: Auto follows the calendar (each
+// season has its month, see SEASONS), or one is picked to stay on. For this device.
+const monthName = (m) => new Date(2000, m, 1).toLocaleString(undefined, { month: 'long' })
+const CALENDAR = SEASONS.filter((s) => s.month != null).map((s) => `${s.name} in ${monthName(s.month)}`).join(', ')
+
+// The names too long for a small tile: one shortened, one allowed to break.
+const SEASON_LABEL = { july4: '4th of July', thanksgiving: 'Thanks­giving' }
+
+// Which season dresses the app: a row of small tiles, each a dot of its
+// colour in a dark circle, the chosen one outlined (the way Plait's theme
+// picker looks). First in Settings, above the account.
+function Season() {
+  const chosen = useSeason()
+  const showing = useActiveSeason()
+  const name = (id) => SEASONS.find((s) => s.id === id)?.name
+  const hint =
+    chosen === 'auto'
+      ? `${CALENDAR}, everyday the rest of the year. ${showing ? `${name(showing)} is on now.` : 'Everyday for now.'}`
+      : chosen === 'everyday'
+        ? 'Your own colour, all year round.'
+        : `${name(chosen)} stays on until you change it.`
+  // The dot: a season's own colour; your colour for everyday; for Auto, whatever is on now.
+  const dotOf = (s) => s.accent ?? (s.id === 'auto' && showing ? SEASONS.find((x) => x.id === showing)?.accent : null) ?? 'var(--accent)'
+  return (
+    <section className="panel">
+      <h2>Season</h2>
+      <div className="season-pick" role="radiogroup" aria-label="Season">
+        {SEASONS.map((s) => {
+          const on = chosen === s.id
+          return (
+            <button
+              key={s.id}
+              role="radio"
+              aria-checked={on}
+              aria-label={s.name}
+              title={s.name}
+              className={on ? 'on' : ''}
+              style={{ '--dot': dotOf(s) }}
+              onClick={() => setSeason(s.id)}
+            >
+              <span className="season-dot" aria-hidden="true"><i /></span>
+              <span className="season-label">{SEASON_LABEL[s.id] ?? s.name}</span>
+            </button>
+          )
+        })}
+      </div>
+      <p className="note">{hint}</p>
+    </section>
+  )
+}
+
+// The sound and the pulse when photos go into an album (and the message
+// chime), for this device. Try it plays what adding photos does right now.
+function Feedback() {
+  const [sound, setSound] = useState(soundOn)
+  const [vibrate, setVibrate] = useState(vibrateOn)
+  const [reactionFx, setReactionFx] = useState(reactionFxOn)
+  const showing = useActiveSeason()
+  const name = SEASONS.find((s) => s.id === showing)?.name
+  return (
+    <section className="panel">
+      <h2>Sounds, vibration and animations</h2>
+      <div className="chips wrap">
+        <button
+          className={`chip small ${sound ? 'on' : ''}`}
+          aria-pressed={sound}
+          onClick={() => {
+            setSoundOn(!sound)
+            setSound(!sound)
+          }}
+        >
+          Sounds {sound ? 'on' : 'off'}
+        </button>
+        <button
+          className={`chip small ${vibrate ? 'on' : ''}`}
+          aria-pressed={vibrate}
+          onClick={() => {
+            setVibrateOn(!vibrate)
+            setVibrate(!vibrate)
+          }}
+        >
+          Vibrate {vibrate ? 'on' : 'off'}
+        </button>
+        <button className="chip small" onClick={() => celebrateAdded(1)}>Try it</button>
+        <button
+          className={`chip small ${reactionFx ? 'on' : ''}`}
+          aria-pressed={reactionFx}
+          onClick={() => {
+            setReactionFxOn(!reactionFx)
+            setReactionFx(!reactionFx)
+          }}
+        >
+          Reaction animations {reactionFx ? 'on' : 'off'}
+        </button>
+      </div>
+      <p className="note">
+        When photos go into an album: {name ? `${name}'s` : 'a'} sound, a pulse (Android phones; iPhones can't vibrate for web pages) and
+        a burst on screen. The chime for a new message follows these too. Reaction animations play over a photo, as it opens, the reactions
+        it has had; the phone's own reduce-motion setting stops them as well.
+      </p>
+    </section>
+  )
+}
+
 // The app's accent colour, for this device.
 function Colour() {
   const colour = useColour()
+  const showing = useActiveSeason()
   return (
     <section className="panel">
       <h2>Colour</h2>
@@ -169,8 +184,677 @@ function Colour() {
           </button>
         ))}
       </div>
-      <p className="note">Changes buttons, highlights and the logo on this device.</p>
+      <p className="note">
+        {showing
+          ? 'The season sets the colours while it is on; this one comes back afterwards.'
+          : 'Changes buttons, highlights and the logo on this device.'}
+      </p>
     </section>
+  )
+}
+
+// Notifications on this device when someone else adds photos (see lib/push.js).
+// Hidden until the database and this copy of the app are set up for them.
+const PUSH_TEXT = {
+  on: 'This device hears when someone else adds photos or videos, reacts, comments or messages you.',
+  off: 'Hear when someone else adds photos or videos to an album, or a visitor adds photos through a link.',
+  install: 'On iPhone and iPad, first add Hugpix to the Home Screen (Share, then Add to Home Screen) and open it from there.',
+  unsupported: 'This browser cannot show notifications from Hugpix.',
+  blocked: 'Notifications are blocked for Hugpix. Allow them in the browser or phone settings, then come back here.',
+}
+
+function Notifications({ cloud }) {
+  const [status, setStatus] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const check = () => pushStatus().then(setStatus).catch(() => setStatus('unsupported'))
+  useEffect(() => {
+    check()
+  }, [cloud.canSync, cloud.features])
+  if (!status || status === 'unavailable') return null
+
+  const toggle = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await (status === 'on' ? turnOffPush() : turnOnPush())
+    } catch (e) {
+      setError(e.message)
+    }
+    await check()
+    setBusy(false)
+  }
+  // The test copy on this computer has no service worker, so it can never
+  // receive them; say that, rather than blaming the browser.
+  const text = status === 'unsupported' && import.meta.env.DEV
+    ? "This test copy on the computer can't receive notifications; your phone's Hugpix can. Pausing below still works for all your devices."
+    : PUSH_TEXT[status]
+  return (
+    <section className="panel">
+      <h2>Notifications</h2>
+      <p className="hint">{text}</p>
+      {error && <p className="note warn">{error}</p>}
+      {/* Off: one button to turn them on. On: the pause bar alone does the
+          turning off. Pausing is for this person on every device (lib/quiet.js),
+          so it shows whatever this device can do. Without the pause table, the old button. */}
+      {status === 'off' && (
+        <button className="secondary block" onClick={toggle} disabled={busy}>Turn on</button>
+      )}
+      {status === 'on' && !cloud.features.quiet && (
+        <button className="secondary block" onClick={toggle} disabled={busy}>Turn off</button>
+      )}
+      <PauseBar />
+    </section>
+  )
+}
+
+// The admin's list (see seamline_rights). People ask to add photos from a
+// shared album and wait here for Approve or Decline; below them, everyone
+// already decided on, with what they may do. Anyone not listed may leave
+// notes, and may add photos only if they are a member.
+function People({ requests }) {
+  const [people, setPeople] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const load = () => fetchPeople().then(setPeople).catch((e) => setError(e.message))
+  useEffect(() => {
+    load()
+    refreshRequests()
+    // Arriving from the bell on the front page: straight to the requests.
+    if (window.location.hash === '#people') document.getElementById('people')?.scrollIntoView({ block: 'start' })
+  }, [])
+
+  const run = async (fn) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      await load()
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(false)
+  }
+
+  return (
+    <section className="panel" id="people">
+      <h2>People</h2>
+      <p className="hint">
+        People ask to add photos from a shared album once they have signed in. Anyone signed in can leave notes unless you stop
+        them here.
+      </p>
+      {requests.length === 0 && <p className="note">No one is waiting.</p>}
+      {requests.map((r) => (
+        <div key={r.user_id} className="person-row request">
+          <div className="person-who">
+            <span className="person-email">{r.name || r.email}</span>
+            <small>{r.name && `${r.email} · `}{r.album ? `asked to add photos to ${r.album}` : 'asked to see the albums'}</small>
+          </div>
+          <div className="chips">
+            <button className="pill-btn approve" disabled={busy} onClick={() => run(() => answerRequest(r.user_id, true))}>
+              Approve
+            </button>
+            <button className="pill-btn" disabled={busy} onClick={() => run(() => answerRequest(r.user_id, false))}>
+              Decline
+            </button>
+          </div>
+        </div>
+      ))}
+      {people?.map((p) => (
+        <div key={p.email} className="person-row">
+          <span className="person-email">{p.email}</span>
+          <div className="chips">
+            {/* Each says what it is now; a tap switches it. */}
+            <button
+              className={`chip small right ${p.uploads ? 'on' : 'off'}`} aria-pressed={p.uploads} disabled={busy}
+              onClick={() => run(() => savePerson(p.email, { uploads: !p.uploads }))}
+            >
+              <Icon name={p.uploads ? 'check' : 'close'} size={14} /> {p.uploads ? 'Can add photos' : 'Can’t add photos'}
+            </button>
+            <button
+              className={`chip small right ${p.comments ? 'on' : 'off'}`} aria-pressed={p.comments} disabled={busy}
+              onClick={() => run(() => savePerson(p.email, { comments: !p.comments }))}
+            >
+              <Icon name={p.comments ? 'check' : 'close'} size={14} /> {p.comments ? 'Can leave notes' : 'Can’t leave notes'}
+            </button>
+            <button className="icon-btn" aria-label={`Take ${p.email} off the list`} disabled={busy} onClick={() => run(() => removePerson(p.email))}>
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+        </div>
+      ))}
+      {people?.length > 0 && (
+        <p className="note">Tap one to switch it. Taking someone off the list puts them back to the usual: can leave notes, can’t add photos.</p>
+      )}
+      {error && <p className="preview-error" role="alert">{error}</p>}
+    </section>
+  )
+}
+
+// Everyone on Hugpix, for the admin (see seamline_users): who they are,
+// whether they are in, when they joined and when they were last seen.
+// Approving and blocking stay in People; this is the roll call.
+const USER_STATUS = {
+  admin: 'Admin',
+  member: 'Member',
+  guest: 'Guest',
+  waiting: 'Waiting',
+  'signed up': 'Not in yet',
+}
+const day = (t) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+
+function Users({ canSwitch, canRename }) {
+  const [users, setUsers] = useState(null)
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(null) // whose role is changing
+  const [renaming, setRenaming] = useState(null) // { id, name } while the admin renames someone
+  // The name everyone sees for them: in chats, on photos they added, everywhere.
+  const saveName = async () => {
+    setBusy(renaming.id)
+    setError(null)
+    try {
+      await renameMember(renaming.id, renaming.name)
+      setRenaming(null)
+      await load()
+      refreshPeople(true)
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(null)
+  }
+  const load = () => fetchUsers().then(setUsers).catch((e) => setError(e.message))
+  useEffect(() => {
+    load()
+  }, [])
+
+  // A guest sees everything and adds to it; a member can also edit, remove,
+  // and make links.
+  const switchRole = async (u) => {
+    setBusy(u.id)
+    setError(null)
+    try {
+      await setRole(u.id, u.status === 'guest' ? 'member' : 'guest')
+      await load()
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(null)
+  }
+
+  const count = (...statuses) => users.filter((u) => statuses.includes(u.status)).length
+  const summary = !users
+    ? 'Loading…'
+    : users.length === 0
+      ? 'No one yet.'
+      : [
+          `${users.length} ${users.length === 1 ? 'person' : 'people'}`,
+          count('admin', 'member') && `${count('admin', 'member')} in as members`,
+          count('guest') && plural(count('guest'), 'guest'),
+          count('waiting') && `${count('waiting')} waiting`,
+          count('signed up') && `${count('signed up')} signed up but not in yet`,
+        ].filter(Boolean).join(' · ')
+
+  return (
+    <section className="panel">
+      <h2>Users</h2>
+      <p className="hint">{summary}</p>
+      {users?.map((u) => (
+        <div key={u.id} className={`person-row user-row ${renaming?.id === u.id ? 'renaming' : ''}`}>
+          <Avatar person={{ name: u.name || u.email, avatar: u.avatar }} size={36} />
+          <div className="person-who">
+            {renaming?.id === u.id ? (
+              <form
+                className="rename-row"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  saveName()
+                }}
+              >
+                <input
+                  className="field" value={renaming.name} maxLength={60} autoFocus aria-label="Their name"
+                  onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+                />
+                <button className="pill-btn" disabled={busy === u.id || !renaming.name.trim()}>Save</button>
+                <button type="button" className="text-btn" onClick={() => setRenaming(null)}>Cancel</button>
+              </form>
+            ) : (
+              <span className="person-email">{u.name || u.email}</span>
+            )}
+            <small>
+              {[
+                u.name && u.email,
+                `joined ${day(u.joined)}`,
+                u.last_seen ? `last seen ${ago(Date.parse(u.last_seen))}` : 'never signed in',
+                !u.confirmed && 'email not confirmed',
+              ].filter(Boolean).join(' · ')}
+            </small>
+          </div>
+          <div className="user-side">
+            <span className={`user-status ${u.status.replace(' ', '-')}`}>{USER_STATUS[u.status] ?? u.status}</span>
+            {canSwitch && (u.status === 'guest' || u.status === 'member') && (
+              <button className="text-btn user-switch" disabled={busy === u.id} onClick={() => switchRole(u)}>
+                {busy === u.id ? 'Changing…' : u.status === 'guest' ? 'Make member' : 'Make guest'}
+              </button>
+            )}
+            {canRename && ['admin', 'member', 'guest'].includes(u.status) && renaming?.id !== u.id && (
+              <button className="text-btn user-switch" onClick={() => setRenaming({ id: u.id, name: u.name || '' })}>Rename</button>
+            )}
+          </div>
+        </div>
+      ))}
+      {canSwitch && users?.some((u) => u.status === 'guest' || u.status === 'member') && (
+        <p className="note">
+          Guests see every album and add photos to them. Members can also edit and remove things, and make links.
+        </p>
+      )}
+      {users?.some((u) => u.status === 'waiting') && <p className="note">Approve people waiting under People, above.</p>}
+      {error && <p className="preview-error" role="alert">{error}</p>}
+    </section>
+  )
+}
+
+// Inviting someone, for anyone in Hugpix but a guest: a link that works
+// once, for 30 days, and needs no code (see createInvite). They make an
+// account, or sign in if they already use Plait, and they are in as a guest.
+function InviteSomeone() {
+  const people = usePeople()
+  const [invites, setInvites] = useState(null)
+  const [made, setMade] = useState(null) // { url } just made
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState(null)
+  const load = () => fetchMyInvites().then(setInvites).catch(() => setInvites([]))
+  useEffect(() => {
+    load()
+  }, [])
+  const make = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setMade(await createInvite())
+      load()
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(false)
+  }
+  // The link goes with a few lines about Hugpix (lib/pitch.js), inside the
+  // text rather than as `url`, which some apps take on its own.
+  const send = () => navigator.share({ title: 'Join us on Hugpix', text: inviteMessage(made.url) }).catch(() => {})
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteMessage(made.url))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setError('Could not copy it. Press and hold the link to copy it instead.')
+    }
+  }
+  const nameOf = (id) => personIn(people, id)?.name ?? 'Someone'
+  return (
+    <section className="panel">
+      <h2>Invite someone</h2>
+      <p className="hint">
+        Make a link and send it to them. It works once, for 30 days, and needs no code: they make an account (or sign in, if they
+        already use Plait) and they are in.
+      </p>
+      {made ? (
+        <div className="invite-made">
+          <input className="field" readOnly value={made.url} onFocus={(e) => e.target.select()} aria-label="Invite link" />
+          <div className="invite-made-btns">
+            {typeof navigator.share === 'function' && (
+              <button className="primary" onClick={send}><Icon name="share" size={18} /> Send</button>
+            )}
+            <button className="secondary" onClick={copy}>{copied ? 'Copied' : 'Copy invite'}</button>
+          </div>
+          <button className="text-btn" onClick={() => setMade(null)}>Make another</button>
+        </div>
+      ) : (
+        <button className="primary block" onClick={make} disabled={busy}>{busy ? 'Making…' : 'Make an invite link'}</button>
+      )}
+      {invites?.length > 0 && (
+        <>
+          <div className="label">Your invites</div>
+          <ul className="invite-list">
+            {invites.map((i) => (
+              <li key={i.token}>
+                <span>
+                  {i.used_by ? `${nameOf(i.used_by)} joined` : Date.parse(i.expires_at) < Date.now() ? 'Not used, now expired' : 'Not used yet'}
+                </span>
+                <small>
+                  {i.used_by ? day(i.used_at) : `made ${day(i.created_at)}${Date.parse(i.expires_at) > Date.now() ? `, good until ${day(i.expires_at)}` : ''}`}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {error && <p className="preview-error" role="alert">{error}</p>}
+    </section>
+  )
+}
+
+// Invite codes for new accounts, for the admin. The admin names each code;
+// anyone who has it can use it until it is switched off. What gets sent is a
+// link that opens the sign-up with the code filled in, plus the code itself.
+// (Plait's own codes may carry a limit, shown as "used 2 of 5".)
+const usesText = (c) =>
+  c.max_uses ? `used ${c.uses} of ${c.max_uses}` : c.uses ? `used ${plural(c.uses, 'time')}` : 'not used yet'
+
+function Invites({ canDelete }) {
+  const [codes, setCodes] = useState(null)
+  const [name, setName] = useState('')
+  const [note, setNote] = useState('')
+  const [fresh, setFresh] = useState(null)
+  const [doomed, setDoomed] = useState(null)
+  const [copied, setCopied] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const load = () => fetchInvites().then(setCodes).catch((e) => setError(e.message))
+  useEffect(() => {
+    load()
+  }, [])
+
+  const run = async (fn) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      await load()
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(false)
+  }
+
+  // Codes are matched without caring about capitals (see handle_new_user), so
+  // they are kept in small letters, with dashes for spaces.
+  const make = (e) => {
+    e.preventDefault()
+    const code = name.trim().toLowerCase().replace(/\s+/g, '-')
+    if (!/^[a-z0-9-]{3,40}$/.test(code)) return setError('Use 3 to 40 letters, numbers or dashes.')
+    if (codes.some((c) => c.code === code)) return setError(`${code} already exists. Turn it on below if it is off.`)
+    run(async () => {
+      await addInvite(code, note.trim(), null)
+      setName('')
+      setNote('')
+      setFresh(code)
+    })
+  }
+
+  const message = (code) => codeMessage(inviteUrl(code), code)
+  const copy = async (code) => {
+    await navigator.clipboard.writeText(message(code)).catch(() => {})
+    setCopied(code)
+    setTimeout(() => setCopied(null), 1800)
+  }
+  const share = (code) => navigator.share({ title: 'Hugpix invite', text: message(code) }).catch(() => {})
+
+  return (
+    <section className="panel">
+      <h2>Invite codes</h2>
+      <p className="hint">
+        New accounts need an invite code. Anyone with a code can use it until you turn it off. The message you send has a
+        link that fills the code in for them.
+      </p>
+      <form className="invite-form" onSubmit={make}>
+        <input
+          className="field" placeholder="Code name, like smith-family" maxLength={40} value={name} required
+          onChange={(e) => setName(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false}
+        />
+        <input
+          className="field" placeholder="Who it's for (optional)" maxLength={60} value={note}
+          onChange={(e) => setNote(e.target.value)} enterKeyHint="done"
+        />
+        <button className="primary block" disabled={busy || !codes}>{busy ? 'Working…' : 'Make invite code'}</button>
+      </form>
+      {codes?.map((c) => {
+        const usedUp = c.max_uses != null && c.uses >= c.max_uses
+        const live = c.active && !usedUp
+        return (
+          <div key={c.code} className={`person-row invite-row ${live ? '' : 'off'} ${fresh === c.code ? 'fresh' : ''}`}>
+            <div className="person-who">
+              <span className="person-email">{c.code}</span>
+              <small>
+                {doomed === c.code
+                  ? 'Delete for good? Accounts already made with it stay.'
+                  : [c.note, usesText(c), !c.active && 'switched off'].filter(Boolean).join(' · ')}
+              </small>
+            </div>
+            {doomed === c.code ? (
+              <div className="chips">
+                <button className="pill-btn delete" disabled={busy} onClick={() => run(() => deleteInvite(c.code).then(() => setDoomed(null)))}>Delete</button>
+                <button className="pill-btn" disabled={busy} onClick={() => setDoomed(null)}>Keep</button>
+              </div>
+            ) : (
+              <div className="chips">
+                {live && <button className="pill-btn" onClick={() => copy(c.code)}>{copied === c.code ? 'Copied' : 'Copy'}</button>}
+                {live && navigator.share && <button className="pill-btn" onClick={() => share(c.code)}>Share</button>}
+                {!usedUp && (
+                  <button className="pill-btn" disabled={busy} onClick={() => run(() => setInviteActive(c.code, !c.active))}>
+                    {c.active ? 'Turn off' : 'Turn on'}
+                  </button>
+                )}
+                {canDelete && (
+                  <button className="icon-btn" aria-label={`Delete ${c.code}`} disabled={busy} onClick={() => setDoomed(c.code)}>
+                    <Icon name="trash" size={18} />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      <p className="note">
+        Once they have an account they tap “Ask for access”, and you approve them under People. Codes work for Plait sign-ups
+        too, since the accounts are shared.
+      </p>
+      {error && <p className="preview-error" role="alert">{error}</p>}
+    </section>
+  )
+}
+
+// How the front page shows the albums, for this device. Each choice carries a
+// small sketch of its page.
+function Layout() {
+  const layout = useLayout()
+  return (
+    <section className="panel">
+      <h2>Front page</h2>
+      <div className="layout-row">
+        {LAYOUTS.map((l) => (
+          <button key={l.id} className={layout === l.id ? 'on' : ''} onClick={() => setLayout(l.id)} aria-pressed={layout === l.id}>
+            <span className={`layout-sketch ${l.id}`} aria-hidden="true"><i /><i /><i /><i /><i /></span>
+            <b>{l.name}</b>
+          </button>
+        ))}
+      </div>
+      <p className="note">{LAYOUTS.find((l) => l.id === layout).note}.</p>
+    </section>
+  )
+}
+
+// Hugpix's cover photos, theme by theme: the ones each has, with a way to
+// take one off, and a way to add one from the albums (framed first) for any
+// theme, not only the one that is on. Members only; everyone sees the result.
+function ThemeCovers() {
+  const { admin, features } = useCloud()
+  const images = useStore((s) => s.images)
+  const albums = useStore((s) => s.albums)
+  const pins = useAllCovers()
+  const [adding, setAdding] = useState(null) // the theme a cover is being chosen for
+  const [framing, setFraming] = useState(null) // { season, album, id } chosen, being framed
+  const [error, setError] = useState(null)
+  if (!admin || !features.pins) return null
+  const themes = SEASONS.filter((s) => s.id !== 'auto')
+  const nameOf = (id) => themes.find((t) => t.id === id)?.name ?? ''
+  return (
+    <section className="panel">
+      <h2>Cover photos</h2>
+      <p className="hint">
+        The big picture at the top of everyone's front page: Hugpix's own (Everyday), and one for each theme that takes its place
+        while that theme is on. Any photos from the albums, taking turns one a visit.
+      </p>
+      <ul className="theme-covers">
+        {themes.map((t) => {
+          const list = pins[t.id] ?? []
+          return (
+            <li key={t.id}>
+              <span className="theme-name">
+                {t.name}
+                {list.length > 1 && <small> · {list.length} take turns</small>}
+              </span>
+              <span className="theme-pics">
+                {list.map((c) => (
+                  <span key={c.image} className="theme-pic">
+                    {images[c.image] ? <img src={images[c.image].previewUrl} style={focusStyleOf(c.focus)} alt="" draggable={false} /> : <i />}
+                    <button onClick={() => unpin(c.image, t.id).catch((e) => setError(e.message))} aria-label={`Take this off ${t.name}'s covers`}>
+                      <Icon name="close" size={12} />
+                    </button>
+                  </span>
+                ))}
+                <button className="theme-add" onClick={() => setAdding(t.id)} aria-label={`Add a cover for ${t.name}`}><Icon name="plus" size={18} /></button>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      {error && <p className="note warn">{error}</p>}
+      <AlbumPhotoPicker
+        open={!!adding}
+        onClose={() => setAdding(null)}
+        max={1}
+        title={`A cover for ${nameOf(adding)}`}
+        action={(n) => (n ? 'Use this photo' : 'Tap a photo')}
+        onPick={(ids) => {
+          const season = adding
+          const album = albums.find((a) => a.imageIds.includes(ids[0]))
+          setAdding(null)
+          if (album) setFraming({ season, album, id: ids[0] })
+        }}
+      />
+      {framing && images[framing.id] && (
+        <CoverFramer
+          image={images[framing.id]}
+          at={framing.album.focus?.[framing.id]}
+          onCancel={() => setFraming(null)}
+          onSave={(at) => {
+            setCoverFocus(framing.album.id, framing.id, at)
+            setPinned(framing.album.id, framing.id, at, framing.season).catch((e) => setError(e.message))
+            setFraming(null)
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+// Your profile photo: shown beside your name everywhere. It comes from the
+// phone or from a photo already in an album, then framed in a circle (moved
+// and zoomed), so a face can be picked out of a group.
+function ProfilePhoto({ session }) {
+  const avatar = avatarOf(session)
+  const input = useRef(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState(null)
+  const [fromAlbums, setFromAlbums] = useState(false)
+  const [framing, setFraming] = useState(null) // { previewUrl, width, height, own }: the photo being framed
+  const [frameError, setFrameError] = useState(null)
+
+  // `own` is a picture made here for the purpose, let go of afterwards.
+  const frame = async (url, own) => {
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image()
+        el.onload = () => resolve(el)
+        el.onerror = reject
+        el.src = url
+      })
+      setMessage(null)
+      setFrameError(null)
+      setFraming({ previewUrl: url, width: img.naturalWidth, height: img.naturalHeight, own })
+    } catch {
+      if (own) URL.revokeObjectURL(url)
+      setMessage('That file could not be read as a photo.')
+    }
+  }
+  const stopFraming = () => {
+    if (framing?.own) URL.revokeObjectURL(framing.previewUrl)
+    setFraming(null)
+  }
+  const use = async (change) => {
+    setBusy(true)
+    setFrameError(null)
+    try {
+      const { blob } = await renderEdit(framing.previewUrl, change)
+      await setAvatar(blob)
+      refreshPeople(true)
+      setMessage('Saved')
+      stopFraming()
+    } catch (e) {
+      setFrameError(e.message)
+    }
+    setBusy(false)
+  }
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await setAvatar(null)
+      refreshPeople(true)
+      setMessage('Taken off')
+    } catch (e) {
+      setMessage(e.message)
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div className="profile-photo">
+      <button className="profile-photo-pick" disabled={busy} onClick={() => input.current.click()} aria-label={avatar ? 'Change your profile photo' : 'Add a profile photo'}>
+        <Avatar person={{ id: session.user.id, name: userName(session), avatar }} size={64} zoom={false} />
+        <span className="profile-photo-badge" aria-hidden="true"><Icon name="photo" size={14} /></span>
+      </button>
+      <div>
+        <div className="label">Profile photo</div>
+        <div className="profile-photo-btns">
+          <button className="pill-btn" disabled={busy} onClick={() => input.current.click()}>From your phone</button>
+          <button className="pill-btn" disabled={busy} onClick={() => setFromAlbums(true)}>From an album</button>
+          {avatar && <button className="pill-btn" disabled={busy} onClick={remove}>Remove</button>}
+        </div>
+        <p className="note">{message ?? 'Shown beside your name everywhere: chats, comments, photos you add and lists.'}</p>
+      </div>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files[0]
+          e.target.value = ''
+          if (file) frame(URL.createObjectURL(file), true)
+        }}
+      />
+      <AlbumPhotoPicker
+        open={fromAlbums}
+        onClose={() => setFromAlbums(false)}
+        max={1}
+        title="Choose your photo"
+        action={(n) => (n ? 'Use this photo' : 'Tap a photo')}
+        onPick={(ids, images) => {
+          setFromAlbums(false)
+          frame(images[ids[0]].previewUrl, false)
+        }}
+      />
+      {framing && (
+        <AvatarFramer
+          image={framing}
+          busy={busy}
+          error={frameError}
+          onCancel={stopFraming}
+          onSave={use}
+        />
+      )}
+    </div>
   )
 }
 
@@ -325,7 +1009,8 @@ export default function Settings() {
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(null)
   const used = storageUsed(cloud.shares)
-  const videoUsed = videoStorageUsed(cloud.shares)
+  const mediaUsed = mediaStorageUsed(cloud.shares)
+  const gb = (bytes) => `${(bytes / 1024 ** 3).toFixed(bytes < 10 * 1024 ** 3 ? 2 : 1)} GB`
   const photos = new Set(cloud.shares.flatMap((s) => s.items.map((it) => it.path))).size
 
   const copy = async (share) => {
@@ -346,19 +1031,24 @@ export default function Settings() {
       </header>
 
       <main className="settings-body">
+        {/* In groups, each with a small heading, so the page reads at a glance. */}
+        <p className="settings-group">You</p>
+        <Season />
         {cloud.session && !cloud.loading && !cloud.recovering && (
           <section className="panel">
             <h2>Account</h2>
+            {cloud.features.avatars && <ProfilePhoto session={cloud.session} />}
             <YourName session={cloud.session} />
             <p className="hint">Signed in as {cloud.session.user.email}</p>
             {!cloud.uploader && <p className="note warn">This account has not been given access to a library.</p>}
-            <p className="note">Signing out leaves what is already on this device in place.</p>
-            <button className="secondary block" onClick={signOut}>Sign out</button>
+            <button className="secondary" onClick={() => turnOffPush().catch(() => {}).finally(signOut)}>Sign out</button>
           </section>
         )}
+        <p className="settings-group">Look and feel</p>
         <Colour />
-        <Backup />
-        <Library />
+        <Layout />
+        <ThemeCovers />
+        <Feedback />
         {!cloud.configured ? (
           <section className="panel">
             <h2>Shared links</h2>
@@ -372,8 +1062,18 @@ export default function Settings() {
           <SignIn />
         ) : (
           <>
+            <p className="settings-group">Notifications</p>
+            <Notifications cloud={cloud} />
+            {(cloud.admin || (cloud.uploader && !cloud.guest && cloud.features.memberInvites)) && <p className="settings-group">People</p>}
+            {cloud.admin && cloud.features.people && <People requests={cloud.requests} />}
+            {cloud.uploader && !cloud.guest && cloud.features.memberInvites && <InviteSomeone />}
+            {cloud.admin && cloud.features.users && <Users canSwitch={!!cloud.features.roles} canRename={!!cloud.features.rename} />}
+            {cloud.admin && <Invites canDelete={!!cloud.features.inviteDelete} />}
+            <p className="settings-group">Sharing and storage</p>
             <SyncPanel cloud={cloud} />
 
+            {/* Links and storage are the members' business, not a guest's. */}
+            {!cloud.guest && <>
             <section className="panel">
               <h2>Keep albums online</h2>
               <p className="hint">
@@ -389,15 +1089,20 @@ export default function Settings() {
 
             <section className="panel">
               <h2>Storage used</h2>
-              <div className="meter"><i style={{ width: `${Math.min(100, (used / STORAGE_LIMIT) * 100)}%` }} /></div>
-              <p className="hint">
-                {mb(used)} of 1 GB · {photos} photo{photos === 1 ? '' : 's'} online in {cloud.shares.length} link{cloud.shares.length === 1 ? '' : 's'}
-              </p>
-              {videoUsed > 0 && (
-                <>
-                  <div className="meter"><i style={{ width: `${Math.min(100, (videoUsed / VIDEO_LIMIT) * 100)}%` }} /></div>
-                  <p className="hint">{mb(videoUsed)} of 10 GB · videos</p>
-                </>
+              <div className={`meter ${mediaUsed > MEDIA_WARN ? 'warn' : ''}`}>
+                <i style={{ width: `${Math.min(100, (mediaUsed / MEDIA_LIMIT) * 100)}%` }} />
+              </div>
+              <p className="hint">{gb(mediaUsed)} of 100 GB · photos and videos, on Cloudflare</p>
+              {mediaUsed > MEDIA_WARN ? (
+                <p className="note warn">Nearly full. Remove photos or videos you no longer need, or ask for the limit to be raised.</p>
+              ) : (
+                <p className="note">The first 10 GB are free; above that Cloudflare charges about $0.015 per GB a month.</p>
+              )}
+              {used > 0 && (
+                <p className="hint">
+                  {mb(used)} of 1 GB · older photos and visitors' uploads, on Supabase ·
+                  {' '}{photos} photo{photos === 1 ? '' : 's'} in {cloud.shares.length} link{cloud.shares.length === 1 ? '' : 's'}
+                </p>
               )}
               <p className="note">
                 The free plan pauses after a week with no activity. Links stop working while it is paused and come back
@@ -426,8 +1131,12 @@ export default function Settings() {
               ))}
               {error && <p className="preview-error" role="alert">{error}</p>}
             </section>
+            </>}
           </>
         )}
+        <p className="settings-group">On this device</p>
+        <Backup />
+        <Library />
       </main>
     </div>
   )
