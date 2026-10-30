@@ -7,7 +7,8 @@ import { lastUpload, useStore } from '../lib/store'
 // Choosing an album: for photos going into another album, or for the camera
 // from the front page. The newest first, or `first` (the one used last time)
 // at the top; `exclude` is left out (the album already open).
-export default function AlbumChooser({ open, onClose, title, note, exclude, first, onPick }) {
+// `extra` sits above the list (the album screen's Move or Copy choice).
+export default function AlbumChooser({ open, onClose, title, note, exclude, first, onPick, extra = null }) {
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
   const list = albums
@@ -15,6 +16,7 @@ export default function AlbumChooser({ open, onClose, title, note, exclude, firs
     .sort((a, b) => (b.id === first) - (a.id === first) || lastUpload(b) - lastUpload(a))
   return (
     <Sheet open={open} onClose={onClose} title={title} modal>
+      {extra}
       {note && <p className="note">{note}</p>}
       {list.length === 0 ? (
         <p className="hint">There are no other albums yet.</p>

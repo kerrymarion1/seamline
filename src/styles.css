@@ -4874,3 +4874,8 @@ span.bubble-face:empty { visibility: hidden; }
 .search-album-name { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .search-album-name b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .search-album-name small { color: var(--text-2); font-size: 12px; }
+
+/* To album: move them out of this album, or keep a copy here too. */
+.segmented.move-copy { flex: none; }
+.segmented.move-copy button { flex: 1; width: auto; height: 46px; display: flex; flex-direction: column; justify-content: center; gap: 1px; font-size: 14px; font-weight: 600; }
+.segmented.move-copy small { max-width: 100%; overflow: hidden; color: var(--text-2); font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; }

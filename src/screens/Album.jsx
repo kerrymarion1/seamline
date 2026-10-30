@@ -37,7 +37,7 @@ import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
   addedAt, addImages, addToAlbum, deleteAlbum, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumCover, setAlbumNote, setAlbumPeople,
-  setCaption, setCoverFocus, getState, setPhotoSpots, sortAlbum, useAlbum, useStore,
+  setCaption, setCoverFocus, getState, moveToAlbum, putBack, setPhotoSpots, sortAlbum, useAlbum, useStore,
 } from '../lib/store'
 
 // When a photo was added, for under it: "today", "yesterday", "Oct 17", or
@@ -108,6 +108,7 @@ export default function Album({ albumId }) {
   const [replayFx, setReplayFx] = useState(null) // { photo, n }: play that photo's reactions again
   const [picking, setPicking] = useState(false) // the whole row of reactions is out, to choose from
   const [coverSheet, setCoverSheet] = useState(false) // the covers this photo can be, and its framing
+  const [moveMode, setMoveMode] = useState(true) // To album: move them (true) or keep a copy here too
   useEffect(() => {
     if (!features.social) return
     let live = true
@@ -405,12 +406,28 @@ export default function Album({ albumId }) {
     })
   }
 
-  // The same photos, in one more album: nothing is uploaded again. Whoever
-  // can see that album hears about them, and there's a moment to undo.
+  // The chosen photos into another album: moved (gone from this one, with
+  // their tags, captions and who added them) or copied (in both). Nothing is
+  // uploaded again. Whoever can see that album hears about the new ones, and
+  // there's a moment to undo.
   const copyTo = (target) => {
     const fresh = copying.filter((id) => !target.imageIds.includes(id))
+    const move = moveMode && !limited
     setCopying(null)
     stopSelecting()
+    if (move) {
+      const before = moveToAlbum(album.id, target.id, copying)
+      if (fresh.length) announceUpload(target, fresh.map((id) => images[id]))
+      setViewing(null)
+      setNotice({
+        text: `Moved ${countText(copying.map((id) => images[id]))} to ${target.name}`,
+        undo: () => {
+          putBack(before)
+          setNotice({ text: 'Moved back' })
+        },
+      })
+      return
+    }
     if (!fresh.length) {
       setNotice({ text: `Already in ${target.name}` })
       return
@@ -819,7 +836,7 @@ export default function Album({ albumId }) {
                   {/* Moving only makes sense with the whole album in view. */}
                   <button className="tool" disabled={!picked.length || picked.length === ids.length || onlyLiked} onClick={() => setMoving(true)}>
                     <Icon name="move" />
-                    <span>Move</span>
+                    <span>Reorder</span>
                   </button>
                   <button className="tool danger" disabled={!picked.length} onClick={() => remove(picked)}>
                     <Icon name="trash" />
@@ -1120,7 +1137,7 @@ export default function Album({ albumId }) {
       )}
 
       <PhotoShareSheet
-        key={sharingPhoto ? viewing : 'closed'}
+        key={sharingPhoto ? viewing : 'share-closed'}
         open={sharingPhoto && !!viewed}
         onClose={() => setSharingPhoto(false)}
         image={viewed}
@@ -1142,10 +1159,20 @@ export default function Album({ albumId }) {
       <AlbumChooser
         open={!!copying}
         onClose={() => setCopying(null)}
-        title={copying?.length > 1 ? `Add ${copying.length} to another album` : 'Add to another album'}
+        title={`${moveMode && !limited ? 'Move' : 'Copy'} ${copying?.length > 1 ? `${copying.length} ` : ''}to another album`}
         note={secret ? 'From a secret album: whoever can see the album you pick will see these too.' : null}
         exclude={album.id}
         onPick={copyTo}
+        extra={!limited && (
+          <div className="segmented move-copy" role="radiogroup" aria-label="Move or copy">
+            <button role="radio" aria-checked={moveMode} className={moveMode ? 'on' : ''} onClick={() => setMoveMode(true)}>
+              Move <small>out of {album.name}</small>
+            </button>
+            <button role="radio" aria-checked={!moveMode} className={!moveMode ? 'on' : ''} onClick={() => setMoveMode(false)}>
+              Copy <small>keep here too</small>
+            </button>
+          </div>
+        )}
       />
 
       <Sheet open={seenList && seenHere.length > 0} onClose={() => setSeenList(false)} title="Seen by" modal>
@@ -1187,7 +1214,7 @@ export default function Album({ albumId }) {
       )}
 
       <PlaceSheet
-        key={placing ? (Array.isArray(placing) ? placing.join() : 'album') : 'closed'}
+        key={placing ? (Array.isArray(placing) ? placing.join() : 'album') : 'place-closed'}
         open={!!placing}
         album={album}
         photoIds={Array.isArray(placing) ? placing : null}
@@ -1198,7 +1225,7 @@ export default function Album({ albumId }) {
         }}
       />
 
-      <TagSheet key={tagging ? viewing : 'closed'} open={tagging && !!viewed} album={album} photoId={viewing} onClose={() => setTagging(false)} />
+      <TagSheet key={tagging ? viewing : 'tag-closed'} open={tagging && !!viewed} album={album} photoId={viewing} onClose={() => setTagging(false)} />
 
       <Sheet open={sorting} onClose={() => setSorting(false)} title="Sort this album" modal>
         <p className="hint">The order is kept, and it is the order people see on the shared page.</p>

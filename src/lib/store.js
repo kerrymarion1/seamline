@@ -368,6 +368,34 @@ export const addToAlbum = (id, imageIds, by = '') =>
     }
   })
 
+// Move photos from one album to another, keeping what was noted about each
+// (who added it, tags, place, caption, framing, crop stamp) with it. Photos
+// already in the other album just leave this one. Returns the two albums as
+// they were, for undoing (see putBack).
+const PER_PHOTO = ['addedBy', 'tags', 'spots', 'captions', 'edited', 'focus']
+export function moveToAlbum(fromId, toId, imageIds) {
+  const before = state.albums.filter((a) => a.id === fromId || a.id === toId)
+  const from = state.albums.find((a) => a.id === fromId)
+  if (!from) return before
+  const moving = from.imageIds.filter((i) => imageIds.includes(i))
+  patchAlbum(toId, (a) => {
+    const fresh = moving.filter((i) => !a.imageIds.includes(i))
+    const next = { ...a, imageIds: [...fresh, ...a.imageIds], ...(fresh.length ? { uploadedAt: Date.now() } : null) }
+    for (const key of PER_PHOTO) {
+      const carried = Object.fromEntries(fresh.filter((i) => from[key]?.[i] !== undefined).map((i) => [i, from[key][i]]))
+      if (Object.keys(carried).length) next[key] = { ...a[key], ...carried }
+    }
+    return next
+  })
+  removeFromAlbum(fromId, moving)
+  if (from.cover && moving.includes(from.cover)) patchAlbum(fromId, ({ cover: _, ...rest }) => rest)
+  return before
+}
+
+// Put albums back as they were (from moveToAlbum), stamped as changed now so
+// the other devices take them too.
+export const putBack = (albums) => albums.forEach((was) => patchAlbum(was.id, () => was))
+
 export const removeFromAlbum = (id, imageIds) =>
   patchAlbum(id, (a) => {
     const next = { ...a, imageIds: a.imageIds.filter((i) => !imageIds.includes(i)) }
