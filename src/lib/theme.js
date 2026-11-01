@@ -55,6 +55,14 @@ export const SEASONS = [
   },
 ]
 
+// Everyone goes back to Auto once, on 2026-10-30, whatever they had picked;
+// a season chosen after that stays chosen.
+const SEASON_RESET = 'seamline:seasonAuto1'
+if (!localStorage.getItem(SEASON_RESET)) {
+  localStorage.setItem(SEASON_KEY, 'auto')
+  localStorage.setItem(SEASON_RESET, '1')
+}
+
 let season = localStorage.getItem(SEASON_KEY) ?? 'auto'
 if (!SEASONS.some((s) => s.id === season)) season = 'auto'
 
