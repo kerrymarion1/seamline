@@ -1,5 +1,3 @@
-import { zipSync } from 'fflate'
-
 const slug = (name) =>
   name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'collage'
 
@@ -40,6 +38,8 @@ function download(blob, filename) {
 export const downloadFile = (file) => download(file, file.name)
 
 export async function downloadZip(files, name) {
+  // The zip maker is only fetched when something is saved.
+  const { zipSync } = await import('fflate')
   const entries = {}
   for (const f of files) entries[f.name] = new Uint8Array(await f.arrayBuffer())
   // JPEGs are already compressed; store them as-is.

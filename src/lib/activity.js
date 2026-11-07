@@ -1,5 +1,11 @@
-// What visitors have done since the app was last opened on this device: new
-// hearts, new comments and new views on the owner's links. The counts from the
+import { userName } from './cloud'
+import { countText } from './images'
+import { addedAt, uploaderName } from './store'
+import { activeSeason } from './theme'
+
+// What others have done since the app was last opened on this device: photos
+// and videos other people added to albums, photos visitors added through
+// links, and new hearts, comments and views on the owner's links. The counts from the
 // last visit are kept on the device; this visit compares against them all
 // the way through, and leaves today's counts behind for next time.
 const KEY = 'seamline:seen'
@@ -43,10 +49,49 @@ export function albumOfShare(share, albums) {
 // News since the last visit, as a list of { key, text, albumId } (albumId is
 // where tapping it should go). Empty on the very first visit, or when nothing
 // has happened.
-export function newsSince({ hearts, comments, shares }, albums) {
+export function newsSince({ session, hearts, comments, shares }, albums, images) {
   if (!before) return []
   const news = []
   const byShare = new Map(shares.map((s) => [s.id, s]))
+
+  // Uploads first: who added what to which album. Entries from before people
+  // were told apart carry only a name.
+  const myId = session?.user.id
+  const myName = userName(session)
+  const mine = (by) => (typeof by === 'string' ? by === myName : by?.id === myId)
+  const groups = []
+  for (const album of albums) {
+    const byWho = new Map()
+    for (const [id, by] of Object.entries(album.addedBy ?? {})) {
+      if (mine(by) || addedAt(id) <= before.at || !album.imageIds.includes(id)) continue
+      const who = uploaderName(by).split(' ')[0] || 'Someone'
+      byWho.set(who, [...(byWho.get(who) ?? []), images[id] ?? {}])
+    }
+    for (const [who, items] of byWho) groups.push({ album, who, items })
+  }
+  // Photos added through a link that are still waiting to be kept.
+  for (const share of shares) {
+    const album = albumOfShare(share, albums)
+    if (!album) continue
+    const byWho = new Map()
+    for (const it of share.items ?? []) {
+      if (!it.visitor || !(Date.parse(it.added) > before.at) || (it.by && mine(it.by))) continue
+      const who = uploaderName(it.by).split(' ')[0] || 'A visitor'
+      byWho.set(who, [...(byWho.get(who) ?? []), it])
+    }
+    for (const [who, items] of byWho) groups.push({ album, who, items })
+  }
+  groups.sort((a, b) => b.items.length - a.items.length)
+  if (groups.length <= 2) {
+    for (const g of groups) {
+      news.push({ key: `added:${g.album.id}:${g.who}`, text: `${g.who} added ${countText(g.items)} to ${g.album.name}`, albumId: g.album.id })
+    }
+  } else {
+    const all = groups.flatMap((g) => g.items)
+    const touched = new Set(groups.map((g) => g.album.id)).size
+    const where = touched === 1 ? groups[0].album.name : `${touched} albums`
+    news.push({ key: 'added', text: `${countText(all)} added to ${where}`, albumId: groups[0].album.id })
+  }
 
   // Hearts: compared per link, so a link made since the last visit counts in full.
   let liked = 0
@@ -86,8 +131,11 @@ export function newsSince({ hearts, comments, shares }, albums) {
   return news
 }
 
-// "Good morning", "Good afternoon", "Good evening", or late at night just "Hello".
+// "Good morning", "Good afternoon", "Good evening", or late at night just
+// "Hello"; in a season, its own ("Happy Halloween", "Merry Christmas").
 export function greeting(date = new Date()) {
+  const season = activeSeason(date)
+  if (season) return season.greeting
   const h = date.getHours()
   if (h >= 5 && h < 12) return 'Good morning'
   if (h >= 12 && h < 17) return 'Good afternoon'

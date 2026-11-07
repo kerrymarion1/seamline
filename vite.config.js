@@ -15,15 +15,16 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon.svg', 'icons/apple-touch-icon.png'],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2,mp3}'],
         navigateFallback: '/index.html',
-        // Receives photos shared in from other apps on Android.
-        importScripts: ['share-target.js'],
+        // Receives photos shared in from other apps on Android, and shows
+        // notifications when someone adds photos.
+        importScripts: ['share-target.js', 'push.js'],
       },
       manifest: {
-        name: 'Seamline',
-        short_name: 'Seamline',
-        description: 'Photo albums and single-page collages.',
+        name: 'Hugpix',
+        short_name: 'Hugpix',
+        description: 'Photo albums, shared with family and friends.',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',

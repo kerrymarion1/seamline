@@ -1,5 +1,6 @@
 // Zooming into the photo in view in the full-size viewer: pinch with two
-// fingers, double-tap (or double-click) to jump in and out, drag to move
+// fingers, double-tap (or double-click) to jump in and out (or, given
+// `onDoubleTap`, to do that instead while the photo isn't zoomed), drag to move
 // around once zoomed, and the mouse wheel on a computer. While a photo is
 // zoomed the strip stops swiping to the next one, so dragging moves the photo.
 const MAX = 5
@@ -9,8 +10,10 @@ const DOUBLE_TAP_MS = 300
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const apart = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
 
-// `strip` is the viewer's scrolling row of slides. Returns { reset, detach }.
-export function attachZoom(strip) {
+// `strip` is the viewer's scrolling row of slides. `onDoubleTap(px, py)`, when
+// given, has a double-tap on an unzoomed photo (hearting it, say); once
+// zoomed in, a double-tap still zooms back out. Returns { reset, detach }.
+export function attachZoom(strip, { onDoubleTap = null } = {}) {
   let scale = 1
   let x = 0
   let y = 0
@@ -62,7 +65,11 @@ export function attachZoom(strip) {
     paint(smooth)
   }
 
-  const toggle = (px, py) => (scale > 1 ? zoomAt(1, px, py, true) : zoomAt(DOUBLE_TAP_ZOOM, px, py, true))
+  // `onDoubleTap` returning false hands the double-tap back, to zoom as usual.
+  const toggle = (px, py) => {
+    if (scale > 1) zoomAt(1, px, py, true)
+    else if (!onDoubleTap || onDoubleTap(px, py) === false) zoomAt(DOUBLE_TAP_ZOOM, px, py, true)
+  }
 
   // ----- fingers -----
   function onTouchStart(e) {
