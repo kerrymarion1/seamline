@@ -357,6 +357,12 @@ export function deleteAlbum(id) {
 // when it says (`spots`, for the map).
 export const addToAlbum = (id, imageIds, by = '') =>
   patchAlbum(id, (a) => {
+    // Asked for photos here (album.asked): adding some answers it.
+    const askedMe = typeof by === 'object' && by?.id && a.asked?.[by.id]
+    if (askedMe) {
+      const { [by.id]: _, ...rest } = a.asked
+      a = { ...a, asked: rest }
+    }
     const fresh = imageIds.filter((i) => !a.imageIds.includes(i))
     const addedBy = by ? { ...a.addedBy, ...Object.fromEntries(fresh.map((i) => [i, by])) } : a.addedBy
     const found = fresh.filter((i) => state.images[i]?.gps).map((i) => [i, state.images[i].gps])
@@ -496,6 +502,18 @@ export const setCoverFocus = (id, imageId, at) =>
     if (at) focus[imageId] = at
     else delete focus[imageId]
     return { ...a, focus }
+  })
+
+// People asked to add their photos to an album: { [accountId]: { by, at } },
+// `by` the asker's id. Each one shows to them until they add something.
+export const setAsked = (id, people, by) =>
+  patchAlbum(id, (a) => ({ ...a, asked: { ...a.asked, ...Object.fromEntries(people.map((p) => [p, { by, at: Date.now() }])) } }))
+
+// Answering "not now" to being asked for photos.
+export const clearAsked = (id, person) =>
+  patchAlbum(id, (a) => {
+    const { [person]: _, ...rest } = a.asked ?? {}
+    return { ...a, asked: rest }
   })
 
 // Where an album's photos were taken: { name, lat, lng }, or null for nowhere.

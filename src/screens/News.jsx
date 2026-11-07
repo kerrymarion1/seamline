@@ -74,7 +74,12 @@ export default function News() {
                     {item.kind === 'added' && <>added {countText(item.photos.map((id) => images[id] ?? {}))} to <b><AlbumName album={item.album} /></b></>}
                     {item.kind === 'album' && <>made a new album, <b><AlbumName album={item.album} /></b></>}
                     {item.kind === 'shared' && <>shared an album with you, <b><AlbumName album={item.album} /></b></>}
-                    {item.kind === 'reaction' && <>reacted <Emoji emoji={item.emoji} size={18} /> to your photo in <b><AlbumName album={item.album} /></b></>}
+                    {item.kind === 'reaction' && (
+                      <>
+                        reacted {(item.emojis ?? [item.emoji]).slice(0, 3).map((e) => <Emoji key={e} emoji={e} size={18} />)}{' '}
+                        to {item.photos.length > 1 ? `${item.photos.length} of your photos` : 'your photo'} in <b><AlbumName album={item.album} /></b>
+                      </>
+                    )}
                     {item.kind === 'comment' && <>commented in <b><AlbumName album={item.album} /></b>: “{item.text}”</>}
                   </span>
                   <small>{ago(item.at)}</small>

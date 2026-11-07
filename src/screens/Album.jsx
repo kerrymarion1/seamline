@@ -7,14 +7,14 @@ import Camera from '../components/Camera'
 import CoverFramer from '../components/CoverFramer'
 import CropEditor from '../components/CropEditor'
 import Eyes from '../components/Eyes'
-import { GreetingPicker, greetingSeason, isGreeting, markPlayed, playGreeting, unplayed } from '../components/Greetings'
+import { GreetingPicker, greetingLabel, greetingSeason, isGreeting, markPlayed, playGreeting, unplayed } from '../components/Greetings'
 import LinkSheet from '../components/LinkSheet'
 import Linkify from '../components/Linkify'
 import PeoplePicker from '../components/PeoplePicker'
 import PhotoShareSheet from '../components/PhotoShareSheet'
 import PhotoPager from '../components/PhotoPager'
 import PlaceSheet from '../components/PlaceSheet'
-import { ReactionChips, ReactionRow } from '../components/Reactions'
+import { Emoji, ReactionChips, ReactionRow } from '../components/Reactions'
 import ReactionPlay from '../components/ReactionPlay'
 import {
   adoptVisitorItems, canLink, deleteComment, fetchMedia, findShare, me, progressText, publicUrl, refreshComments,
@@ -24,19 +24,19 @@ import Sheet from '../components/Sheet'
 import TagSheet from '../components/TagSheet'
 import { findDuplicates } from '../lib/dupes'
 import { fetchSeen, markSeen, seenTime } from '../lib/seen'
-import { celebrateAdded, reactionFxOn } from '../lib/feedback'
+import { buzz, celebrateAdded, reactionFxOn } from '../lib/feedback'
 import { editPhoto } from '../lib/edit'
 import { clock, countText, importFile, importMedia, isVideo } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
 import { adderOf, personIn, usePeople } from '../lib/people'
 import { nameOf as nameOfSpot, photoPlace, spotNames } from '../lib/places'
 import { announceShared, announceUpload } from '../lib/push'
-import { addPhotoComment, fetchAlbumSocial, removePhotoComment, setReaction, watchAlbumSocial } from '../lib/social'
+import { addPhotoComment, askForPhotos, fetchAlbumSocial, removePhotoComment, setCommentReaction, setReaction, watchAlbumSocial } from '../lib/social'
 import { syncNow } from '../lib/sync'
 import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
-  addedAt, addImages, addToAlbum, deleteAlbum, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumCover, setAlbumNote, setAlbumPeople,
+  addedAt, addImages, addToAlbum, clearAsked, deleteAlbum, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumCover, setAlbumNote, setAlbumPeople, setAsked,
   setCaption, setCoverFocus, getState, moveToAlbum, putBack, setPhotoSpots, sortAlbum, useAlbum, useStore,
 } from '../lib/store'
 
@@ -92,8 +92,13 @@ export default function Album({ albumId }) {
   const [chosen, setChosen] = useState([])
 
   // Hearts and comments from the family, live while the album is open.
-  const [social, setSocial] = useState({ hearts: [], comments: [] })
+  const [social, setSocial] = useState({ hearts: [], comments: [], commentReactions: [] })
   const [saying, setSaying] = useState('')
+  const [replyTo, setReplyTo] = useState(null) // the comment being answered: { id, user_id }
+  const [commentPicking, setCommentPicking] = useState(null) // the comment whose reactions are out
+  const [burst, setBurst] = useState(null) // { x, y, key }: the heart a double-tap gave
+  const [asking, setAsking] = useState(false) // choosing people to ask for photos
+  const [askChosen, setAskChosen] = useState([])
   // A comment or the caption being written, for one photo: { kind, photo }.
   const [writing, setWriting] = useState(null)
   const writingHere = writing?.photo === viewing ? writing.kind : null
@@ -127,6 +132,7 @@ export default function Album({ albumId }) {
   // photo has been open for a second.
   const [views, setViews] = useState([]) // [{ photo, user_id, first_seen, last_seen }]
   const [seenList, setSeenList] = useState(false)
+  const [reactorsOpen, setReactorsOpen] = useState(false) // who reacted to the photo being looked at
   useEffect(() => {
     if (!features.seen) return
     let live = true
@@ -298,6 +304,70 @@ export default function Album({ albumId }) {
     ? () => (greetSeason ? setGreeting(true) : playGreeting(reactedHere.filter((h) => isGreeting(h.emoji)).at(-1)?.emoji))
     : null
   const firstOf = (id) => (id === myId ? 'You' : (personIn(people, id)?.name ?? 'Someone').split(' ')[0])
+
+  // Comments as threads: each one, then the replies to it (a reply to a reply
+  // hangs under the first). Replies need the "threads" switch.
+  const threads = !!features.threads
+  const notesHere = famNotes[viewing] ?? []
+  const rootOf = (c) => {
+    let at = c
+    for (let i = 0; at?.reply_to && i < 20; i++) at = notesHere.find((x) => x.id === at.reply_to) ?? null
+    return at ?? c
+  }
+  const thread = notesHere.filter((c) => !c.reply_to || rootOf(c) === c).flatMap((top) => [
+    { c: top, reply: false },
+    ...notesHere.filter((c) => c !== top && c.reply_to && rootOf(c).id === top.id).map((c) => ({ c, reply: true })),
+  ])
+  const startReply = (c) => {
+    const root = rootOf(c)
+    setReplyTo({ id: root.id, user_id: c.user_id })
+    setWriting({ kind: 'comment', photo: viewing })
+    if (c.user_id !== myId) setSaying(`@${firstOf(c.user_id)} `)
+  }
+  // A comment's text with @names picked out and links made tappable.
+  const firstNames = new Set(people.map((p) => (p.name ?? '').split(' ')[0].toLowerCase()).filter(Boolean))
+  const withMentions = (text) => text.split(/(@[\p{L}\p{N}_-]+)/u).map((part, i) =>
+    part.startsWith('@') && firstNames.has(part.slice(1).toLowerCase())
+      ? <span key={i} className="mention">{part}</span>
+      : <Linkify key={i} text={part} />)
+  // Suggestions while an @name is being typed: people whose first name starts so.
+  const typingMention = writingHere === 'comment' ? saying.match(/@([\p{L}\p{N}_-]*)$/u) : null
+  const mentionFits = typingMention
+    ? people.filter((p) => p.id !== myId && (p.name ?? '').toLowerCase().startsWith(typingMention[1].toLowerCase())).slice(0, 5)
+    : []
+  const mention = (p) => setSaying(saying.replace(/@([\p{L}\p{N}_-]*)$/u, `@${(p.name ?? '').split(' ')[0]} `))
+  // A quick reaction to a comment: shown at once, then saved.
+  const reactionsOn = (c) => (social.commentReactions ?? []).filter((r) => r.comment === c.id)
+  const reactToComment = (c, emoji) => {
+    setCommentPicking(null)
+    setSocial((s) => ({
+      ...s,
+      commentReactions: [...(s.commentReactions ?? []).filter((r) => !(r.comment === c.id && r.user_id === myId)), ...(emoji ? [{ comment: c.id, user_id: myId, emoji }] : [])],
+    }))
+    setCommentReaction(album, c, emoji).catch((e) => {
+      setNotice({ text: e.message })
+      fetchAlbumSocial(album.id).then(setSocial).catch(() => {})
+    })
+  }
+  // Double-tap the photo: a heart where the finger was, and ❤️ given unless already reacted.
+  const heartByTap = (x, y) => {
+    if (!features.social || !myId) return false
+    setBurst({ x, y, key: Date.now() })
+    buzz([12])
+    if (!myReaction) react('❤️')
+  }
+  // Asked to add photos here, and by whom.
+  const askedMe = myId && album.asked?.[myId]
+  const askPeople = secret ? people.filter((p) => (album.members ?? []).includes(p.id)) : people
+  const sendAsk = () => {
+    const to = askChosen.filter((id) => id !== myId)
+    setAsking(false)
+    setAskChosen([])
+    if (!to.length) return
+    setAsked(album.id, to, myId)
+    askForPhotos(album, to)
+    setNotice({ text: `Asked ${to.map((id) => nameOf(id).split(' ')[0]).join(', ')} for photos` })
+  }
   const react = (emoji) => {
     const photo = viewing
     setPicking(false)
@@ -310,13 +380,20 @@ export default function Album({ albumId }) {
       fetchAlbumSocial(album.id).then(setSocial).catch(() => {})
     })
   }
+  // People named with @ in a comment: by first name, as the suggestions write them.
+  const mentionsIn = (text) => {
+    const names = new Set([...text.matchAll(/@([\p{L}\p{N}_-]+)/gu)].map((m) => m[1].toLowerCase()))
+    return people.filter((p) => p.id !== myId && names.has((p.name ?? '').split(' ')[0].toLowerCase())).map((p) => p.id)
+  }
   const postComment = async (e) => {
     e.preventDefault()
     const text = saying
     if (!text.trim()) return
     setSaying('')
+    const answering = replyTo
+    setReplyTo(null)
     try {
-      const added = await addPhotoComment(album, viewing, text)
+      const added = await addPhotoComment(album, viewing, text, { replyTo: answering?.id ?? null, mentioned: mentionsIn(text) })
       if (added) setSocial((s) => (s.comments.some((c) => c.id === added.id) ? s : { ...s, comments: [...s.comments, added] }))
     } catch (err) {
       setSaying(text)
@@ -661,6 +738,16 @@ export default function Album({ albumId }) {
         </button>
       )}
 
+      {/* Asked for photos: until something is added, a way to answer. */}
+      {askedMe && !selecting && (
+        <div className="asked-bar">
+          <Avatar person={personIn(people, askedMe.by) ?? { id: askedMe.by, name: nameOf(askedMe.by) }} size={26} zoom={false} />
+          <span><b>{nameOf(askedMe.by).split(' ')[0]}</b> would love your photos for this album</span>
+          <button className="pill-btn" onClick={() => fileInput.current.click()}>Add</button>
+          <button className="icon-btn" onClick={() => clearAsked(album.id, myId)} aria-label="Not now"><Icon name="close" size={16} /></button>
+        </div>
+      )}
+
       {ids.length === 0 && added.length === 0 ? (
         <div className="empty">
           <h2>An empty pool</h2>
@@ -711,6 +798,11 @@ export default function Album({ albumId }) {
                   onClick={() => (limited ? navigate('/map') : setPlacing('album'))}
                 >
                   <Icon name="pin" size={15} /> <span>{album.place?.name ?? 'Add place'}</span>
+                </button>
+              )}
+              {!limited && features.push && (
+                <button className="chip small ask-btn" onClick={() => setAsking(true)}>
+                  <Icon name="people" size={15} /> Ask for photos
                 </button>
               )}
               {!limited && ids.length > 1 && (
@@ -885,7 +977,13 @@ export default function Album({ albumId }) {
             slides={shown.map((id) => ({ key: id, src: images[id].url, poster: images[id].previewUrl, video: isVideo(images[id]) }))}
             index={shown.indexOf(viewing)}
             onIndex={(i) => setViewing(shown[i])}
+            onDoubleTap={heartByTap}
           >
+            {burst && (
+              <span key={burst.key} className="tap-heart" style={{ left: burst.x, top: burst.y }} onAnimationEnd={() => setBurst(null)} aria-hidden="true">
+                <Emoji emoji="❤️" size={96} />
+              </span>
+            )}
             {/* The reactions it has had play over it as it opens; new ones as they arrive. */}
             {features.social && (
               <ReactionPlay
@@ -912,6 +1010,15 @@ export default function Album({ albumId }) {
                 )}
                 <div className="react-line">
                   <ReactionChips reactions={reactedHere} me={myId} onPick={react} />
+                  {/* Who reacted: their faces; a tap lists each with what they chose. */}
+                  {reactedHere.length > 0 && (
+                    <button className="reacted-by" onClick={() => setReactorsOpen(true)} aria-label="Who reacted">
+                      {reactedHere.slice(0, 3).map((h) => (
+                        <Avatar key={h.user_id} person={personIn(people, h.user_id) ?? { id: h.user_id, name: nameOf(h.user_id) }} size={22} zoom={false} />
+                      ))}
+                      {reactedHere.length > 3 && <small>+{reactedHere.length - 3}</small>}
+                    </button>
+                  )}
                   <button className={`chip small react-btn ${picking ? 'on' : ''}`} onClick={() => setPicking((p) => !p)} aria-expanded={picking}>
                     {picking ? <Icon name="close" size={14} /> : <Icon name="plus" size={14} />} {picking ? 'Close' : 'React'}
                   </button>
@@ -966,12 +1073,31 @@ export default function Album({ albumId }) {
                 <button className="caption" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>{captions[viewing]}</button>
               )
             )}
-            {famNotes[viewing]?.length > 0 && (
+            {/* The family's comments, as threads: each with Reply, and reactions of its own. */}
+            {thread.length > 0 && (
               <ul className="comment-list family">
-                {famNotes[viewing].map((c) => (
-                  <li key={c.id}>
-                    <Avatar person={personIn(people, c.user_id)} size={26} />
-                    <p><b>{firstOf(c.user_id)}</b> <Linkify text={c.body} /></p>
+                {thread.map(({ c, reply }) => (
+                  <li key={c.id} className={reply ? 'reply' : undefined}>
+                    <Avatar person={personIn(people, c.user_id)} size={reply ? 22 : 26} />
+                    <div className="comment-main">
+                      <p><b>{firstOf(c.user_id)}</b> {withMentions(c.body)}</p>
+                      {threads && (
+                        <div className="comment-actions">
+                          <button onClick={() => startReply(c)}>Reply</button>
+                          <ReactionChips reactions={reactionsOn(c)} me={myId} onPick={(emoji) => reactToComment(c, emoji)} />
+                          <button
+                            className={`comment-react ${commentPicking === c.id ? 'on' : ''}`}
+                            onClick={() => setCommentPicking((p) => (p === c.id ? null : c.id))}
+                            aria-label="React to this comment"
+                          >
+                            <Icon name="heart" size={13} />
+                          </button>
+                        </div>
+                      )}
+                      {commentPicking === c.id && (
+                        <ReactionRow reactions={reactionsOn(c)} me={myId} onPick={(emoji) => reactToComment(c, emoji)} compact more={!!features.moreReactions} pop />
+                      )}
+                    </div>
                     {(c.user_id === myId || admin) && (
                       <button className="icon-btn" onClick={() => dropComment(c)} aria-label="Delete this comment">
                         <Icon name="close" size={16} />
@@ -984,10 +1110,25 @@ export default function Album({ albumId }) {
             {/* Writing a comment or a caption: small buttons until tapped, so the photo keeps the room. */}
             {writingHere === 'comment' ? (
               <form className="comment-form" onSubmit={postComment}>
+                {replyTo && (
+                  <p className="replying">
+                    Replying to <b>{firstOf(replyTo.user_id)}</b>
+                    <button type="button" onClick={() => setReplyTo(null)} aria-label="Not a reply"><Icon name="close" size={14} /></button>
+                  </p>
+                )}
+                {mentionFits.length > 0 && (
+                  <div className="mention-fits">
+                    {mentionFits.map((p) => (
+                      <button key={p.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => mention(p)}>
+                        <Avatar person={p} size={18} zoom={false} /> {p.name.split(' ')[0]}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <input
                   className="caption-input" value={saying} onChange={(e) => setSaying(e.target.value)}
-                  onBlur={() => !saying.trim() && setWriting(null)}
-                  placeholder="Add a comment" maxLength={1000} enterKeyHint="send" aria-label="Comment" autoFocus
+                  onBlur={() => !saying.trim() && !replyTo && setWriting(null)}
+                  placeholder={replyTo ? 'Write a reply' : 'Add a comment · @ to mention someone'} maxLength={1000} enterKeyHint="send" aria-label="Comment" autoFocus
                 />
               </form>
             ) : writingHere === 'caption' ? (
@@ -1174,6 +1315,37 @@ export default function Album({ albumId }) {
           </div>
         )}
       />
+
+      {/* Ask for photos: pick people; they hear about it, and the album asks them too. */}
+      <Sheet open={asking} onClose={() => setAsking(false)} title="Ask for photos" modal>
+        <p className="hint">They get a notification, and {album.name} shows them a way to add theirs until they do.</p>
+        <PeoplePicker people={askPeople.filter((p) => p.id !== myId)} value={askChosen} onChange={setAskChosen} placeholder="Who should add photos? Type a name" />
+        {secret && <p className="note">This album is secret: only its people can be asked.</p>}
+        <button className="primary block" disabled={!askChosen.length} onClick={sendAsk}>
+          {askChosen.length ? `Ask ${askChosen.map((id) => nameOf(id).split(' ')[0]).join(', ')}` : 'Choose someone'}
+        </button>
+      </Sheet>
+
+      {/* Who reacted to the photo being looked at, and with what, the latest first. */}
+      <Sheet open={reactorsOpen && !!viewed && (reactedHere.length > 0 || hearts.byItem[viewing] > 0)} onClose={() => setReactorsOpen(false)} title="Reactions" modal>
+        <ul className="seen-list">
+          {[...reactedHere].sort((a, b) => Date.parse(b.created_at ?? 0) - Date.parse(a.created_at ?? 0)).map((h) => (
+            <li key={h.user_id}>
+              <Avatar person={personIn(people, h.user_id) ?? { id: h.user_id, name: nameOf(h.user_id) }} size={36} />
+              <span className="seen-who">
+                <b>{h.user_id === myId ? 'You' : nameOf(h.user_id)}</b>
+                <small>{isGreeting(h.emoji) ? greetingLabel(h.emoji) : 'Reacted'}{h.created_at ? ` ${seenTime(h.created_at)}` : ''}</small>
+              </span>
+              <span className="reactor-emoji"><Emoji emoji={h.emoji} size={28} /></span>
+            </li>
+          ))}
+        </ul>
+        {hearts.byItem[viewing] > 0 && (
+          <p className="note">
+            Also {hearts.byItem[viewing]} heart{hearts.byItem[viewing] === 1 ? '' : 's'} from people looking through the shared link, who aren't named.
+          </p>
+        )}
+      </Sheet>
 
       <Sheet open={seenList && seenHere.length > 0} onClose={() => setSeenList(false)} title="Seen by" modal>
         <ul className="seen-list">

@@ -7,13 +7,26 @@ import Icon from './Icon'
 // The photo in view can be zoomed: pinch, double-tap, or the mouse wheel.
 // slides: [{ key, src, alt }], or for a video { key, src, poster, video: true }
 // `children` are laid over the photo (the reactions playing, say).
-export default function PhotoPager({ slides, index, onIndex, children }) {
+// `onDoubleTap(x, y)` (the point, within the viewer) has a double-tap on the
+// photo; pinching still zooms.
+export default function PhotoPager({ slides, index, onIndex, onDoubleTap, children }) {
   const strip = useRef(null)
   const reported = useRef(null) // the index this component last announced itself
   const zoom = useRef(null)
 
+  // Read through a ref, so the latest handler runs without re-attaching.
+  const tapped = useRef(onDoubleTap)
+  tapped.current = onDoubleTap
   useEffect(() => {
-    zoom.current = attachZoom(strip.current)
+    const el = strip.current
+    zoom.current = attachZoom(el, {
+      // Without a handler (the shared page), a double-tap zooms as before.
+      onDoubleTap: (px, py) => {
+        if (!tapped.current) return false
+        const r = el.getBoundingClientRect()
+        tapped.current(px - r.left, py - r.top)
+      },
+    })
     return () => zoom.current.detach()
   }, [])
   // Moving to another photo puts the last one back to its full view.

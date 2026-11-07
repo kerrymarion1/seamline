@@ -113,15 +113,25 @@ export function buildFeed({ albums, me, myName, social }) {
     for (const [key, g] of groups) items.push({ key: `added:${album.id}:${key}`, kind: 'added', album, ...g })
   }
 
-  // Reactions to photos I added.
+  // Reactions to photos I added: one item per person, album and day, so a
+  // busy evening reads "Regine reacted to 5 of your photos" rather than five
+  // lines. `emojis` are the different ones given, `emoji` the latest.
+  const reacted = new Map()
   for (const r of social.reactions) {
     const album = byId.get(r.album)
     if (!album || r.user_id === me || !mine(album.addedBy?.[r.photo])) continue
-    items.push({
-      key: `reaction:${r.album}:${r.photo}:${r.user_id}`, kind: 'reaction', at: Date.parse(r.created_at), who: r.user_id, album,
-      photos: [r.photo], emoji: r.emoji,
-    })
+    const at = Date.parse(r.created_at)
+    const key = `reaction:${r.album}:${r.user_id}:${new Date(at).toDateString()}`
+    const group = reacted.get(key) ?? { key, kind: 'reaction', at: 0, who: r.user_id, album, photos: [], emojis: [] }
+    if (!group.photos.includes(r.photo)) group.photos.push(r.photo)
+    if (!group.emojis.includes(r.emoji)) group.emojis.push(r.emoji)
+    if (at > group.at) {
+      group.at = at
+      group.emoji = r.emoji
+    }
+    reacted.set(key, group)
   }
+  items.push(...reacted.values())
   // Comments by others, anywhere I can see.
   for (const c of social.comments) {
     const album = byId.get(c.album)

@@ -9,6 +9,10 @@
 //   { album, name, photo, reaction }     someone reacted to a photo in an album
 //     (older apps send heart: true for ❤️)
 //   { album, name, photo, comment }      someone commented on one
+//     (with replyTo: the comment it answers, and mentioned: [ids] named with @)
+//   { album, name, photo, commentId, commentReaction }
+//                                        someone reacted to a comment
+//   { album, name, ask: [ids] }          someone asked these people for photos
 //   { chat, text, photo, effect }        ...with a seasonal greeting (or only that)
 //   { chat, message, reaction }          someone reacted to a message
 //   { album, name, shared: [ids] }       someone shared a private album with
@@ -66,6 +70,7 @@ Deno.serve(async (req: Request) => {
     album?: string; name?: string; photos?: number; videos?: number; made?: boolean; members?: unknown[]; shared?: unknown[];
     chat?: string; text?: string; photo?: boolean | string; heart?: boolean; comment?: string; effect?: string;
     message?: string; reaction?: string; tagged?: unknown[]; video?: boolean;
+    replyTo?: string; mentioned?: unknown[]; commentId?: string; commentReaction?: string; ask?: unknown[];
   };
   try {
     body = await req.json();
@@ -147,6 +152,67 @@ Deno.serve(async (req: Request) => {
     return reply({ ok: true });
   }
 
+  // An album the caller can see, or null (with the reply to send instead).
+  const albumFor = async (albumId: string) => {
+    const { data: doc } = await admin.from("seamline_docs").select("data")
+      .eq("library", library).eq("kind", "album").eq("id", albumId).maybeSingle();
+    const data = doc?.data;
+    if (!data) return null;
+    const secret = data.secret === true;
+    const members: string[] = (data.members ?? []).map(String);
+    if (secret && !members.includes(auth.user.id)) {
+      const { data: isAdmin } = await caller.rpc("seamline_is_admin");
+      if (!isAdmin) return null;
+    }
+    return { data, secret, members };
+  };
+
+  // A reaction to a comment: only whoever wrote the comment hears.
+  if (typeof body.commentId === "string" && typeof body.commentReaction === "string") {
+    const albumId = String(body.album ?? "");
+    const emoji = body.commentReaction;
+    if (!/^[\w-]{1,64}$/.test(albumId) || !/^[0-9a-f-]{36}$/.test(body.commentId) || !REACTIONS.includes(emoji)) return reply({ error: "Bad request" }, 400);
+    const seen = await albumFor(albumId);
+    if (!seen) return reply({ error: "Not in that album." }, 403);
+    const { data: comment } = await admin.from("seamline_photo_comments").select("user_id, photo, body")
+      .eq("id", body.commentId).eq("library", library).eq("album", albumId).maybeSingle();
+    if (!comment || comment.user_id === auth.user.id || (seen.secret && !seen.members.includes(String(comment.user_id)))) return reply({ ok: true });
+    const what = String(comment.body).replace(/\s+/g, " ").trim().slice(0, 60);
+    await notifyLibrary(admin, library, {
+      title: String(seen.data.name ?? body.name ?? "An album").slice(0, 80),
+      body: `${firstName(auth.user)} ${emoji} your comment “${what}”`,
+      url: `/album/${albumId}?photo=${encodeURIComponent(String(comment.photo))}`,
+      tag: `comment-react-${body.commentId}`,
+    }, auth.user.id, [String(comment.user_id)]);
+    return reply({ ok: true });
+  }
+
+  // People asked to add their photos to an album: only they hear, and only
+  // if they are in this library (and in the album, when it is secret).
+  if (Array.isArray(body.ask)) {
+    const albumId = String(body.album ?? "");
+    if (!/^[\w-]{1,64}$/.test(albumId)) return reply({ error: "Bad request" }, 400);
+    const seen = await albumFor(albumId);
+    if (!seen) return reply({ error: "Not in that album." }, 403);
+    const asked = body.ask.map(String)
+      .filter((id) => /^[0-9a-f-]{36}$/.test(id) && id !== auth.user.id && (!seen.secret || seen.members.includes(id)))
+      .slice(0, 100);
+    if (asked.length) {
+      const { data: rows } = await admin.from("seamline_members").select("user_id").eq("library", library).in("user_id", asked);
+      const to = (rows ?? []).map((r) => String(r.user_id));
+      const name = String(seen.data.name ?? body.name ?? "an album").trim().slice(0, 80) || "an album";
+      if (to.length) {
+        await notifyLibrary(admin, library, {
+          title: name,
+          body: `${firstName(auth.user)} would love your photos for ${name}`,
+          url: `/album/${albumId}`,
+          tag: `ask-${albumId}`,
+        }, auth.user.id, to);
+      }
+    }
+    return reply({ ok: true });
+  }
+
   // A reaction or a comment on one photo in an album the caller can see.
   const asked = String(body.reaction ?? "");
   const reaction = REACTIONS.includes(asked) || GREETINGS[asked] ? asked : body.heart === true ? "❤️" : "";
@@ -173,18 +239,58 @@ Deno.serve(async (req: Request) => {
         .eq("library", library).eq("album", albumId).eq("photo", photo);
       for (const r of rows ?? []) to.add(String(r.user_id));
     }
+    // Said to someone: the author of the comment answered, and anyone named
+    // with @ who is in this library (and in the album, when it is secret).
+    const toThem = new Set<string>();
+    if (said && typeof body.replyTo === "string" && /^[0-9a-f-]{36}$/.test(body.replyTo)) {
+      const { data: parent } = await admin.from("seamline_photo_comments").select("user_id")
+        .eq("id", body.replyTo).eq("library", library).eq("album", albumId).maybeSingle();
+      if (parent) toThem.add(String(parent.user_id));
+    }
+    if (said && Array.isArray(body.mentioned)) {
+      const named = body.mentioned.map(String).filter((id) => /^[0-9a-f-]{36}$/.test(id)).slice(0, 20);
+      if (named.length) {
+        const { data: rows } = await admin.from("seamline_members").select("user_id").eq("library", library).in("user_id", named);
+        for (const r of rows ?? []) toThem.add(String(r.user_id));
+      }
+    }
+    toThem.delete(auth.user.id);
+    const direct = [...toThem].filter((id) => !secret || members.includes(id));
+    if (direct.length) {
+      await notifyLibrary(admin, library, {
+        title: String(data.name ?? body.name ?? "An album").slice(0, 80),
+        body: `${firstName(auth.user)} ${typeof body.replyTo === "string" ? "replied" : "mentioned you"}: ${said}`,
+        url: `/album/${albumId}?photo=${encodeURIComponent(photo)}`,
+        tag: `photo-${albumId}-${photo}`,
+      }, auth.user.id, direct);
+    }
+    for (const id of direct) to.delete(id);
     to.delete(auth.user.id);
     const only = [...to].filter((id) => !secret || members.includes(id));
+    // Several reactions in a row from one person come as one notification,
+    // counted: "Kerry loved 3 of your photos", each replacing the last.
+    let many = 0;
+    if (!said && only.length === 1) {
+      const since = new Date(Date.now() - 30 * 60000).toISOString();
+      const { data: recent } = await admin.from("seamline_reactions").select("photo")
+        .eq("library", library).eq("album", albumId).eq("user_id", auth.user.id).gte("created_at", since);
+      const added = data.addedBy ?? {};
+      many = new Set((recent ?? []).map((r) => String(r.photo)).filter((p) => {
+        const by = added[p];
+        return by && typeof by === "object" && String(by.id) === only[0];
+      })).size;
+    }
     if (only.length) {
       await notifyLibrary(admin, library, {
         title: String(data.name ?? body.name ?? "An album").slice(0, 80),
         body: said
           ? `${firstName(auth.user)}: ${said}`
+          : many > 1 ? `${firstName(auth.user)} reacted to ${many} of your photos`
           : reaction === "❤️" ? `${firstName(auth.user)} loved your photo`
           : GREETINGS[reaction] ? `${firstName(auth.user)} sent a ${GREETINGS[reaction]} for your photo`
           : `${firstName(auth.user)} reacted ${reaction} to your photo`,
         url: `/album/${albumId}?photo=${encodeURIComponent(photo)}`,
-        tag: `photo-${albumId}-${photo}`,
+        tag: said ? `photo-${albumId}-${photo}` : `react-${albumId}-${auth.user.id}`,
       }, auth.user.id, only);
     }
     return reply({ ok: true });

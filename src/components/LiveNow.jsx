@@ -26,7 +26,10 @@ function lineOf(item, images) {
     case 'added': return `added ${countText(item.photos.map((id) => images[id] ?? {}))} to ${album}`
     case 'album': return `made a new album, ${album}`
     case 'shared': return `shared ${album} with you`
-    case 'reaction': return EMOJI.test(item.emoji ?? '') ? `${item.emoji} your photo in ${album}` : `reacted to your photo in ${album}`
+    case 'reaction': {
+      const what = item.photos.length > 1 ? `${item.photos.length} of your photos` : 'your photo'
+      return EMOJI.test(item.emoji ?? '') ? `${item.emoji} ${what} in ${album}` : `reacted to ${what} in ${album}`
+    }
     case 'comment': return `commented in ${album}: “${item.text}”`
     default: return ''
   }
