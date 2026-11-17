@@ -4940,3 +4940,7 @@ span.bubble-face:empty { visibility: hidden; }
 .asked-bar .pill-btn { height: 30px; background: var(--accent); color: var(--on-accent); }
 .album-bar .ask-btn svg { fill: none; }
 @media (prefers-reduced-motion: reduce) { .tap-heart, .asked-bar, .mention-fits button { animation: none; } }
+
+/* Cloudflare's are-you-a-person check: takes no room unless it shows a tick box. */
+.turnstile { display: flex; justify-content: center; }
+.turnstile:empty { display: none; }

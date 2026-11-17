@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
+import Turnstile from '../components/Turnstile'
 import { peekInvite, requestPasswordReset, setNewPassword, signIn, signUp } from '../lib/cloud'
 
 // The sign-in and new-account form, and the new-password form after a reset
@@ -28,14 +29,61 @@ export function SignIn({ intro }) {
   const [error, setError] = useState(null)
   const [sent, setSent] = useState(null)
 
+  // Cloudflare's are-you-a-person check (components/Turnstile.jsx): its token,
+  // as it arrives. A press before it has come waits for it rather than
+  // failing, unless the check wants its box ticked; each token is good for
+  // one try, so a fresh one follows each.
+  const captcha = useRef(null)
+  const asking = useRef(false) // the "Verify you are human" box is showing
+  const waiting = useRef([])
+  const [captchaRound, setCaptchaRound] = useState(0)
+  const gotToken = (token) => {
+    captcha.current = token
+    if (token) waiting.current.splice(0).forEach((w) => w(token))
+  }
+  const gotAsk = (on) => {
+    asking.current = on
+    if (on) waiting.current.splice(0).forEach((w) => w('tick'))
+  }
+  // A token, 'tick' when the box wants ticking first, or null after 30 seconds of nothing.
+  const nextToken = () => {
+    if (captcha.current) return Promise.resolve(captcha.current)
+    if (asking.current) return Promise.resolve('tick')
+    return new Promise((resolve) => {
+      const giveUp = setTimeout(() => resolve(null), 30000)
+      waiting.current.push((token) => {
+        clearTimeout(giveUp)
+        resolve(token)
+      })
+    })
+  }
+  // A token for one try, or null (and the reason shown) when there isn't one yet.
+  const takeToken = async () => {
+    const token = await nextToken()
+    if (token === 'tick') {
+      setError('Tick "Verify you are human" above, then try again.')
+      return null
+    }
+    captcha.current = null
+    if (!token) setError("The are-you-a-person check didn't finish. Check the connection, reload the page and try again.")
+    return token
+  }
+  const tidy = (message) =>
+    /captcha/i.test(message) ? "The are-you-a-person check didn't go through. Try again in a moment." : message
+
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
     setError(null)
     setSent(null)
+    const token = await takeToken()
+    if (!token) {
+      setBusy(false)
+      return
+    }
     try {
       if (creating) {
-        const result = await signUp(name, email, password, code)
+        const result = await signUp(name, email, password, code, token)
         setCreating(false)
         if (result === 'exists') {
           setPassword('')
@@ -46,11 +94,12 @@ export function SignIn({ intro }) {
           setSent(`Almost there: open the link we sent to ${email.trim()} to confirm it, then sign in here.`)
         }
       } else {
-        await signIn(email, password, remember)
+        await signIn(email, password, remember, token)
       }
     } catch (err) {
-      setError(err.message)
+      setError(tidy(err.message))
     }
+    setCaptchaRound((n) => n + 1)
     setBusy(false)
   }
   const switchMode = () => {
@@ -64,12 +113,18 @@ export function SignIn({ intro }) {
     setSent(null)
     if (!email.trim()) return setError('Type your email above first, then tap "Forgot password?" again.')
     setBusy(true)
+    const token = await takeToken()
+    if (!token) {
+      setBusy(false)
+      return
+    }
     try {
-      await requestPasswordReset(email)
+      await requestPasswordReset(email, token)
       setSent(`If ${email.trim()} has an account, a reset link is on its way. Open it on this device.`)
     } catch (err) {
-      setError(err.message)
+      setError(tidy(err.message))
     }
+    setCaptchaRound((n) => n + 1)
     setBusy(false)
   }
 
@@ -126,6 +181,8 @@ export function SignIn({ intro }) {
           </span>
         </label>
       )}
+      {/* Usually invisible; shows a tick box only when Cloudflare is unsure. */}
+      <Turnstile onToken={gotToken} onAsk={gotAsk} resetKey={captchaRound} />
       {error && <p className="preview-error" role="alert">{error}</p>}
       {sent && <p className="note" role="status">{sent}</p>}
       <button className="primary block" disabled={busy}>{busy ? 'Working…' : creating ? 'Create account' : 'Sign in'}</button>

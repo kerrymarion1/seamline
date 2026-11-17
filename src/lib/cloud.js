@@ -350,8 +350,11 @@ if (supabase) {
   })
 }
 
-export async function signIn(email, password, remember = true) {
-  const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+// `captchaToken` is Cloudflare Turnstile's (components/Turnstile.jsx): the
+// project shared with Plait asks for one on signing in, making an account and
+// resetting a password.
+export async function signIn(email, password, remember = true, captchaToken) {
+  const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password, options: { captchaToken } })
   if (error) throw new Error(error.message)
   if (remember) localStorage.removeItem(EPHEMERAL)
   else {
@@ -368,12 +371,13 @@ export async function signIn(email, password, remember = true) {
 // session. Resolves to 'sent', or 'exists' when the address already has an
 // account (often a Plait one): Supabase then sends nothing and gives no
 // error, only a user with no identities, so the page has to say so itself.
-export async function signUp(name, email, password, code) {
+export async function signUp(name, email, password, code, captchaToken) {
   const who = name.trim()
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),
     password,
     options: {
+      captchaToken,
       // `app` picks Seamline's version of the confirmation email (see the
       // "Confirm signup" template in Supabase, which checks .Data.app).
       data: { app: 'seamline', invite_code: code.trim(), ...(who ? { seamline_name: who, display_name: who } : null) },
@@ -387,8 +391,8 @@ export async function signUp(name, email, password, code) {
   return data?.user && data.user.identities?.length === 0 ? 'exists' : 'sent'
 }
 
-export async function requestPasswordReset(email) {
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/settings` })
+export async function requestPasswordReset(email, captchaToken) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/settings`, captchaToken })
   if (error) throw new Error(error.message)
 }
 
