@@ -1,5 +1,11 @@
 const paths = {
   plus: <path d="M12 5v14M5 12h14" />,
+  home: <path d="M4 11.5 12 5l8 6.5M6.5 10v9h11v-9M10 19v-5h4v5" />,
+  more: (
+    <g fill="currentColor" stroke="none">
+      <circle cx="6" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="18" cy="12" r="1.7" />
+    </g>
+  ),
   back: <path d="M15 5l-7 7 7 7" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,

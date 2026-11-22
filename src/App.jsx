@@ -7,6 +7,7 @@ import { GreetingStage } from './components/Greetings'
 import CloudSync from './components/CloudSync'
 import Logo from './components/Logo'
 import MessageWatcher from './components/MessageWatcher'
+import UploadBar from './components/UploadBar'
 import Presence from './components/Presence'
 import SharedInbox from './components/SharedInbox'
 import { useCloud } from './lib/cloud'
@@ -140,6 +141,7 @@ export default function App() {
       </Suspense>
       <SharedInbox />
       <CloudSync />
+      <UploadBar />
       <Presence />
       <MessageWatcher />
       <AddedFx />

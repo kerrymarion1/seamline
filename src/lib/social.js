@@ -1,4 +1,5 @@
 import { getCloud, supabase } from './cloud'
+import { activeSeason } from './theme'
 
 // Hearts and comments on the photos in an album, from the people in the
 // library (seamline_reactions and seamline_photo_comments; see
@@ -15,6 +16,38 @@ export const REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🎉']
 // Four more, once the database takes them (the "moreReactions" switch).
 export const EXTRA_REACTIONS = ['🤗', '🔥', '✨', '👏']
 
+// The seven animated ones that replace them (components/ReactionFaces.jsx),
+// once the database takes them (the "animatedReactions" switch; see
+// 20261122_animated_reactions.sql). Saved by name, drawn in the theme showing.
+export const KINDS = ['love', 'laugh', 'dance', 'smile', 'wave', 'like', 'rolleyes']
+export const isKind = (emoji) => KINDS.includes(emoji)
+export const KIND_NAMES = { love: 'Love', laugh: 'Laugh', dance: 'Dance', smile: 'Smile', wave: 'Wave', like: 'Like', rolleyes: 'Roll eyes' }
+// For "Regine loved your photo", and under a name in the list of who reacted.
+export const KIND_VERBS = {
+  love: 'loved', laugh: 'laughed at', dance: 'danced to', smile: 'smiled at', wave: 'waved at', like: 'liked', rolleyes: 'rolled their eyes at',
+}
+export const KIND_DONE = { love: 'Loved', laugh: 'Laughed', dance: 'Danced', smile: 'Smiled', wave: 'Waved', like: 'Liked', rolleyes: 'Rolled their eyes' }
+// The old emoji, as the kind each became. A phone still on an older Hugpix
+// may give one; it shows as its kind.
+const LEGACY = { '❤️': 'love', '😂': 'laugh', '👍': 'like', '🎉': 'dance', '🤗': 'smile', '😮': 'smile' }
+const animated = () => !!getCloud().features.animatedReactions
+// Reactions as read from the database, old emoji turned into their kinds once
+// the seven are in use (before that they stay as they are, to match the picker).
+export const asKinds = (rows) => (animated() ? rows.map((r) => (LEGACY[r.emoji] ? { ...r, emoji: LEGACY[r.emoji] } : r)) : rows)
+// What to offer: the seven, or until the switch, the six (and with `more` the four more).
+export const reactionChoices = (more) => (animated() ? KINDS : more ? [...REACTIONS, ...EXTRA_REACTIONS] : REACTIONS)
+// The reaction a double tap gives.
+export const loveKind = () => (animated() ? 'love' : '❤️')
+
+// Reactions stay as sent: each remembers the theme it was given in (its
+// `look`), once the database keeps it (the "reactionLooks" switch; see
+// 20261122_reaction_looks.sql). Ones from before have none: the everyday look.
+const looks = () => !!getCloud().features.reactionLooks
+export const lookNow = () => activeSeason()?.id ?? 'everyday'
+// The extra column to read, and the field to save, while looks are kept.
+export const lookColumn = () => (looks() ? ', look' : '')
+export const withLook = () => (looks() ? { look: lookNow() } : null)
+
 // Everything for one album: { hearts: [{ photo, user_id, emoji }], comments }.
 // (`hearts` are all the reactions; before there were six they were all ❤️.)
 // With threads (20261107_threads.sql), comments may answer one another
@@ -22,18 +55,18 @@ export const EXTRA_REACTIONS = ['🤗', '🔥', '✨', '👏']
 // [{ comment, user_id, emoji }].
 export async function fetchAlbumSocial(albumId) {
   if (!on()) return { hearts: [], comments: [], commentReactions: [] }
-  const columns = getCloud().features.reactions ? 'photo, user_id, emoji, created_at' : 'photo, user_id, created_at'
+  const columns = (getCloud().features.reactions ? 'photo, user_id, emoji, created_at' : 'photo, user_id, created_at') + lookColumn()
   const [hearts, comments, commentReactions] = await Promise.all([
     supabase.from('seamline_reactions').select(columns).eq('album', albumId),
     supabase.from('seamline_photo_comments').select('*').eq('album', albumId).order('created_at'),
     getCloud().features.threads
-      ? supabase.from('seamline_comment_reactions').select('comment, user_id, emoji').eq('album', albumId)
+      ? supabase.from('seamline_comment_reactions').select(`comment, user_id, emoji${lookColumn()}`).eq('album', albumId)
       : Promise.resolve({ data: [] }),
   ])
   return {
-    hearts: (hearts.data ?? []).map((h) => ({ emoji: '❤️', ...h })),
+    hearts: asKinds((hearts.data ?? []).map((h) => ({ emoji: '❤️', ...h }))),
     comments: comments.data ?? [],
-    commentReactions: commentReactions.data ?? [],
+    commentReactions: asKinds(commentReactions.data ?? []),
   }
 }
 
@@ -49,10 +82,10 @@ export async function setReaction(album, photo, emoji) {
     if (error) throw new Error(error.message)
     return
   }
-  const row = { library: library(), album: album.id, photo, user_id: me, ...(getCloud().features.reactions ? { emoji } : null) }
+  const row = { library: library(), album: album.id, photo, user_id: me, ...(getCloud().features.reactions ? { emoji } : null), ...withLook() }
   const { error } = await supabase.from('seamline_reactions').upsert(row, { onConflict: 'library,album,photo,user_id' })
   if (error) throw new Error(error.message)
-  tell({ album: album.id, name: album.name, photo, reaction: emoji, heart: emoji === '❤️' })
+  tell({ album: album.id, name: album.name, photo, reaction: emoji, heart: emoji === '❤️' || emoji === 'love' })
 }
 
 // `replyTo` is the comment this answers (a reply to a reply answers the first
@@ -83,7 +116,7 @@ export async function setCommentReaction(album, comment, emoji) {
     return
   }
   const { error } = await supabase.from('seamline_comment_reactions')
-    .upsert({ comment: comment.id, library: library(), album: album.id, user_id: me, emoji }, { onConflict: 'comment,user_id' })
+    .upsert({ comment: comment.id, library: library(), album: album.id, user_id: me, emoji, ...withLook() }, { onConflict: 'comment,user_id' })
   if (error) throw new Error(error.message)
   if (comment.user_id !== me) tell({ album: album.id, name: album.name, photo: comment.photo, commentId: comment.id, commentReaction: emoji })
 }

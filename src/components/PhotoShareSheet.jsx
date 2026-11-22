@@ -4,10 +4,11 @@ import PeoplePicker from './PeoplePicker'
 import Sheet from './Sheet'
 import { sendAlbumPhoto, startChat } from '../lib/chat'
 import { useCloud } from '../lib/cloud'
+import { isVideo } from '../lib/images'
 import { usePeople } from '../lib/people'
 import { canShareFiles, downloadFile, shareFiles } from '../lib/share'
 
-// Sharing one photo, from any album, secret ones included:
+// Sharing one photo or video, from any album, secret ones included:
 // - Send in Hugpix: into a chat with the people chosen.
 // - Share to other apps: the phone's own share sheet (Messages, WhatsApp,
 //   email), with the photo itself and no link; a computer saves it instead.
@@ -25,11 +26,12 @@ export default function PhotoShareSheet({ open, onClose, image, secret, canSend,
   const [chosen, setChosen] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const thing = isVideo(image) ? 'video' : 'photo'
 
   useEffect(() => {
     if (!open || !image) return
     let live = true
-    fileOf(image).then((f) => live && setFile(f)).catch(() => live && setError('This photo could not be got ready to share.'))
+    fileOf(image).then((f) => live && setFile(f)).catch(() => live && setError(`This ${thing} could not be got ready to share.`))
     return () => {
       live = false
     }
@@ -49,7 +51,7 @@ export default function PhotoShareSheet({ open, onClose, image, secret, canSend,
         onClose()
       }
     } catch (e) {
-      setError(e.message || 'Could not share this photo.')
+      setError(e.message || `Could not share this ${thing}.`)
     }
   }
 
@@ -63,7 +65,7 @@ export default function PhotoShareSheet({ open, onClose, image, secret, canSend,
       onDone(`Sent to ${names.join(', ')}`)
       onClose()
     } catch (e) {
-      setError(e.message || 'Could not send this photo.')
+      setError(e.message || `Could not send this ${thing}.`)
     }
     setBusy(false)
   }
@@ -73,7 +75,7 @@ export default function PhotoShareSheet({ open, onClose, image, secret, canSend,
     <Sheet
       open={open}
       onClose={onClose}
-      title={mode === 'send' ? 'Send in Hugpix' : mode === 'link' ? 'Share a link?' : 'Share this photo'}
+      title={mode === 'send' ? 'Send in Hugpix' : mode === 'link' ? 'Share a link?' : `Share this ${thing}`}
       modal
     >
       {mode === 'menu' && (
@@ -94,7 +96,7 @@ export default function PhotoShareSheet({ open, onClose, image, secret, canSend,
               <span className="share-way-icon"><Icon name={shareable ? 'share' : 'download'} size={20} /></span>
               <span className="share-way-text">
                 <b>{shareable ? 'Share to other apps' : 'Save to this device'}</b>
-                <small>{!file ? 'Getting the photo ready' : shareable ? 'Messages, WhatsApp, email and more' : 'Then attach it anywhere'}</small>
+                <small>{!file ? `Getting the ${thing} ready` : shareable ? 'Messages, WhatsApp, email and more' : 'Then attach it anywhere'}</small>
               </span>
             </button>
           </li>
@@ -124,7 +126,7 @@ export default function PhotoShareSheet({ open, onClose, image, secret, canSend,
       {mode === 'send' && (
         <>
           <PeoplePicker people={people.filter((p) => p.id !== me)} value={chosen} onChange={setChosen} placeholder="Who to? Type a name" />
-          {secret && <p className="note">This photo is in a secret album: the people you send it to will see it, even if they are not in the album.</p>}
+          {secret && <p className="note">This {thing} is in a secret album: the people you send it to will see it, even if they are not in the album.</p>}
           <button className="primary block" disabled={!chosen.length || busy} onClick={send}>
             {busy ? 'Sending…' : 'Send'}
           </button>
@@ -135,7 +137,7 @@ export default function PhotoShareSheet({ open, onClose, image, secret, canSend,
       {mode === 'link' && (
         <>
           <p className="hint">
-            This photo is in a secret album. A link lets anyone who has it see this one photo, without signing in, and it shows in
+            This {thing} is in a secret album. A link lets anyone who has it see this one {thing}, without signing in, and it shows in
             the family's list of links in Settings.
           </p>
           <button className="primary block" onClick={onLink}>Make a link anyway</button>

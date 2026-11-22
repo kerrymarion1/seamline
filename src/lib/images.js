@@ -116,6 +116,15 @@ export function countText(items) {
   return photos ? `${say(photos, 'photo')} · ${say(videos, 'video')}` : say(videos, 'video')
 }
 
+// What of mine someone reacted to: "your photo", "your video", "3 of your
+// photos", "3 of your videos" or "3 of your photos and videos".
+export function yourText(items) {
+  const videos = items.filter(isVideo).length
+  if (items.length === 1) return videos ? 'your video' : 'your photo'
+  const word = videos === items.length ? 'videos' : videos ? 'photos and videos' : 'photos'
+  return `${items.length} of your ${word}`
+}
+
 // A video's size and length, and a still to stand for it in the grid.
 export async function probeVideo(blob) {
   const url = URL.createObjectURL(blob)

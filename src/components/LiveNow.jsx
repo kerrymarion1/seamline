@@ -4,8 +4,9 @@ import Avatar from './Avatar'
 import { ago } from './HomeLayouts'
 import { useCloud, userName } from '../lib/cloud'
 import { buildFeed, useFeedSocial } from '../lib/feed'
-import { countText } from '../lib/images'
+import { countText, yourText } from '../lib/images'
 import { personIn, usePeople } from '../lib/people'
+import { KIND_VERBS } from '../lib/social'
 import { useHere } from '../lib/presence'
 import { useStore } from '../lib/store'
 
@@ -19,15 +20,20 @@ const DAY = 864e5
 const TURN = 6500 // ms each happening shows before the next
 const EMOJI = /\p{Extended_Pictographic}/u
 
-// What someone did, after their name.
-function lineOf(item, images) {
+// What someone did, after their name. `online` is the photo registry, which
+// knows a video for what isn't on this device yet.
+function lineOf(item, images, online) {
   const album = item.album.name
+  const things = item.photos?.map((id) => images[id] ?? online[id] ?? {}) ?? []
   switch (item.kind) {
-    case 'added': return `added ${countText(item.photos.map((id) => images[id] ?? {}))} to ${album}`
+    case 'added': return `added ${countText(things)} to ${album}`
     case 'album': return `made a new album, ${album}`
     case 'shared': return `shared ${album} with you`
     case 'reaction': {
-      const what = item.photos.length > 1 ? `${item.photos.length} of your photos` : 'your photo'
+      const what = yourText(things)
+      // One of the seven, all the same kind: "loved your photo".
+      const verb = (item.emojis ?? [item.emoji]).length === 1 && KIND_VERBS[item.emoji]
+      if (verb) return `${verb} ${what} in ${album}`
       return EMOJI.test(item.emoji ?? '') ? `${item.emoji} ${what} in ${album}` : `reacted to ${what} in ${album}`
     }
     case 'comment': return `commented in ${album}: “${item.text}”`
@@ -40,7 +46,7 @@ const firstOf = (p) => (p?.name ?? 'Someone').split(' ')[0]
 export default function LiveNow() {
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
-  const { session, features } = useCloud()
+  const { session, features, photos: online } = useCloud()
   const me = session?.user.id
   const people = usePeople()
   const here = useHere()
@@ -118,7 +124,7 @@ export default function LiveNow() {
               : `/album/${item.album.id}`)}
         >
           <Avatar person={who} size={18} zoom={false} />
-          <span className="live-text"><b>{firstOf(who)}</b> {lineOf(item, images)}</span>
+          <span className="live-text"><b>{firstOf(who)}</b> {lineOf(item, images, online)}</span>
           <small>{ago(item.at)}</small>
         </button>
       )}

@@ -31,7 +31,10 @@ import { fadeIn, morph } from '../lib/motion'
 import { adderOf, personIn, usePeople } from '../lib/people'
 import { nameOf as nameOfSpot, photoPlace, spotNames } from '../lib/places'
 import { announceShared, announceUpload } from '../lib/push'
-import { addPhotoComment, askForPhotos, fetchAlbumSocial, removePhotoComment, setCommentReaction, setReaction, watchAlbumSocial } from '../lib/social'
+import {
+  addPhotoComment, askForPhotos, fetchAlbumSocial, KIND_DONE, KIND_NAMES, loveKind, reactionChoices, removePhotoComment, setCommentReaction, setReaction,
+  watchAlbumSocial,
+} from '../lib/social'
 import { syncNow } from '../lib/sync'
 import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
@@ -78,6 +81,9 @@ export default function Album({ albumId }) {
   const [moving, setMoving] = useState(false) // waiting for a tap on where the picked photos go
   const [favourites, setFavourites] = useState(false) // show only what visitors have hearted
   const [sorting, setSorting] = useState(false)
+  const [switching, setSwitching] = useState(false) // the album switcher, from the name in the header
+  const [albumMenu, setAlbumMenu] = useState(false) // the header's ⋯: rename, sort, place, ask, delete
+  const [naming, setNaming] = useState(null) // the new name being typed, or null
   const [viewing, setViewing] = useState(null)
   const [notice, setNotice] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -300,9 +306,8 @@ export default function Album({ albumId }) {
   const myReaction = reactedHere.find((h) => h.user_id === session?.user.id)?.emoji ?? null
   const greetCounts = {}
   for (const h of reactedHere) if (isGreeting(h.emoji)) greetCounts[h.emoji] = (greetCounts[h.emoji] ?? 0) + 1
-  const onGreet = features.greetings
-    ? () => (greetSeason ? setGreeting(true) : playGreeting(reactedHere.filter((h) => isGreeting(h.emoji)).at(-1)?.emoji))
-    : null
+  // More opens the React panel, with every holiday's greetings, all year.
+  const onGreet = features.greetings ? () => setGreeting(true) : null
   const firstOf = (id) => (id === myId ? 'You' : (personIn(people, id)?.name ?? 'Someone').split(' ')[0])
 
   // Comments as threads: each one, then the replies to it (a reply to a reply
@@ -349,12 +354,12 @@ export default function Album({ albumId }) {
       fetchAlbumSocial(album.id).then(setSocial).catch(() => {})
     })
   }
-  // Double-tap the photo: a heart where the finger was, and ❤️ given unless already reacted.
+  // Double-tap the photo: a heart where the finger was, and love given unless already reacted.
   const heartByTap = (x, y) => {
     if (!features.social || !myId) return false
     setBurst({ x, y, key: Date.now() })
     buzz([12])
-    if (!myReaction) react('❤️')
+    if (!myReaction) react(loveKind())
   }
   // Asked to add photos here, and by whom.
   const askedMe = myId && album.asked?.[myId]
@@ -412,7 +417,7 @@ export default function Album({ albumId }) {
     const records = []
     let failed = 0
     for (const [i, file] of files.entries()) {
-      setNotice({ busy: true, text: `Getting ${i + 1} of ${files.length} ready` })
+      setNotice({ busy: true, text: `Getting ${i + 1} of ${files.length} ready`, progress: i / files.length })
       try {
         records.push(await importMedia(file))
       } catch {
@@ -475,7 +480,7 @@ export default function Album({ albumId }) {
     celebrateAdded(1)
     setShooting(false)
     setNotice({
-      text: `Added to ${album.name}`,
+      text: `${isVideo(record) ? 'Video' : 'Photo'} added to ${album.name}`,
       undo: () => {
         removeFromAlbum(album.id, [record.id])
         setNotice({ text: 'Taken back out' })
@@ -693,18 +698,15 @@ export default function Album({ albumId }) {
               to: () => document.querySelector(`[data-album="${album.id}"]`),
             })
           }
-          aria-label="Back to albums"
+          aria-label="Home"
         >
-          <Icon name="back" />
+          <Icon name="home" />
         </button>
-        <input
-          className="title-input"
-          value={album.name}
-          readOnly={limited}
-          onChange={(e) => renameAlbum(album.id, e.target.value)}
-          onBlur={(e) => !e.target.value.trim() && renameAlbum(album.id, 'Untitled album')}
-          aria-label="Album name"
-        />
+        {/* The name opens the switcher: other albums, and the rest of Hugpix. */}
+        <button className="album-switch" onClick={() => setSwitching(true)} aria-label={`${album.name}: switch album`}>
+          <span>{album.name}</span>
+          <Icon name="down" size={16} />
+        </button>
         {selecting && !moving && (
           <button className="pill-btn" onClick={() => setPicked(allPicked ? [] : shown)}>{allPicked ? 'None' : 'All'}</button>
         )}
@@ -719,9 +721,9 @@ export default function Album({ albumId }) {
             <Icon name="share" size={20} />
           </button>
         )}
-        {!selecting && !limited && (
-          <button className="icon-btn" onClick={() => setConfirmDelete(true)} aria-label="Delete album">
-            <Icon name="trash" size={20} />
+        {!selecting && (
+          <button className="icon-btn" onClick={() => setAlbumMenu(true)} aria-label="More for this album">
+            <Icon name="more" size={20} />
           </button>
         )}
       </header>
@@ -981,7 +983,7 @@ export default function Album({ albumId }) {
           >
             {burst && (
               <span key={burst.key} className="tap-heart" style={{ left: burst.x, top: burst.y }} onAnimationEnd={() => setBurst(null)} aria-hidden="true">
-                <Emoji emoji="❤️" size={96} />
+                <Emoji emoji={loveKind()} size={96} />
               </span>
             )}
             {/* The reactions it has had play over it as it opens; new ones as they arrive. */}
@@ -1197,6 +1199,7 @@ export default function Album({ albumId }) {
           {notice.busy && <i className="spinner" />}
           {notice.text}
           {notice.undo && <button className="toast-undo" onClick={notice.undo}>Undo</button>}
+          {notice.progress != null && <span className="toast-bar"><i style={{ width: `${Math.round(notice.progress * 100)}%` }} /></span>}
         </div>
       )}
 
@@ -1334,9 +1337,9 @@ export default function Album({ albumId }) {
               <Avatar person={personIn(people, h.user_id) ?? { id: h.user_id, name: nameOf(h.user_id) }} size={36} />
               <span className="seen-who">
                 <b>{h.user_id === myId ? 'You' : nameOf(h.user_id)}</b>
-                <small>{isGreeting(h.emoji) ? greetingLabel(h.emoji) : 'Reacted'}{h.created_at ? ` ${seenTime(h.created_at)}` : ''}</small>
+                <small>{isGreeting(h.emoji) ? greetingLabel(h.emoji) : KIND_DONE[h.emoji] ?? 'Reacted'}{h.created_at ? ` ${seenTime(h.created_at)}` : ''}</small>
               </span>
-              <span className="reactor-emoji"><Emoji emoji={h.emoji} size={28} /></span>
+              <span className="reactor-emoji"><Emoji emoji={h.emoji} look={h.look} size={28} /></span>
             </li>
           ))}
         </ul>
@@ -1364,13 +1367,13 @@ export default function Album({ albumId }) {
         </ul>
       </Sheet>
 
-      {greetSeason && (
+      {features.greetings && (
         <GreetingPicker
           season={greetSeason}
           more={!!features.moreGreetings}
           open={greeting && !!viewed}
           onClose={() => setGreeting(false)}
-          note="Your reaction to this photo. Whoever added it hears about it, and everyone who opens it sees it play."
+          note={`Your reaction to this ${isVideo(viewed) ? 'video' : 'photo'}. Whoever added it hears about it, and everyone who opens it sees it play.`}
           counts={greetCounts}
           mine={myReaction}
           onPick={(kind) => {
@@ -1382,7 +1385,29 @@ export default function Album({ albumId }) {
               playGreeting(kind)
             }
           }}
-        />
+        >
+          {/* The More panel: every reaction, named, above the season's greetings. */}
+          <div className="gr-picker react-grid">
+            {reactionChoices(!!features.moreReactions).map((kind) => {
+              const n = reactedHere.filter((h) => h.emoji === kind).length
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  className={`gr-tile ${myReaction === kind ? 'on' : ''}`}
+                  onClick={() => {
+                    setGreeting(false)
+                    react(myReaction === kind ? null : kind)
+                  }}
+                >
+                  <span className="gr-tile-face"><Emoji emoji={kind} size={48} /></span>
+                  <span>{KIND_NAMES[kind] ?? ''}</span>
+                  {n > 0 && <small>{n}</small>}
+                </button>
+              )
+            })}
+          </div>
+        </GreetingPicker>
       )}
 
       <PlaceSheet
@@ -1491,6 +1516,101 @@ export default function Album({ albumId }) {
             <p className="note">Anyone with the link can see the photos, without signing in.</p>
           </div>
         )}
+      </Sheet>
+
+      {/* The switcher: the rest of Hugpix, then every album, this one ticked. */}
+      <AlbumChooser
+        open={switching}
+        onClose={() => setSwitching(false)}
+        title="Go to"
+        current={album.id}
+        onPick={(a) => {
+          setSwitching(false)
+          if (a.id !== album.id) navigate(`/album/${a.id}`)
+        }}
+        extra={
+          <>
+            <div className="go-links">
+              {[
+                ['/', 'Home', 'home'],
+                ['/news', "What's new", 'bell'],
+                ...(features.messages ? [['/messages', 'Messages', 'comment']] : []),
+                ['/search', 'Search', 'search'],
+                ['/favourites', 'Favourites', 'heart'],
+                ['/map', 'Map', 'pin'],
+              ].map(([to, label, icon]) => (
+                <button
+                  key={to}
+                  className="chip small"
+                  onClick={() => {
+                    setSwitching(false)
+                    navigate(to)
+                  }}
+                >
+                  <Icon name={icon} size={15} /> {label}
+                </button>
+              ))}
+            </div>
+            <div className="label">Albums</div>
+          </>
+        }
+      />
+
+      {/* The header's ⋯: what can be done to the album as a whole. */}
+      <Sheet open={albumMenu} onClose={() => setAlbumMenu(false)} title={album.name} modal>
+        <ul className="layer-list album-menu">
+          {!limited && (
+            <li>
+              <button className="layer-pick" onClick={() => { setAlbumMenu(false); setNaming(album.name) }}>
+                <Icon name="edit" size={18} /> <span className="layer-name">Rename</span>
+              </button>
+            </li>
+          )}
+          {!limited && ids.length > 1 && (
+            <li>
+              <button className="layer-pick" onClick={() => { setAlbumMenu(false); setSorting(true) }}>
+                <Icon name="sort" size={18} /> <span className="layer-name">Sort</span>
+              </button>
+            </li>
+          )}
+          {(!limited || album.place) && (
+            <li>
+              <button className="layer-pick" onClick={() => { setAlbumMenu(false); if (limited) navigate('/map'); else setPlacing('album') }}>
+                <Icon name="pin" size={18} /> <span className="layer-name">{album.place ? 'Change the place' : 'Add a place'}</span>
+              </button>
+            </li>
+          )}
+          {!limited && features.push && (
+            <li>
+              <button className="layer-pick" onClick={() => { setAlbumMenu(false); setAsking(true) }}>
+                <Icon name="people" size={18} /> <span className="layer-name">Ask for photos</span>
+              </button>
+            </li>
+          )}
+          {!limited && (
+            <li>
+              <button className="layer-pick danger" onClick={() => { setAlbumMenu(false); setConfirmDelete(true) }}>
+                <Icon name="trash" size={18} /> <span className="layer-name">Delete album</span>
+              </button>
+            </li>
+          )}
+        </ul>
+      </Sheet>
+
+      <Sheet open={naming != null} onClose={() => setNaming(null)} title="Rename album" modal>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            renameAlbum(album.id, naming.trim() || 'Untitled album')
+            setNaming(null)
+          }}
+        >
+          <input
+            className="field" value={naming ?? ''} onChange={(e) => setNaming(e.target.value)}
+            maxLength={80} autoFocus enterKeyHint="done" aria-label="Album name"
+          />
+          <button className="primary block">Save</button>
+        </form>
       </Sheet>
 
       <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete album?" modal>

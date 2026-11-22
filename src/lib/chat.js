@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { getCloud, supabase, uploadMessagePhoto } from './cloud'
+import { asKinds, lookColumn, withLook } from './social'
 import { getState } from './store'
 import { ensureLocal } from './sync'
 
@@ -151,8 +152,8 @@ export async function sendMessage(chat, { text = '', image = null, effect = null
 // Reactions on a chat's messages: [{ message, user_id, emoji }].
 export async function fetchMessageReactions(chatId) {
   if (!getCloud().features.reactions) return []
-  const { data } = await supabase.from('seamline_message_reactions').select('message, user_id, emoji').eq('chat', chatId)
-  return data ?? []
+  const { data } = await supabase.from('seamline_message_reactions').select(`message, user_id, emoji${lookColumn()}`).eq('chat', chatId)
+  return asKinds(data ?? [])
 }
 
 // React to a message, change the reaction, or (null) take it back. Whoever
@@ -166,7 +167,7 @@ export async function setMessageReaction(chat, message, emoji) {
   }
   const { error } = await supabase
     .from('seamline_message_reactions')
-    .upsert({ message: message.id, chat: chat.id, user_id: me, emoji }, { onConflict: 'message,user_id' })
+    .upsert({ message: message.id, chat: chat.id, user_id: me, emoji, ...withLook() }, { onConflict: 'message,user_id' })
   if (error) throw new Error(error.message)
   if (message.sender !== me && getCloud().features.push) {
     supabase.functions.invoke('seamline-notify', { body: { chat: chat.id, message: message.id, reaction: emoji } }).catch(() => {})

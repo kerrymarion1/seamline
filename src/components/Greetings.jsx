@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { MORE_FACES, MoreStage, SeasonBurst, SeasonStar } from './GreetingsMore'
+import Icon from './Icon'
 import Sheet from './Sheet'
 import { stillPlease } from '../lib/feedback'
 import { effectSound, unlockAudio } from '../lib/sounds'
@@ -70,6 +71,8 @@ export const GREETINGS = {
   ],
 }
 const SEASON_NAME = { holiday: 'Christmas', halloween: 'Halloween', thanksgiving: 'Thanksgiving', newyear: 'New Year', july4: 'Fourth of July' }
+// The holidays in the year's order, for the React panel.
+const HOLIDAYS = ['newyear', 'july4', 'halloween', 'thanksgiving', 'holiday']
 const ALL = Object.values(GREETINGS).flat()
 export const isGreeting = (kind) => ALL.some((g) => g.kind === kind)
 export const greetingLabel = (kind) => ALL.find((g) => g.kind === kind)?.label ?? 'Greeting'
@@ -577,26 +580,64 @@ export function GreetingStage() {
 
 // The season's greetings, to send in a message or as a reaction to a photo.
 // `counts` (by kind) shows how many have reacted with each; `mine` is mine.
-export function GreetingPicker({ season, open, onClose, onPick, busy = false, note, counts = {}, mine = null, more = false }) {
+// With `children` (the reactions), it is the whole React panel: those first,
+// then every holiday by name, all year, the season's first and open; a tap
+// on a name opens its greetings.
+export function GreetingPicker({ season, open, onClose, onPick, busy = false, note, counts = {}, mine = null, more = false, children = null }) {
+  const name = `${SEASON_NAME[season] ?? 'Holiday'} greetings`
+  const [shown, setShown] = useState(season)
+  // Each time it opens, the season's holiday is the one open.
+  useEffect(() => {
+    if (open) setShown(season)
+  }, [open, season])
+  const tiles = (set) => (
+    <div className="gr-picker">
+      {greetingsOf(set, more).map((g) => (
+        <button
+          key={g.kind}
+          type="button"
+          className={`gr-tile ${mine === g.kind ? 'on' : ''}`}
+          disabled={busy}
+          onPointerDown={unlockAudio}
+          onClick={() => onPick(g.kind)}
+        >
+          <span className="gr-tile-face"><GreetingFace kind={g.kind} size={44} /></span>
+          <span>{g.label}</span>
+          {counts[g.kind] > 0 && <small>{counts[g.kind]}</small>}
+        </button>
+      ))}
+    </div>
+  )
+  const holidays = [season, ...HOLIDAYS.filter((s) => s !== season)].filter((s) => s && greetingsOf(s, more).length)
   return (
-    <Sheet open={open} onClose={onClose} title={`${SEASON_NAME[season] ?? 'Holiday'} greetings`} modal>
+    <Sheet open={open} onClose={onClose} title={children ? 'React' : name} modal>
       {note && <p className="note">{note}</p>}
-      <div className="gr-picker">
-        {greetingsOf(season, more).map((g) => (
-          <button
-            key={g.kind}
-            type="button"
-            className={`gr-tile ${mine === g.kind ? 'on' : ''}`}
-            disabled={busy}
-            onPointerDown={unlockAudio}
-            onClick={() => onPick(g.kind)}
-          >
-            <span className="gr-tile-face"><GreetingFace kind={g.kind} size={44} /></span>
-            <span>{g.label}</span>
-            {counts[g.kind] > 0 && <small>{counts[g.kind]}</small>}
-          </button>
-        ))}
-      </div>
+      {children}
+      {children ? (
+        <>
+          <div className="label">Seasonal</div>
+          <p className="note">Each plays across the screen when they open it.</p>
+          <div className="holidays">
+            {holidays.map((set) => {
+              const given = greetingsOf(set, more).reduce((n, g) => n + (counts[g.kind] ?? 0), 0)
+              const isOpen = shown === set
+              return (
+                <section key={set} className={`holiday ${isOpen ? 'open' : ''}`}>
+                  <button type="button" className="holiday-name" onClick={() => setShown(isOpen ? null : set)} aria-expanded={isOpen}>
+                    <span className="holiday-face"><SeasonFace season={set} size={20} /></span>
+                    <span className="holiday-label">{SEASON_NAME[set]}</span>
+                    {given > 0 && <small>{given}</small>}
+                    <span className="holiday-chevron"><Icon name="down" size={16} /></span>
+                  </button>
+                  {isOpen && tiles(set)}
+                </section>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        tiles(season)
+      )}
     </Sheet>
   )
 }

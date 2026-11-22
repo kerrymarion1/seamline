@@ -2315,17 +2315,20 @@ img.fade.in { opacity: 1; }
 /* More albums on the front page, eight at a time. */
 .load-more { max-width: 360px; margin: 16px auto 0; }
 
-/* ---------- the reactions a photo has had, played over it as it opens ---------- */
+/* ---------- the reactions a photo has had, played over it as it opens ----------
+   Each one rises from below the bottom edge and floats up through the photo,
+   drifting side to side (--sway), and fades near the top; the reaction's own
+   movement (components/ReactionFaces) goes on inside it. */
 .react-play { position: absolute; inset: 0; z-index: 3; overflow: hidden; cursor: pointer; }
 .react-fx {
   position: absolute;
-  bottom: 18%;
+  bottom: 4%;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   opacity: 0;
-  animation: react-wow 1.9s ease-out var(--d, 0ms) both;
+  animation: react-rise 2.8s cubic-bezier(0.25, 0.6, 0.35, 1) var(--d, 0ms) both;
   pointer-events: none;
 }
 .react-fx-emoji { filter: drop-shadow(0 8px 18px rgb(0 0 0 / 0.55)); }
@@ -2342,94 +2345,13 @@ img.fade.in { opacity: 1; }
   font-weight: 700;
   white-space: nowrap;
 }
-/* Each kind moves its own way. */
-.react-fx.heart { animation-name: react-heart; }
-.react-fx.laugh { animation-name: react-laugh; }
-.react-fx.wow { animation-name: react-wow; }
-.react-fx.sad { animation-name: react-sad; }
-.react-fx.thumbs { animation-name: react-thumbs; }
-.react-fx.party { animation-name: react-party; }
-.react-fx.hug { animation-name: react-hug; }
-.react-fx.fire { animation-name: react-fire; }
-.react-fx.sparkles { animation-name: react-sparkles; }
-.react-fx.clap { animation-name: react-clap; }
-@keyframes react-heart {
-  0% { opacity: 0; transform: translateY(40px) scale(0.6); }
-  15% { opacity: 1; transform: translateY(0) scale(1.1); }
-  80% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-170px) rotate(-8deg); }
-}
-@keyframes react-laugh {
-  0% { opacity: 0; transform: translateY(30px); }
-  14% { opacity: 1; transform: translateY(0); }
-  30% { transform: translateY(-28px) rotate(-10deg); }
-  45% { transform: translateY(0) rotate(8deg); }
-  60% { transform: translateY(-14px) rotate(-6deg); }
-  75% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(-40px); }
-}
-@keyframes react-wow {
-  0% { opacity: 0; transform: scale(0.3); }
-  20% { opacity: 1; transform: scale(1.4); }
-  40% { transform: scale(1); }
-  85% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-30px) scale(1.1); }
-}
-@keyframes react-sad {
-  0% { opacity: 0; transform: translateY(-30px); }
-  15% { opacity: 1; transform: translateY(0); }
-  80% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(90px); }
-}
-@keyframes react-thumbs {
-  0% { opacity: 0; transform: translateY(60px) rotate(-20deg); }
-  20% { opacity: 1; transform: translateY(0) rotate(6deg); }
-  32% { transform: rotate(0); }
-  85% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-60px); }
-}
-@keyframes react-party {
-  0% { opacity: 0; transform: scale(0.2) rotate(-40deg); }
-  20% { opacity: 1; transform: scale(1.3) rotate(10deg); }
-  35% { transform: scale(1) rotate(0); }
-  85% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-80px) rotate(20deg); }
-}
-@keyframes react-hug {
-  0% { opacity: 0; transform: scale(0.6); }
-  15% { opacity: 1; transform: scale(1.15); }
-  30% { transform: scale(0.95); }
-  45% { transform: scale(1.12); }
-  60% { transform: scale(1); }
-  85% { opacity: 1; }
-  100% { opacity: 0; transform: scale(1.25); }
-}
-@keyframes react-fire {
-  0% { opacity: 0; transform: translateY(40px) scaleY(0.6); }
-  15% { opacity: 1; transform: translateY(0) scaleY(1.1); }
-  30% { transform: translateY(-20px) scale(1.05, 0.95); }
-  45% { transform: translateY(-45px) scaleY(1.08); }
-  60% { transform: translateY(-70px) scaleY(0.97); }
-  80% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-150px) scaleY(1.2); }
-}
-@keyframes react-sparkles {
-  0% { opacity: 0; transform: scale(0.4) rotate(0); }
-  15% { opacity: 1; transform: scale(1.1) rotate(15deg); }
-  35% { transform: scale(0.9) rotate(-10deg); }
-  55% { transform: scale(1.15) rotate(10deg); }
-  75% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1.35) rotate(0); }
-}
-@keyframes react-clap {
-  0% { opacity: 0; transform: translateY(30px); }
-  12% { opacity: 1; transform: translateY(0) rotate(-12deg); }
-  24% { transform: rotate(12deg); }
-  36% { transform: rotate(-12deg); }
-  48% { transform: rotate(12deg); }
-  60% { transform: rotate(-8deg); }
-  72% { opacity: 1; transform: rotate(0); }
-  100% { opacity: 0; transform: translateY(-50px); }
+@keyframes react-rise {
+  0% { opacity: 0; transform: translate(0, 20vh) scale(0.6); }
+  14% { opacity: 1; transform: translate(0, 6vh) scale(1.05); }
+  36% { transform: translate(var(--sway, 14px), -8vh) scale(1); }
+  62% { transform: translate(calc(var(--sway, 14px) * -1), -22vh); }
+  82% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--sway, 14px), -38vh) scale(0.95); }
 }
 /* One quiet line: the reactions given so far, and React. The whole row of
    choices pops in above it when asked, one button after another. */
@@ -4944,3 +4866,112 @@ span.bubble-face:empty { visibility: hidden; }
 /* Cloudflare's are-you-a-person check: takes no room unless it shows a tick box. */
 .turnstile { display: flex; justify-content: center; }
 .turnstile:empty { display: none; }
+
+/* ---------- photos and videos going up (components/UploadBar.jsx) ----------
+   Just above an album's add buttons; under the photo viewer and sheets. */
+.upload-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 92px);
+  z-index: 30;
+  translate: -50% 0;
+  width: min(260px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 14px 11px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 13px;
+  pointer-events: none;
+  animation: screen-in 0.25s var(--spring);
+}
+.upload-line { display: flex; justify-content: space-between; gap: 10px; }
+.upload-line b { font-weight: 600; }
+.upload-line span { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.upload-bar .bar { display: block; width: 100%; height: 3px; background: var(--surface-3); }
+.upload-keep { color: var(--text-2); font-size: 11.5px; }
+.upload-bar.finished { animation: upload-out 0.4s ease 1.3s forwards; }
+@keyframes upload-out { to { opacity: 0; transform: translateY(8px); } }
+/* Only a phone stops uploading when put away. */
+@media (pointer: fine) { .upload-keep { display: none; } }
+/* How far through getting chosen photos ready (Album.jsx). */
+.toast-bar { position: absolute; left: 16px; right: 16px; bottom: 4px; height: 2px; overflow: hidden; border-radius: 1px; background: var(--surface-3); }
+.toast-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+
+/* ---------- the seven reactions (components/ReactionFaces.jsx) ----------
+   3D stickers, one character per theme. Each kind moves its own way, in a
+   short loop with a rest between: love beats, laugh shakes, dance sways,
+   smile bobs, wave rocks, like pops, roll eyes tilts away. */
+.rf { position: relative; display: inline-block; flex: none; width: var(--rf-size, 24px); height: var(--rf-size, 24px); vertical-align: middle; transform-origin: 50% 88%; }
+.rf > img:first-child { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* Love's heart and Laugh's laughing face, in the corner, moving with it. */
+.rf-badge { position: absolute; right: -8%; bottom: -6%; width: 48%; height: 48%; object-fit: contain; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.55)); }
+.rf-love { animation: rf-beat 1.6s ease-in-out infinite; }
+@keyframes rf-beat { 0%, 60%, 100% { transform: scale(1); } 15% { transform: scale(1.14); } 30% { transform: scale(1.02); } 45% { transform: scale(1.1); } }
+.rf-laugh { animation: rf-shake 1.7s ease-in-out infinite; }
+@keyframes rf-shake {
+  0%, 56%, 100% { transform: rotate(0); }
+  8% { transform: rotate(-8deg) translateY(-2%); } 16% { transform: rotate(7deg); }
+  24% { transform: rotate(-7deg) translateY(-2%); } 32% { transform: rotate(6deg); } 44% { transform: rotate(-2deg); }
+}
+.rf-dance { animation: rf-sway 1.1s ease-in-out infinite; }
+@keyframes rf-sway { 0%, 100% { transform: rotate(-9deg); } 25% { transform: translateY(-6%); } 50% { transform: rotate(9deg); } 75% { transform: translateY(-6%); } }
+.rf-smile { animation: rf-bob 2.6s ease-in-out infinite; }
+@keyframes rf-bob { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4%) scale(1.03); } }
+.rf-wave { animation: rf-rock 1.8s ease-in-out infinite; }
+@keyframes rf-rock { 0%, 60%, 100% { transform: rotate(0); } 10% { transform: rotate(-7deg); } 22% { transform: rotate(6deg); } 34% { transform: rotate(-7deg); } 46% { transform: rotate(5deg); } }
+.rf-like { animation: rf-pop 2.1s ease-in-out infinite; }
+@keyframes rf-pop { 0%, 56%, 100% { transform: scale(1) rotate(0); } 12% { transform: translateY(-4%) scale(1.18) rotate(-8deg); } 26% { transform: scale(0.96) rotate(3deg); } 40% { transform: scale(1.06) rotate(-2deg); } }
+.rf-rolleyes { animation: rf-tilt 3s ease-in-out infinite; }
+@keyframes rf-tilt { 0%, 100% { transform: rotate(0); } 30%, 84% { transform: rotate(-8deg) translateX(-2%); } }
+.rf.still { animation: none; }
+@media (prefers-reduced-motion: reduce) { .rf { animation: none !important; } }
+/* The seven in the photo viewer as one bar, like Facebook's: the stickers big,
+   no button circles; mine has a dot under it, a count sits at the corner. */
+.family-react .reaction-row:has(.rf) { gap: 0; max-width: 380px; padding: 3px 6px; border-radius: 30px; background: var(--surface); box-shadow: 0 6px 18px rgb(0 0 0 / 0.4); }
+.family-react .reaction-row:has(.rf) button { position: relative; flex-direction: column; justify-content: center; gap: 2px; height: 56px; padding: 0; border-radius: 14px; background: none; }
+.family-react .reaction-row:has(.rf) button.on { background: rgb(var(--accent-rgb) / 0.14); box-shadow: none; }
+.family-react .reaction-row:has(.rf) small { position: absolute; top: 0; right: 1px; font-size: 10px; }
+.family-react .reaction-row .rf { width: 34px; height: 34px; }
+.family-react .reaction-row .greet-btn .gr-face svg { max-height: 30px; }
+/* Each sticker's name under it; mine in the accent. */
+.reaction-name { color: var(--text-2); font-size: 9.5px; font-weight: 600; line-height: 1; white-space: nowrap; letter-spacing: -0.01em; }
+.reaction-row button.on .reaction-name { color: var(--accent); }
+/* The season's greetings come after a thin line, so the seasonal character isn't read as an eighth reaction. */
+.reaction-row .greet-btn { position: relative; margin-left: 7px; }
+.reaction-row .greet-btn::before { content: ''; position: absolute; left: -6px; top: 22%; bottom: 22%; width: 1px; background: var(--edge); }
+/* The React panel's reactions: four to a row, a little tighter than the greetings below. */
+.react-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 14px; }
+.react-grid .gr-tile { padding-left: 2px; padding-right: 2px; }
+.react-grid .gr-tile-face { height: 52px; }
+
+/* ---------- the album's header: home, the name (a switcher), ⋯ ---------- */
+.album-switch { flex: 1; min-width: 0; height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; border-radius: 12px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+.album-switch span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.album-switch svg { flex: none; color: var(--text-2); }
+.album-switch:active { background: var(--surface); }
+/* The switcher's ways out, above the albums; this album ticked. */
+.go-links { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.go-links .chip { display: inline-flex; align-items: center; gap: 6px; }
+.album-pick.current { background: rgb(var(--accent-rgb) / 0.1); }
+.album-here { margin-left: auto; color: var(--accent); display: inline-flex; }
+.album-menu .layer-pick { display: flex; align-items: center; gap: 12px; }
+.album-menu .layer-pick.danger { color: var(--danger); }
+/* More: quiet, still, so it reads as a way to more rather than a reaction. */
+.reaction-row .more-btn .reaction-emoji { animation: none; color: var(--text-2); }
+/* The React panel's holidays: a card each, its little character, the name,
+   how many of its greetings this photo has had, and an arrow; open, its
+   greetings sit inside the card. */
+.holidays { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.holiday { overflow: hidden; border: 1px solid var(--edge); border-radius: 16px; background: var(--surface); transition: background 0.2s; }
+.holiday.open { background: var(--surface-2); }
+.holiday-name { width: 100%; min-height: 54px; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 14px; border: 0; background: none; color: var(--text); font-size: 15px; font-weight: 650; text-align: left; }
+.holiday-name:active { background: rgb(255 255 255 / 0.04); }
+.holiday-face { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 50%; background: rgb(var(--accent-rgb) / 0.12); }
+.holiday-label { flex: 1; min-width: 0; }
+.holiday-name small { padding: 2px 8px; border-radius: 10px; background: rgb(var(--accent-rgb) / 0.18); color: var(--accent); font-size: 11.5px; font-weight: 800; }
+.holiday-chevron { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 50%; background: rgb(255 255 255 / 0.06); color: var(--text-2); transition: transform 0.25s var(--spring); }
+.holiday.open .holiday-chevron { transform: rotate(180deg); }
+.holiday .gr-picker { padding: 0 10px 12px; }

@@ -602,14 +602,15 @@ export async function ensureThumbs(images, limit = 25) {
 }
 
 // Put a photo's online copy, and its small copy for other devices, in
-// Cloudflare and note both in the registry (`album` as for ensureVideo).
-async function ensurePhotoOnCloudflare(image, copy, name, album) {
+// Cloudflare and note both in the registry (`album` as for ensureVideo;
+// `onFraction` hears how far through the photo is).
+async function ensurePhotoOnCloudflare(image, copy, name, album, onFraction) {
   const small = state.features.thumbs ? await thumbOf(image.previewBlob) : null
   const bytes = copy.blob.size + (small?.size ?? 0)
   if (mediaStorageUsed() + bytes > MEDIA_LIMIT) throw new Error('Storage is full (100 GB). Remove some photos or videos first.')
   const stored = []
   try {
-    stored.push(await putMedia(copy.blob, { ext: 'jpg', type: 'image/jpeg', name }))
+    stored.push(await putMedia(copy.blob, { ext: 'jpg', type: 'image/jpeg', name }, onFraction))
     if (small) stored.push(await putMedia(small, { ext: 'jpg', type: 'image/jpeg' }))
     const row = {
       library: state.library, id: image.id, path: stored[0], name, width: copy.width, height: copy.height, bytes,
@@ -625,34 +626,117 @@ async function ensurePhotoOnCloudflare(image, copy, name, album) {
   }
 }
 
+// ---------- what is going up right now ----------
+// For the bar at the foot of the screen (components/UploadBar.jsx): every
+// photo and video ensurePhotos is putting online, whoever asked, and how far
+// through each one under way is. Kept apart from `state`, so its many small
+// steps redraw only the bar.
+const uploads = { wanted: new Set(), videos: new Set(), done: new Set(), part: new Map(), callers: 0 }
+let ended = null // { total, videos } of a run that has just gone up whole, shown as done for a moment
+let endTimer = null
+let uploadView = null
+let uploadKey = null
+const uploadListeners = new Set()
+function showUploads() {
+  const total = uploads.wanted.size
+  let next = null
+  if (uploads.callers && total) {
+    let amount = uploads.done.size
+    for (const f of uploads.part.values()) amount += f
+    next = { done: uploads.done.size, total, videos: uploads.videos.size, fraction: Math.min(1, amount / total), finished: false }
+  } else if (ended) {
+    next = { done: ended.total, total: ended.total, videos: ended.videos, fraction: 1, finished: true }
+  }
+  // Only a change that shows is passed on.
+  const key = next && `${next.done}/${next.total}/${next.videos}/${Math.round(next.fraction * 100)}/${next.finished}`
+  if (key === uploadKey) return
+  uploadKey = key
+  uploadView = next
+  uploadListeners.forEach((l) => l())
+}
+const subscribeUploads = (l) => {
+  uploadListeners.add(l)
+  return () => uploadListeners.delete(l)
+}
+// { done, total, videos, fraction, finished } while photos or videos go up,
+// and for a moment after they all have (finished: true); otherwise null.
+export const useUploads = () => useSyncExternalStore(subscribeUploads, () => uploadView)
+
+// Uploads under way, by photo id. The album sync and the link for that album
+// often want the same new photos at once: the second waits for the first's
+// upload instead of sending the photo again.
+const sending = new Map()
+
+// Put one photo or video online (see ensurePhotos).
+async function sendOne(image, album, onFraction) {
+  if (isVideo(image)) return ensureVideo(image, onFraction, album)
+  const copy = await uploadCopy(image)
+  const base = (image.name ?? 'photo').replace(/\.[^.]+$/, '') || 'photo'
+  if (state.canSync) return ensurePhotoOnCloudflare(image, copy, `${base}.jpg`, album, onFraction)
+  // Without the photo registry there is nowhere to record a Cloudflare
+  // address, so photos stay in Supabase Storage as before.
+  if (storageUsed() + copy.blob.size > STORAGE_LIMIT) throw new Error('Storage is full. Remove some photos or links first.')
+  const path = `${state.library}/${random(12)}.jpg`
+  const { error } = await supabase.storage.from(BUCKET).upload(path, copy.blob, { contentType: 'image/jpeg', cacheControl: '31536000' })
+  if (error) throw new Error(error.message)
+  const row = { library: state.library, id: image.id, path, name: `${base}.jpg`, width: copy.width, height: copy.height, bytes: copy.blob.size }
+  set({ photos: { ...state.photos, [image.id]: row } })
+}
+
 // Put photos and videos online that are not there yet, and note each in the
 // registry. `images` are held on this device. Returns nothing; read the
 // results back with onlineItem. `onProgress` also hears, as a third value,
-// how far through a large upload it is (0 to 1). `album` is a secret album's
-// id when the photos go online for one (see ensureVideo).
+// how far through a video it is (0 to 1). `album` is a secret album's id when
+// the photos go online for one (see ensureVideo).
 export async function ensurePhotos(images, onProgress = () => {}, { album = null } = {}) {
   const todo = images.filter((img) => img.blob && canLink(img) && !onlineItem(img.id))
-  let done = 0
-  for (const image of todo) {
-    onProgress(done++, todo.length, isVideo(image) ? 0 : undefined)
-    if (isVideo(image)) {
-      await ensureVideo(image, (fraction) => onProgress(done - 1, todo.length, fraction), album)
-      continue
+  if (!todo.length) return
+  uploads.callers++
+  ended = null
+  clearTimeout(endTimer)
+  for (const img of todo) {
+    uploads.wanted.add(img.id)
+    if (isVideo(img)) uploads.videos.add(img.id)
+  }
+  showUploads()
+  try {
+    let done = 0
+    for (const image of todo) {
+      const video = isVideo(image)
+      onProgress(done++, todo.length, video ? 0 : undefined)
+      if (!onlineItem(image.id)) {
+        let job = sending.get(image.id)
+        if (!job) {
+          const step = (fraction) => {
+            uploads.part.set(image.id, fraction)
+            showUploads()
+            if (video) onProgress(done - 1, todo.length, fraction)
+          }
+          job = sendOne(image, album, step).finally(() => {
+            sending.delete(image.id)
+            uploads.part.delete(image.id)
+          })
+          sending.set(image.id, job)
+        }
+        await job
+      }
+      uploads.done.add(image.id)
+      showUploads()
     }
-    const copy = await uploadCopy(image)
-    const base = (image.name ?? 'photo').replace(/\.[^.]+$/, '') || 'photo'
-    if (state.canSync) {
-      await ensurePhotoOnCloudflare(image, copy, `${base}.jpg`, album)
-      continue
+  } finally {
+    // The last caller out starts the count afresh, and says so if all went up.
+    if (--uploads.callers === 0) {
+      const whole = uploads.wanted.size > 0 && uploads.done.size === uploads.wanted.size
+      if (whole) {
+        ended = { total: uploads.wanted.size, videos: uploads.videos.size }
+        endTimer = setTimeout(() => {
+          ended = null
+          showUploads()
+        }, 1800)
+      }
+      for (const list of [uploads.wanted, uploads.videos, uploads.done, uploads.part]) list.clear()
     }
-    // Without the photo registry there is nowhere to record a Cloudflare
-    // address, so photos stay in Supabase Storage as before.
-    if (storageUsed() + copy.blob.size > STORAGE_LIMIT) throw new Error('Storage is full. Remove some photos or links first.')
-    const path = `${state.library}/${random(12)}.jpg`
-    const { error } = await supabase.storage.from(BUCKET).upload(path, copy.blob, { contentType: 'image/jpeg', cacheControl: '31536000' })
-    if (error) throw new Error(error.message)
-    const row = { library: state.library, id: image.id, path, name: `${base}.jpg`, width: copy.width, height: copy.height, bytes: copy.blob.size }
-    set({ photos: { ...state.photos, [image.id]: row } })
+    showUploads()
   }
 }
 

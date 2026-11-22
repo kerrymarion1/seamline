@@ -27,7 +27,7 @@ export default function TagSheet({ open, album, photoId, onClose }) {
     onClose()
   }
   return (
-    <Sheet open={open} onClose={onClose} title="Who's in this photo?" modal>
+    <Sheet open={open} onClose={onClose} title={`Who's in this ${image && isVideo(image) ? 'video' : 'photo'}?`} modal>
       <PeoplePicker
         people={[...people, ...names.map((n) => ({ id: n, name: n }))]}
         value={value}

@@ -5,8 +5,8 @@ import { Emoji } from './Reactions'
 import { reactionFxOn, stillPlease } from '../lib/feedback'
 
 // The reactions a photo has had, played over it for a moment when it opens:
-// each person's face and their emoji, with a movement of its own (hearts
-// float up, laughs bounce, fire rises, hands clap...). Each plays once on a
+// each one rises from the bottom and floats up through the photo, with the
+// face and name of who gave it (see .react-fx in styles.css). Each plays once on a
 // device; a tap skips what is left; `replay` (a count) plays them all again.
 // Seasonal greetings have their own stage (components/Greetings) and are
 // left to it. `reactions` are others' [{ user_id, emoji }]; `token` names the
@@ -30,16 +30,17 @@ const remember = (keys) => {
 }
 
 const STEP = 420 // ms from one to the next
-const LAST = 1900 // ms the last one gets
+const LAST = 2900 // ms the last one gets: its whole rise
 const MOST = 8
-// How each one moves (see .react-fx in styles.css).
-const KIND = { '❤️': 'heart', '😂': 'laugh', '😮': 'wow', '😢': 'sad', '👍': 'thumbs', '🎉': 'party', '🤗': 'hug', '🔥': 'fire', '✨': 'sparkles', '👏': 'clap' }
+// What has played is remembered under the old emoji where a kind replaced
+// one, so reactions that played before the change don't play again.
+const WAS = { love: '❤️', laugh: '😂', like: '👍', dance: '🎉', smile: '🤗' }
 
 export default function ReactionPlay({ reactions, people, token, replay = 0, nameOf }) {
   const [show, setShow] = useState(null) // the ones playing, or null
   const timer = useRef(null)
   const given = reactions.filter((r) => !isGreeting(r.emoji))
-  const keys = given.map((r) => `${token}:${r.user_id}:${r.emoji}`)
+  const keys = given.map((r) => `${token}:${r.user_id}:${WAS[r.emoji] ?? r.emoji}`)
   const sig = keys.join('|')
 
   // New ones as the photo opens (or as they arrive); all of them on replay.
@@ -63,8 +64,8 @@ export default function ReactionPlay({ reactions, people, token, replay = 0, nam
       {show.map((it, i) => {
         const person = people.find((p) => p.id === it.user_id) ?? { id: it.user_id, name: nameOf(it.user_id) }
         return (
-          <span key={it.key} className={`react-fx ${KIND[it.emoji] ?? 'wow'}`} style={{ left: `${it.left}%`, '--d': `${i * STEP}ms` }}>
-            <span className="react-fx-emoji"><Emoji emoji={it.emoji} size={64} /></span>
+          <span key={it.key} className="react-fx" style={{ left: `${it.left}%`, '--d': `${i * STEP}ms`, '--sway': `${(i % 2 ? -1 : 1) * (10 + ((i * 7) % 14))}px` }}>
+            <span className="react-fx-emoji"><Emoji emoji={it.emoji} look={it.look} size={64} /></span>
             <span className="react-fx-who"><Avatar person={person} size={22} zoom={false} /> {(person.name ?? 'Someone').split(' ')[0]}</span>
           </span>
         )

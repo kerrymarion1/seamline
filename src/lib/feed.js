@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { getCloud, supabase, useCloud, userName } from './cloud'
+import { asKinds, lookColumn } from './social'
 import { addedAt, useStore } from './store'
 
 // What's new: everything others have done lately, newest first, for the
@@ -40,13 +41,13 @@ export async function refreshFeedSocial() {
   const cloud = getCloud()
   if (!supabase || !cloud.session || !cloud.features.social) return
   const since = new Date(Date.now() - DAYS * 864e5).toISOString()
-  const columns = cloud.features.reactions ? 'album, photo, user_id, emoji, created_at' : 'album, photo, user_id, created_at'
+  const columns = (cloud.features.reactions ? 'album, photo, user_id, emoji, created_at' : 'album, photo, user_id, created_at') + lookColumn()
   const [reactions, comments] = await Promise.all([
     supabase.from('seamline_reactions').select(columns).gte('created_at', since).order('created_at', { ascending: false }).limit(200),
     supabase.from('seamline_photo_comments').select('id, album, photo, user_id, body, created_at')
       .gte('created_at', since).order('created_at', { ascending: false }).limit(200),
   ])
-  social = { reactions: (reactions.data ?? []).map((r) => ({ emoji: '❤️', ...r })), comments: comments.data ?? [] }
+  social = { reactions: asKinds((reactions.data ?? []).map((r) => ({ emoji: '❤️', ...r }))), comments: comments.data ?? [] }
   emit()
 }
 
@@ -122,9 +123,10 @@ export function buildFeed({ albums, me, myName, social }) {
     if (!album || r.user_id === me || !mine(album.addedBy?.[r.photo])) continue
     const at = Date.parse(r.created_at)
     const key = `reaction:${r.album}:${r.user_id}:${new Date(at).toDateString()}`
-    const group = reacted.get(key) ?? { key, kind: 'reaction', at: 0, who: r.user_id, album, photos: [], emojis: [] }
+    const group = reacted.get(key) ?? { key, kind: 'reaction', at: 0, who: r.user_id, album, photos: [], emojis: [], looks: {} }
     if (!group.photos.includes(r.photo)) group.photos.push(r.photo)
     if (!group.emojis.includes(r.emoji)) group.emojis.push(r.emoji)
+    if (r.look !== undefined) group.looks[r.emoji] = r.look
     if (at > group.at) {
       group.at = at
       group.emoji = r.emoji

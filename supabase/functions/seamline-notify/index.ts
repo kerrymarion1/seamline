@@ -42,6 +42,12 @@ const reply = (body: unknown, status = 200) =>
 
 const count = (n: unknown) => Math.max(0, Math.min(10000, Math.round(Number(n) || 0)));
 const REACTIONS = ["❤️", "😂", "😮", "😢", "👍", "🎉", "🤗", "🔥", "✨", "👏"];
+// The seven animated reactions (src/components/ReactionFaces.jsx), saved by
+// name, and how each is said: "Kerry loved your photo".
+const KINDS: Record<string, string> = {
+  love: "loved", laugh: "laughed at", dance: "danced to", smile: "smiled at", wave: "waved at", like: "liked", rolleyes: "rolled their eyes at",
+};
+const known = (emoji: string) => REACTIONS.includes(emoji) || !!KINDS[emoji];
 // Seasonal greetings (src/components/Greetings.jsx): sent in a message, or
 // given to a photo as a reaction.
 const GREETINGS: Record<string, string> = {
@@ -91,14 +97,16 @@ Deno.serve(async (req: Request) => {
     if (body.message) {
       const messageId = String(body.message);
       const emoji = String(body.reaction ?? "");
-      if (!/^[0-9a-f-]{36}$/.test(messageId) || !(REACTIONS.includes(emoji) || GREETINGS[emoji])) return reply({ error: "Bad request" }, 400);
+      if (!/^[0-9a-f-]{36}$/.test(messageId) || !(known(emoji) || GREETINGS[emoji])) return reply({ error: "Bad request" }, 400);
       const { data: message } = await admin.from("seamline_messages").select("sender, body, photo").eq("id", messageId).eq("chat", chat.id).maybeSingle();
       if (!message || message.sender === auth.user.id) return reply({ ok: true });
       const what = message.body ? `“${String(message.body).replace(/\s+/g, " ").trim().slice(0, 60)}”` : "your photo";
       const about = message.body ? `your message ${what}` : what;
       await notifyLibrary(admin, library, {
         title: chat.members.length > 2 ? (chat.title || "Group chat") : nameOf(auth.user),
-        body: GREETINGS[emoji] ? `${firstName(auth.user)} sent a ${GREETINGS[emoji]} for ${about}` : `${firstName(auth.user)} ${emoji} ${about}`,
+        body: GREETINGS[emoji] ? `${firstName(auth.user)} sent a ${GREETINGS[emoji]} for ${about}`
+          : KINDS[emoji] ? `${firstName(auth.user)} ${KINDS[emoji]} ${about}`
+          : `${firstName(auth.user)} ${emoji} ${about}`,
         url: `/messages/${chat.id}`,
         tag: `chat-${chat.id}-react`,
       }, auth.user.id, [String(message.sender)]);
@@ -171,7 +179,7 @@ Deno.serve(async (req: Request) => {
   if (typeof body.commentId === "string" && typeof body.commentReaction === "string") {
     const albumId = String(body.album ?? "");
     const emoji = body.commentReaction;
-    if (!/^[\w-]{1,64}$/.test(albumId) || !/^[0-9a-f-]{36}$/.test(body.commentId) || !REACTIONS.includes(emoji)) return reply({ error: "Bad request" }, 400);
+    if (!/^[\w-]{1,64}$/.test(albumId) || !/^[0-9a-f-]{36}$/.test(body.commentId) || !known(emoji)) return reply({ error: "Bad request" }, 400);
     const seen = await albumFor(albumId);
     if (!seen) return reply({ error: "Not in that album." }, 403);
     const { data: comment } = await admin.from("seamline_photo_comments").select("user_id, photo, body")
@@ -180,7 +188,7 @@ Deno.serve(async (req: Request) => {
     const what = String(comment.body).replace(/\s+/g, " ").trim().slice(0, 60);
     await notifyLibrary(admin, library, {
       title: String(seen.data.name ?? body.name ?? "An album").slice(0, 80),
-      body: `${firstName(auth.user)} ${emoji} your comment “${what}”`,
+      body: `${firstName(auth.user)} ${KINDS[emoji] ?? emoji} your comment “${what}”`,
       url: `/album/${albumId}?photo=${encodeURIComponent(String(comment.photo))}`,
       tag: `comment-react-${body.commentId}`,
     }, auth.user.id, [String(comment.user_id)]);
@@ -215,7 +223,7 @@ Deno.serve(async (req: Request) => {
 
   // A reaction or a comment on one photo in an album the caller can see.
   const asked = String(body.reaction ?? "");
-  const reaction = REACTIONS.includes(asked) || GREETINGS[asked] ? asked : body.heart === true ? "❤️" : "";
+  const reaction = known(asked) || GREETINGS[asked] ? asked : body.heart === true ? "❤️" : "";
   if (typeof body.photo === "string" && (reaction || typeof body.comment === "string")) {
     const albumId = String(body.album ?? "");
     const photo = body.photo;
@@ -269,26 +277,38 @@ Deno.serve(async (req: Request) => {
     const only = [...to].filter((id) => !secret || members.includes(id));
     // Several reactions in a row from one person come as one notification,
     // counted: "Kerry loved 3 of your photos", each replacing the last.
-    let many = 0;
+    let theirs: string[] = [];
     if (!said && only.length === 1) {
       const since = new Date(Date.now() - 30 * 60000).toISOString();
       const { data: recent } = await admin.from("seamline_reactions").select("photo")
         .eq("library", library).eq("album", albumId).eq("user_id", auth.user.id).gte("created_at", since);
       const added = data.addedBy ?? {};
-      many = new Set((recent ?? []).map((r) => String(r.photo)).filter((p) => {
+      theirs = [...new Set((recent ?? []).map((r) => String(r.photo)).filter((p) => {
         const by = added[p];
         return by && typeof by === "object" && String(by.id) === only[0];
-      })).size;
+      }))];
+    }
+    const many = theirs.length;
+    // A video says so: "loved your video", "reacted to 3 of your videos".
+    let what = "your photo";
+    if (!said && only.length) {
+      const ids = many > 1 ? theirs.slice(0, 200) : [photo];
+      const { data: rows } = await admin.from("seamline_photos").select("id, kind").eq("library", library).in("id", ids);
+      const videos = (rows ?? []).filter((r) => r.kind === "video").length;
+      what = many > 1
+        ? `${many} of your ${videos === ids.length ? "videos" : videos ? "photos and videos" : "photos"}`
+        : videos ? "your video" : "your photo";
     }
     if (only.length) {
       await notifyLibrary(admin, library, {
         title: String(data.name ?? body.name ?? "An album").slice(0, 80),
         body: said
           ? `${firstName(auth.user)}: ${said}`
-          : many > 1 ? `${firstName(auth.user)} reacted to ${many} of your photos`
-          : reaction === "❤️" ? `${firstName(auth.user)} loved your photo`
-          : GREETINGS[reaction] ? `${firstName(auth.user)} sent a ${GREETINGS[reaction]} for your photo`
-          : `${firstName(auth.user)} reacted ${reaction} to your photo`,
+          : many > 1 ? `${firstName(auth.user)} reacted to ${what}`
+          : reaction === "❤️" ? `${firstName(auth.user)} loved ${what}`
+          : KINDS[reaction] ? `${firstName(auth.user)} ${KINDS[reaction]} ${what}`
+          : GREETINGS[reaction] ? `${firstName(auth.user)} sent a ${GREETINGS[reaction]} for ${what}`
+          : `${firstName(auth.user)} reacted ${reaction} to ${what}`,
         url: `/album/${albumId}?photo=${encodeURIComponent(photo)}`,
         tag: said ? `photo-${albumId}-${photo}` : `react-${albumId}-${auth.user.id}`,
       }, auth.user.id, only);

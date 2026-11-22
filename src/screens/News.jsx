@@ -7,7 +7,7 @@ import PauseBar from '../components/PauseBar'
 import { Emoji } from '../components/Reactions'
 import { useCloud, userName } from '../lib/cloud'
 import { buildFeed, feedSeenAt, markFeedSeen, refreshFeedSocial, useFeedSocial } from '../lib/feed'
-import { countText } from '../lib/images'
+import { countText, yourText } from '../lib/images'
 import { personIn, usePeople } from '../lib/people'
 import { useStore } from '../lib/store'
 
@@ -26,7 +26,9 @@ const dayLabel = (t) => {
 export default function News() {
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
-  const { session } = useCloud()
+  const { session, photos: online } = useCloud()
+  // A video not on this device yet is still known as one from the registry.
+  const things = (item) => item.photos?.map((id) => images[id] ?? online[id] ?? {}) ?? []
   const me = session?.user.id
   const people = usePeople()
   const social = useFeedSocial()
@@ -71,13 +73,13 @@ export default function News() {
                 <span className="news-main">
                   <span className="news-text">
                     <b>{first(item)}</b>{' '}
-                    {item.kind === 'added' && <>added {countText(item.photos.map((id) => images[id] ?? {}))} to <b><AlbumName album={item.album} /></b></>}
+                    {item.kind === 'added' && <>added {countText(things(item))} to <b><AlbumName album={item.album} /></b></>}
                     {item.kind === 'album' && <>made a new album, <b><AlbumName album={item.album} /></b></>}
                     {item.kind === 'shared' && <>shared an album with you, <b><AlbumName album={item.album} /></b></>}
                     {item.kind === 'reaction' && (
                       <>
-                        reacted {(item.emojis ?? [item.emoji]).slice(0, 3).map((e) => <Emoji key={e} emoji={e} size={18} />)}{' '}
-                        to {item.photos.length > 1 ? `${item.photos.length} of your photos` : 'your photo'} in <b><AlbumName album={item.album} /></b>
+                        reacted {(item.emojis ?? [item.emoji]).slice(0, 3).map((e) => <Emoji key={e} emoji={e} look={item.looks?.[e]} size={18} />)}{' '}
+                        to {yourText(things(item))} in <b><AlbumName album={item.album} /></b>
                       </>
                     )}
                     {item.kind === 'comment' && <>commented in <b><AlbumName album={item.album} /></b>: “{item.text}”</>}
