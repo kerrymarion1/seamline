@@ -431,6 +431,19 @@ const random = (bytes) => {
   return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// A link's address: 8 letters and numbers (62⁸, about 218 trillion, so it
+// can't be guessed). Links made before 2026-11-24 have 22 characters and
+// keep them, so nothing already sent stops working.
+const LINK_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+const linkCode = (n = 8) => {
+  let code = ''
+  while (code.length < n) {
+    // 248 is 62 × 4: bytes above it are skipped, so every character is as likely.
+    for (const b of crypto.getRandomValues(new Uint8Array(n))) if (b < 248 && code.length < n) code += LINK_CHARS[b % 62]
+  }
+  return code
+}
+
 export const shareUrl = (share) => `${window.location.origin}/s/${share.token}`
 // Photos are in Supabase Storage and recorded by their path there. Videos are
 // in Cloudflare R2 (see supabase/functions/seamline-media) and recorded by
@@ -885,7 +898,7 @@ async function doSync({ kind, sourceId, title, images, captions = {}, note, plac
     }
     const query = existing
       ? supabase.from('seamline_shares').update(row).eq('id', existing.id)
-      : supabase.from('seamline_shares').insert({ ...row, token: random(16), owner: state.library })
+      : supabase.from('seamline_shares').insert({ ...row, token: linkCode(), owner: state.library })
     const { data, error } = await query.select().single()
     if (error) throw new Error(error.message)
     set({ shares: existing ? state.shares.map((sh) => (sh.id === data.id ? data : sh)) : [data, ...state.shares] })
@@ -993,7 +1006,7 @@ export async function setExpiry(share, days) {
 // Give a link a new address. The old one stops working at once; the photos
 // stay where they are, so nothing is uploaded again.
 export async function replaceLink(share) {
-  const { data, error } = await supabase.from('seamline_shares').update({ token: random(16) }).eq('id', share.id).select().single()
+  const { data, error } = await supabase.from('seamline_shares').update({ token: linkCode() }).eq('id', share.id).select().single()
   if (error) throw new Error(error.message)
   set({ shares: state.shares.map((sh) => (sh.id === data.id ? data : sh)) })
 }
