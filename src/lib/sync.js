@@ -28,6 +28,9 @@ export const onSyncStatus = (l) => {
   return () => listeners.delete(l)
 }
 export const getSyncStatus = () => status
+// Whether the server has had this thing, deleted or not, as far as this phone
+// has heard: something deleted elsewhere is not made again here.
+export const knownOnServer = (kind, id) => `${kind}:${id}` in read('synced', {})
 
 // Ids of every photo a project, album or template refers to.
 export function photoIdsOf(doc) {

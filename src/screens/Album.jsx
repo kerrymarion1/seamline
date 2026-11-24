@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Icon from '../components/Icon'
 import AlbumChooser from '../components/AlbumChooser'
+import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
+import CardMaker from '../components/CardMaker'
+import { Advent } from '../components/HolidayHome'
 import Avatar from '../components/Avatar'
 import Camera from '../components/Camera'
 import CoverFramer from '../components/CoverFramer'
@@ -16,6 +19,7 @@ import PhotoPager from '../components/PhotoPager'
 import PlaceSheet from '../components/PlaceSheet'
 import { Emoji, ReactionChips, ReactionRow } from '../components/Reactions'
 import ReactionPlay from '../components/ReactionPlay'
+import { ReactionFace } from '../components/ReactionFaces'
 import {
   adoptVisitorItems, canLink, deleteComment, fetchMedia, findShare, me, progressText, publicUrl, refreshComments,
   refreshHearts, refreshShares, removeVisitorItem, setCoverFraming, setPinned, setRights, stopShare, unpin, useCloud, useCoversOf, visitorItems,
@@ -25,6 +29,7 @@ import TagSheet from '../components/TagSheet'
 import { findDuplicates } from '../lib/dupes'
 import { fetchSeen, markSeen, seenTime } from '../lib/seen'
 import { buzz, celebrateAdded, reactionFxOn } from '../lib/feedback'
+import { HOLIDAYS, holidayAlbumId, holidayById, holidayNow, holidayYears } from '../lib/holidays'
 import { editPhoto } from '../lib/edit'
 import { clock, countText, importFile, importMedia, isVideo } from '../lib/images'
 import { fadeIn, morph } from '../lib/motion'
@@ -36,11 +41,12 @@ import {
   watchAlbumSocial,
 } from '../lib/social'
 import { syncNow } from '../lib/sync'
+import { useV2 } from '../lib/v2'
 import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
   addedAt, addImages, addToAlbum, clearAsked, deleteAlbum, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumCover, setAlbumNote, setAlbumPeople, setAsked,
-  setCaption, setCoverFocus, getState, moveToAlbum, putBack, setPhotoSpots, sortAlbum, useAlbum, useStore,
+  setCaption, setCoverFocus, getState, moveToAlbum, putBack, setAlbumHoliday, setPhotoSpots, sortAlbum, useAlbum, useStore,
 } from '../lib/store'
 
 // When a photo was added, for under it: "today", "yesterday", "Oct 17", or
@@ -80,6 +86,12 @@ export default function Album({ albumId }) {
   const [picked, setPicked] = useState([])
   const [moving, setMoving] = useState(false) // waiting for a tap on where the picked photos go
   const [favourites, setFavourites] = useState(false) // show only what visitors have hearted
+  const [byWho, setByWho] = useState(null) // a holiday album shown for one person's photos
+  const [holidayPick, setHolidayPick] = useState(null) // { id, year } while marking it as a holiday's album
+  const [carding, setCarding] = useState(null) // the photo a card is being made from
+  const [cardPicking, setCardPicking] = useState(false) // choosing that photo first
+  const allAlbums = useStore((s) => s.albums)
+  const v2 = useV2() // the holiday parts, cards and the story (lib/v2.js)
   const [sorting, setSorting] = useState(false)
   const [switching, setSwitching] = useState(false) // the album switcher, from the name in the header
   const [albumMenu, setAlbumMenu] = useState(false) // the header's ⋯: rename, sort, place, ask, delete
@@ -252,7 +264,12 @@ export default function Album({ albumId }) {
   const noteCount = (id) => (comments[id]?.length ?? 0) + (famNotes[id]?.length ?? 0)
   const liked = ids.filter((id) => heartCount(id) > 0)
   const onlyLiked = favourites && liked.length > 0
-  const shown = onlyLiked ? liked : ids
+  // A holiday's album (lib/holidays.js): its years, and who has added to it.
+  const hol = v2 && album.holiday ? holidayById(album.holiday.id) : null
+  const holYears = hol ? holidayYears(allAlbums, hol.id) : []
+  const adderId = (by) => (by && typeof by === 'object' ? by.id : null)
+  const holAdders = hol ? [...new Map(ids.map((id) => album.addedBy?.[id]).filter(adderId).map((by) => [by.id, by])).values()] : []
+  const shown = (onlyLiked ? liked : ids).filter((id) => !byWho || adderId(album.addedBy?.[id]) === byWho)
   // What a link can show: everything, or only the photos where videos cannot go online.
   const photoIds = ids.filter((id) => canLink(images[id]))
   const viewed = images[viewing]
@@ -771,6 +788,46 @@ export default function Album({ albumId }) {
           )}
           {syncError && !syncing && <p className="sync-note error">Could not put this album online: {syncError}</p>}
           {moving && <p className="sync-note">Tap the photo these should go in front of, or choose below.</p>}
+          {/* A holiday's album: what it is, its other years, and who added what. */}
+          {hol && !selecting && (
+            <section className="holiday-banner">
+              <ReactionFace kind="dance" season={hol.id} size={56} />
+              <div>
+                <b>Made for {hol.name}</b>
+                <span>Everyone in Hugpix adds to it. After {hol.name}, it joins the {hol.plural} before.</span>
+              </div>
+              {ids.some((id) => images[id] && !isVideo(images[id])) && (
+                <span className="holiday-banner-btns">
+                  <button className="pill-btn" onClick={() => setCardPicking(true)}>Make a card</button>
+                  {ids.filter((id) => images[id] && !isVideo(images[id])).length >= 3 && (
+                    <button className="pill-btn" onClick={() => navigate(`/recap/${album.id}`)}>Story</button>
+                  )}
+                </span>
+              )}
+            </section>
+          )}
+          {hol?.id === 'christmas' && !selecting && (
+            <Advent album={album} year={album.holiday.year} onAdd={album.holiday.year === new Date().getFullYear() ? () => fileInput.current.click() : null} />
+          )}
+          {hol && holYears.length > 1 && !selecting && (
+            <nav className="chip-line" aria-label="Years">
+              {holYears.map((a) => (
+                <button key={a.id} className={`chip small ${a.id === album.id ? 'on' : ''}`} onClick={() => a.id !== album.id && navigate(`/album/${a.id}`)}>
+                  {a.holiday.year}
+                </button>
+              ))}
+            </nav>
+          )}
+          {hol && holAdders.length > 1 && !selecting && (
+            <nav className="chip-line" aria-label="Who added">
+              <button className={`chip small ${byWho ? '' : 'on'}`} onClick={() => setByWho(null)}>Everyone</button>
+              {holAdders.map((p) => (
+                <button key={p.id} className={`chip small who-chip ${byWho === p.id ? 'on' : ''}`} onClick={() => setByWho(byWho === p.id ? null : p.id)}>
+                  <Avatar person={personIn(people, p.id) ?? p} size={22} zoom={false} /> {(personIn(people, p.id)?.name ?? p.name ?? '').split(' ')[0]}
+                </button>
+              ))}
+            </nav>
+          )}
           {features.notes && !selecting && guest && album.note && <p className="album-note">{album.note}</p>}
           {features.notes && !selecting && !guest && (
             <input
@@ -1157,6 +1214,7 @@ export default function Album({ albumId }) {
                   )}
                   {!limited && <button className="chip small" onClick={() => setTagging(true)}>{tagsHere.length ? 'Tags' : 'Tag'}</button>}
                   {!limited && <button className="chip small" onClick={() => setPlacing([viewing])}>Place</button>}
+                  {v2 && !isVideo(viewed) && <button className="chip small" onClick={() => setCarding(viewing)}>Card</button>}
                   <button className="chip small share" onClick={() => setSharingPhoto(true)}>
                     <Icon name="share" size={14} /> Share
                   </button>
@@ -1580,6 +1638,19 @@ export default function Album({ albumId }) {
               </button>
             </li>
           )}
+          {!limited && v2 && (
+            <li>
+              <button
+                className="layer-pick"
+                onClick={() => {
+                  setAlbumMenu(false)
+                  setHolidayPick(album.holiday ?? { id: holidayNow()?.id ?? 'christmas', year: new Date(album.createdAt ?? Date.now()).getFullYear() })
+                }}
+              >
+                <Icon name="cover" size={18} /> <span className="layer-name">{album.holiday ? `${hol?.name ?? 'Holiday'} ${album.holiday.year} album` : 'Make it a holiday album'}</span>
+              </button>
+            </li>
+          )}
           {!limited && features.push && (
             <li>
               <button className="layer-pick" onClick={() => { setAlbumMenu(false); setAsking(true) }}>
@@ -1595,6 +1666,60 @@ export default function Album({ albumId }) {
             </li>
           )}
         </ul>
+      </Sheet>
+
+      {/* A holiday card from one photo, chosen first when it starts from the album. */}
+      <AlbumPhotoPicker
+        open={cardPicking}
+        onClose={() => setCardPicking(false)}
+        max={1}
+        startAlbum={album.id}
+        title="Which photo for the card?"
+        action={(n) => (n ? 'Use this photo' : 'Tap a photo')}
+        onPick={(picked) => {
+          setCardPicking(false)
+          if (picked[0]) setCarding(picked[0])
+        }}
+      />
+      <CardMaker
+        open={!!carding && !!images[carding]}
+        image={images[carding]}
+        holiday={album.holiday?.id}
+        onClose={() => setCarding(null)}
+        onDone={(text) => setNotice({ text })}
+      />
+
+      {/* Marking it as the family's album for a holiday and year: it then shows
+          on the front page in that holiday's month, and with its years. */}
+      <Sheet open={!!holidayPick} onClose={() => setHolidayPick(null)} title="Holiday album" modal>
+        <p className="hint">The family's album for a holiday shows on the front page in its month, with the same holiday from other years.</p>
+        <div className="label">Holiday</div>
+        <div className="chips">
+          {HOLIDAYS.map((h) => (
+            <button key={h.id} className={`chip small ${holidayPick?.id === h.id ? 'on' : ''}`} onClick={() => setHolidayPick((p) => ({ ...p, id: h.id }))}>{h.name}</button>
+          ))}
+        </div>
+        <div className="label">Year</div>
+        <div className="chips">
+          {[0, 1, 2, 3, 4, 5].map((n) => new Date().getFullYear() + 1 - n).map((y) => (
+            <button key={y} className={`chip small ${holidayPick?.year === y ? 'on' : ''}`} onClick={() => setHolidayPick((p) => ({ ...p, year: y }))}>{y}</button>
+          ))}
+        </div>
+        <button
+          className="primary block"
+          onClick={() => {
+            setAlbumHoliday(album.id, holidayPick)
+            // The one Hugpix made for it goes, if nothing was added to it.
+            const made = allAlbums.find((a) => a.id === holidayAlbumId(holidayPick.id, holidayPick.year))
+            if (made && made.id !== album.id && made.imageIds.length === 0) deleteAlbum(made.id)
+            setHolidayPick(null)
+          }}
+        >
+          Make it the {holidayById(holidayPick?.id)?.name} {holidayPick?.year} album
+        </button>
+        {album.holiday && (
+          <button className="text-btn" onClick={() => { setAlbumHoliday(album.id, null); setHolidayPick(null) }}>Not a holiday album</button>
+        )}
       </Sheet>
 
       <Sheet open={naming != null} onClose={() => setNaming(null)} title="Rename album" modal>

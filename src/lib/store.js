@@ -329,6 +329,36 @@ export function createAlbum(name, createdBy = '', members = null) {
   return album
 }
 
+// The family's album for a holiday this year (lib/holidays.js), under the
+// one id every phone gives it, so two making it at once make the same one.
+export function createHolidayAlbum(holiday, albumId, createdBy = '') {
+  if (state.albums.some((a) => a.id === albumId)) return
+  const album = {
+    id: albumId, name: `${holiday.name} ${holiday.year}`, imageIds: [], createdAt: Date.now(), updatedAt: Date.now(),
+    holiday: { id: holiday.id, year: holiday.year },
+    ...(createdBy ? { createdBy } : null),
+  }
+  setState((s) => ({ ...s, albums: [album, ...s.albums] }))
+}
+
+// The same for a family day (lib/familyDays.js) on the day: "Regine's birthday
+// 2026", marked `familyDay: { id, year }`.
+export function createFamilyDayAlbum(albumId, name, familyDay, createdBy = '') {
+  if (state.albums.some((a) => a.id === albumId)) return
+  const album = {
+    id: albumId, name, imageIds: [], createdAt: Date.now(), updatedAt: Date.now(), familyDay,
+    ...(createdBy ? { createdBy } : null),
+  }
+  setState((s) => ({ ...s, albums: [album, ...s.albums] }))
+}
+
+// Mark an album as a holiday's album for a year ({ id, year }), or (null) not.
+export const setAlbumHoliday = (id, holiday) =>
+  patchAlbum(id, (a) => {
+    const { holiday: _was, ...rest } = a
+    return holiday ? { ...rest, holiday } : rest
+  })
+
 export const renameAlbum = (id, name) => patchAlbum(id, (a) => ({ ...a, name }))
 
 // Who sees an album: everyone (members null), or only these accounts.

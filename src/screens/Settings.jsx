@@ -12,8 +12,9 @@ import { celebrateAdded, reactionFxOn, setReactionFxOn, setVibrateOn, vibrateOn 
 import { setSoundOn, soundOn } from '../lib/sounds'
 import {
   addInvite, answerRequest, avatarOf, createInvite, deleteInvite, fetchMyInvites, renameMember, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, setPinned, unpin, useAllCovers, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
-  storageUsed, getCloud, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
+  storageUsed, getCloud, setSetting, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
 } from '../lib/cloud'
+import { setV2Mine, useV2, useV2Everyone, useV2Mine } from '../lib/v2'
 import { personIn, refreshPeople, usePeople } from '../lib/people'
 import { codeMessage, inviteMessage } from '../lib/pitch'
 import PauseBar from '../components/PauseBar'
@@ -118,6 +119,70 @@ function Season() {
 
 // The sound and the pulse when photos go into an album (and the message
 // chime), for this device. Try it plays what adding photos does right now.
+// The holidays page (Hugpix 2): which holidays are kept, and family days.
+function HolidaysLink() {
+  const v2 = useV2()
+  if (!v2) return null
+  return (
+    <section className="panel">
+      <h2>Holidays and family days</h2>
+      <p className="hint">Which holidays Hugpix keeps for you, and the family's birthdays and anniversaries.</p>
+      <button className="secondary" onClick={() => navigate('/holidays')}>Open holidays</button>
+    </section>
+  )
+}
+
+// Hugpix 2 (lib/v2.js), for the admin: tried on this phone first, then
+// turned on for everyone at once (the library's "v2" setting).
+function HugpixTwo() {
+  const { admin, features } = useCloud()
+  const mine = useV2Mine()
+  const everyone = useV2Everyone()
+  const [asking, setAsking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  if (!admin) return null
+  const flip = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await setSetting('v2', !everyone)
+      setAsking(false)
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(false)
+  }
+  return (
+    <section className="panel">
+      <h2>Hugpix 2</h2>
+      <p className="hint">
+        The holidays: each one's family album and countdown on the front page, cards made from a photo, the story the Sunday after,
+        a photo a day in Advent, and family birthdays. Try it on this phone, then turn it on for everyone.
+      </p>
+      <div className="chips wrap">
+        <button className={`chip small ${mine || everyone ? 'on' : ''}`} aria-pressed={mine || everyone} disabled={everyone} onClick={() => setV2Mine(!mine)}>
+          This phone {mine || everyone ? 'on' : 'off'}
+        </button>
+        {features.settings && (
+          <button className={`chip small ${everyone ? 'on' : ''}`} aria-pressed={everyone} disabled={busy} onClick={() => (everyone ? flip() : setAsking(true))}>
+            Everyone {everyone ? 'on' : 'off'}
+          </button>
+        )}
+      </div>
+      {!features.settings && <p className="hint">Turning it on for everyone needs one change to the database first.</p>}
+      {asking && !everyone && (
+        <div className="confirm-row">
+          <p className="hint">Everyone sees Hugpix 2 the next time they open it. You can turn it off again here.</p>
+          <button className="primary" disabled={busy} onClick={flip}>{busy ? 'Turning on…' : 'Turn on for everyone'}</button>
+          <button className="text-btn" disabled={busy} onClick={() => setAsking(false)}>Not yet</button>
+        </div>
+      )}
+      {error && <p className="note warn">{error}</p>}
+    </section>
+  )
+}
+
 function Feedback() {
   const [sound, setSound] = useState(soundOn)
   const [vibrate, setVibrate] = useState(vibrateOn)
@@ -1034,6 +1099,7 @@ export default function Settings() {
         {/* In groups, each with a small heading, so the page reads at a glance. */}
         <p className="settings-group">You</p>
         <Season />
+        <HolidaysLink />
         {cloud.session && !cloud.loading && !cloud.recovering && (
           <section className="panel">
             <h2>Account</h2>
@@ -1049,6 +1115,7 @@ export default function Settings() {
         <Layout />
         <ThemeCovers />
         <Feedback />
+        <HugpixTwo />
         {!cloud.configured ? (
           <section className="panel">
             <h2>Shared links</h2>

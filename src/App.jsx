@@ -29,6 +29,8 @@ const Favourites = lazy(() => import('./screens/Wall').then((m) => ({ default: m
 const Person = lazy(() => import('./screens/Wall').then((m) => ({ default: m.Person })))
 const PlaceMap = lazy(() => import('./screens/PlaceMap'))
 const Search = lazy(() => import('./screens/Search'))
+const Recap = lazy(() => import('./screens/Recap'))
+const Holidays = lazy(() => import('./screens/Holidays'))
 const splash = <div className="splash"><Logo as="div" loop /></div>
 
 // Minimal path router: "/" and "/albums" home, "/album/:id" one album,
@@ -80,6 +82,7 @@ export default function App() {
   const shareToken = path.match(/^\/s\/([^/]+)/)?.[1]
   const chatId = path.match(/^\/messages\/([^/]+)/)?.[1]
   const personTag = path.match(/^\/people\/([^/]+)/)?.[1]
+  const recapId = path.match(/^\/recap\/([^/]+)/)?.[1]
 
   // A tapped notification asks the open app to go to an album (see public/push.js).
   useEffect(() => {
@@ -133,6 +136,10 @@ export default function App() {
           <PlaceMap />
         ) : path === '/search' ? (
           <Search />
+        ) : path === '/holidays' ? (
+          <Holidays />
+        ) : recapId ? (
+          <Recap key={recapId} albumId={decodeURIComponent(recapId)} />
         ) : albumId ? (
           <Album key={albumId} albumId={albumId} />
         ) : (

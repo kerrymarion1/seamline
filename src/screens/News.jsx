@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { navigate } from '../App'
 import Avatar from '../components/Avatar'
+import { useRecapAlbum } from '../components/HolidayHome'
 import { AlbumName, ago } from '../components/HomeLayouts'
 import Icon from '../components/Icon'
 import PauseBar from '../components/PauseBar'
@@ -10,6 +11,7 @@ import { buildFeed, feedSeenAt, markFeedSeen, refreshFeedSocial, useFeedSocial }
 import { countText, yourText } from '../lib/images'
 import { personIn, usePeople } from '../lib/people'
 import { useStore } from '../lib/store'
+import { useV2 } from '../lib/v2'
 
 // What's new: photos others added, albums they made, reactions to my photos
 // and comments, newest first, grouped by day. What came since I last looked
@@ -32,6 +34,8 @@ export default function News() {
   const me = session?.user.id
   const people = usePeople()
   const social = useFeedSocial()
+  const v2 = useV2()
+  const story = useRecapAlbum() // the week after a holiday, its story first (Hugpix 2)
   // What counts as new is fixed when the page opens, so the dots stay put.
   const [seenAt] = useState(feedSeenAt)
   useEffect(() => {
@@ -56,6 +60,15 @@ export default function News() {
       </header>
       <main className="news-list">
         <PauseBar />
+        {v2 && story && (
+          <button className="news-item news-story" onClick={() => navigate(`/recap/${story.album.id}`)}>
+            <span className="news-story-pic"><img src={images[story.pics[0]].previewUrl} alt="" draggable={false} /><Icon name="play" size={16} /></span>
+            <span className="news-main">
+              <span className="news-text">The <b>{story.album.name}</b> story is ready</span>
+              <small>Everyone's photos from the week, {story.pics.length === 1 ? 'one photo' : `${story.pics.length} photos`}</small>
+            </span>
+          </button>
+        )}
         {items.length === 0 && (
           <div className="empty">
             <h2>Nothing new yet</h2>

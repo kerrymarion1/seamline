@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { holidayOn, holidaysOff, saveHolidaysOff } from './holidays'
 
 // The app's accent colour: buttons, the logo's dot and seam, highlights and
 // the glow behind the front page. Chosen in Settings and kept on the device.
@@ -68,7 +69,8 @@ if (!SEASONS.some((s) => s.id === season)) season = 'auto'
 
 // The season showing now, or null for everyday.
 export function activeSeason(date = new Date()) {
-  const id = season === 'auto' ? SEASONS.find((s) => s.month === date.getMonth())?.id : season
+  // On Auto, a holiday this person has turned off (lib/holidays.js) leaves the everyday look.
+  const id = season === 'auto' ? SEASONS.find((s) => s.month === date.getMonth() && holidayOn(s.id))?.id : season
   return SEASONS.find((s) => s.id === id && s.accent) ?? null
 }
 
@@ -106,6 +108,16 @@ const subscribe = (l) => {
 export const useColour = () => useSyncExternalStore(subscribe, () => colour)
 // The season as chosen ('auto' included), and the one showing now (or null).
 export const useSeason = () => useSyncExternalStore(subscribe, () => season)
+// The holidays this person keeps: one on or off, for them alone (screens/Holidays.jsx).
+let off = holidaysOff().join(',')
+export const useHolidaysOff = () => useSyncExternalStore(subscribe, () => off)
+export function setHolidayOn(id, on) {
+  const list = holidaysOff().filter((x) => x !== id)
+  saveHolidaysOff(on ? list : [...list, id])
+  off = holidaysOff().join(',')
+  apply()
+  listeners.forEach((l) => l())
+}
 export const useActiveSeason = () => useSyncExternalStore(subscribe, () => activeSeason()?.id ?? null)
 // How the front page lays out the albums, also chosen in Settings and kept on
 // the device. The first is the default.

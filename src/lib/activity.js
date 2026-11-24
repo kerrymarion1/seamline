@@ -1,7 +1,10 @@
-import { userName } from './cloud'
+import { getCloud, userName } from './cloud'
+import { familyDaysNow } from './familyDays'
+import { familyDayToday } from './holidays'
 import { countText } from './images'
 import { addedAt, uploaderName } from './store'
 import { activeSeason } from './theme'
+import { v2On } from './v2'
 
 // What others have done since the app was last opened on this device: photos
 // and videos other people added to albums, photos visitors added through
@@ -134,6 +137,10 @@ export function newsSince({ session, hearts, comments, shares }, albums, images)
 // "Good morning", "Good afternoon", "Good evening", or late at night just
 // "Hello"; in a season, its own ("Happy Halloween", "Merry Christmas").
 export function greeting(date = new Date()) {
+  // Their own birthday or anniversary (Hugpix 2): "Happy birthday, Kerry".
+  const me = getCloud().session?.user.id
+  const mine = me && v2On() && familyDaysNow().find((d) => d.person === me && d.kind !== 'day' && familyDayToday(d))
+  if (mine) return mine.kind === 'birthday' ? 'Happy birthday' : 'Happy anniversary'
   const season = activeSeason(date)
   if (season) return season.greeting
   const h = date.getHours()

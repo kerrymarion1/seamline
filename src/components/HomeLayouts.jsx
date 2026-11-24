@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import Avatar from './Avatar'
 import Icon from './Icon'
+import HolidayHome from './HolidayHome'
 import LiveNow from './LiveNow'
 import Logo from './Logo'
 import { refreshChats, useUnread } from '../lib/chat'
@@ -292,6 +293,7 @@ export function Stack({ albums, total, images, who, greet, first, news, summary,
         {news.length > 0 ? <News news={news} /> : <p className="home-sub">{summary}</p>}
         <LiveNow />
         <CoverLine onCover={onCover} coverFor={coverFor} count={coverCount} />
+        <HolidayHome />
       </section>
 
       {banner ? (
@@ -373,6 +375,7 @@ export function Editorial({ albums, images, who, greet, first, stats, news, onNe
       {news.length > 0 && <News news={news} />}
       <LiveNow />
       <CoverLine onCover={onCover} coverFor={coverFor} count={coverCount} />
+      <HolidayHome />
       {banner && (
         <button className="ed-banner" onClick={() => openBanner(banner)} aria-label="Open the pinned photo">
           <img src={banner.pic.url} style={banner.pic.style} alt="" draggable={false} />
@@ -477,6 +480,7 @@ export function Mosaic({ albums, images, who, greet, first, news, onNewAlbum, ba
         <LiveNow />
         <CoverLine onCover={onCover} coverFor={coverFor} count={coverCount} />
       </div>
+      <HolidayHome className="mo-span" />
       {news.length > 0 && <div className="mo-span mo-news"><News news={news} /></div>}
 
       {rest.map((a, i) => {

@@ -54,6 +54,14 @@ function partsFor(season) {
       })),
     ]
   }
+  // A family day (components/HolidayHome.jsx): confetti in every colour, from below.
+  if (season === 'confetti') {
+    const colours = ['#ff6b8b', '#f5c451', '#5b8cff', '#10b981', '#a78bfa', '#ff8a4c']
+    return Array.from({ length: 40 }, () => ({
+      kind: 'confetti', colour: pick(colours), w: rand(5, 9), h: rand(9, 15), time: `${rand(1.6, 2.4)}s`, delay: `${rand(0, 0.2)}s`,
+      dx: `${rand(-42, 42)}vw`, up: `${-rand(45, 80)}vh`, spin: `${rand(-720, 720)}deg`,
+    }))
+  }
   if (season === 'july4') {
     const colours = ['#ff4d5e', '#ffffff', '#5b8cff']
     return [burstAt(rand(15, 40), rand(12, 30), colours, 0), burstAt(rand(55, 85), rand(10, 26), colours, 0.35), burstAt(rand(35, 65), rand(26, 40), colours, 0.7)]

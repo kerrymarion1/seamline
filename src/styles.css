@@ -4975,3 +4975,162 @@ span.bubble-face:empty { visibility: hidden; }
 .holiday-chevron { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 50%; background: rgb(255 255 255 / 0.06); color: var(--text-2); transition: transform 0.25s var(--spring); }
 .holiday.open .holiday-chevron { transform: rotate(180deg); }
 .holiday .gr-picker { padding: 0 10px 12px; }
+
+/* ---------- the holiday on the front page (components/HolidayHome.jsx) ---------- */
+.holiday-home { display: flex; flex-direction: column; gap: 14px; margin: 4px 0 6px; }
+.holiday-home:empty { display: none; }
+.holiday-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 14px 10px 8px; border: 1px solid var(--edge); border-radius: 20px; background: var(--surface); color: var(--text); text-align: left; }
+.holiday-card:active { transform: scale(0.99); }
+.holiday-card-face { flex: none; display: grid; place-items: center; }
+.holiday-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.holiday-card-text small { color: var(--accent); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.holiday-card-text b { font-size: 16px; font-weight: 700; }
+.holiday-card-text span { color: var(--text-2); font-size: 13px; line-height: 1.35; }
+.holiday-card-go { flex: none; padding: 9px 14px; border-radius: 18px; background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 700; }
+.holiday-before { display: flex; flex-direction: column; gap: 8px; }
+.holiday-before h3 { margin: 0 4px; color: var(--text-2); font-size: 12.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.holiday-years { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.holiday-years button { flex: 0 0 31%; display: flex; flex-direction: column; gap: 5px; color: var(--text); font-size: 13px; font-weight: 600; text-align: left; }
+.holiday-year-pic { display: block; height: 92px; overflow: hidden; border-radius: 16px; background: var(--surface-2); }
+.holiday-year-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* A holiday's album: what it is, then rows of years and of who added. */
+.holiday-banner { display: flex; align-items: center; gap: 10px; margin: 2px 9px 10px; padding: 8px 14px 8px 6px; border: 1px solid var(--edge); border-radius: 18px; background: var(--surface); }
+.holiday-banner > div { display: flex; flex-direction: column; gap: 2px; }
+.holiday-banner b { color: var(--accent); font-size: 15px; }
+.holiday-banner span { color: var(--text-2); font-size: 13px; line-height: 1.35; }
+.chip-line { display: flex; gap: 6px; margin: 0 9px 8px; overflow-x: auto; scrollbar-width: none; }
+.chip-line .chip { flex: none; }
+.who-chip { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
+.holiday-banner .pill-btn { flex: none; margin-left: auto; }
+
+/* ---------- making a holiday card (components/CardMaker.jsx) ---------- */
+.card-preview { display: grid; place-items: center; min-height: 200px; margin-bottom: 12px; }
+.card-preview img { width: min(100%, 280px); aspect-ratio: 3 / 4; border-radius: 10px; box-shadow: 0 14px 34px rgb(0 0 0 / 0.5); }
+.card-frame { display: inline-flex; align-items: center; gap: 6px; }
+.card-frame span { width: 18px; height: 14px; border-radius: 3px; }
+.card-field { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.card-field .label { margin: 0; }
+
+/* Hugpix 2's switch in Settings: asking before it goes on for everyone. */
+.confirm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.confirm-row .hint { flex-basis: 100%; margin: 0; }
+.holiday-banner .holiday-banner-btns { flex: none; display: flex; flex-direction: column; gap: 6px; margin-left: auto; }
+.holiday-banner .holiday-banner-btns .pill-btn { margin: 0; }
+
+/* ---------- the story of an album (screens/Recap.jsx) ---------- */
+/* Always dark, like a photo shown big; the holiday's colour for its name. */
+.recap {
+  --recap-ink: #f2b45a;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: calc(14px + env(safe-area-inset-top)) 18px calc(22px + env(safe-area-inset-bottom));
+  background: #1b120c;
+  color: #f2f0eb;
+  box-sizing: border-box;
+}
+.recap-top { display: flex; align-items: flex-start; gap: 10px; }
+.recap-top > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.recap-top small { color: #b3a08c; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.recap-title { margin: 0; color: var(--recap-ink); font: 700 44px/1.05 'Instrument Serif', serif; overflow-wrap: anywhere; }
+.recap-top p { margin: 4px 0 0; font: 400 21px/1.2 'Instrument Serif', serif; }
+.recap .icon-btn { color: #f2f0eb; }
+.recap-fan { position: relative; height: min(330px, 40dvh); flex: none; }
+.recap-fan > span:not(.recap-fan-face) {
+  position: absolute;
+  width: 46%;
+  height: 72%;
+  padding: 7px 7px 26px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: #f4efe6;
+  box-shadow: 0 14px 30px rgb(0 0 0 / 0.5);
+}
+.recap-fan > span:nth-child(1) { left: 2%; top: 8%; transform: rotate(-7deg); }
+.recap-fan > span:nth-child(2) { right: 2%; top: 0; transform: rotate(6deg); }
+.recap-fan > span:nth-child(3) { left: 25%; top: 26%; transform: rotate(-1deg); box-shadow: 0 18px 36px rgb(0 0 0 / 0.6); }
+.recap-fan img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.recap-fan-face { position: absolute; right: 4%; bottom: 0; }
+.recap-most { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 18px; background: #2d2016; color: inherit; text-align: left; }
+.recap-most > img { width: 56px; height: 56px; flex: none; border-radius: 12px; object-fit: cover; }
+.recap-most > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.recap-most b { font-size: 15px; }
+.recap-most small { color: #b3a08c; font-size: 13px; }
+.recap-most-n { position: relative; flex: none; }
+.recap-most-n i { position: absolute; right: -6px; bottom: -4px; min-width: 20px; padding: 1px 5px; border-radius: 10px; background: #f2f0eb; color: #1b120c; font: 700 12px/18px 'Instrument Sans Variable', sans-serif; text-align: center; box-sizing: border-box; }
+.recap-who { display: flex; align-items: center; gap: 10px; margin: 0; color: #b3a08c; font-size: 14px; }
+.recap-who > span { display: flex; }
+.recap-who > span > * + * { margin-left: -8px; }
+.recap-who > span > * { box-shadow: 0 0 0 2px #1b120c; border-radius: 50%; }
+.recap-actions { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.recap-actions .primary { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.recap-actions .secondary { background: none; border: 1px solid rgb(242 180 90 / 0.35); color: #f2f0eb; }
+.recap-actions .text-btn { color: #b3a08c; }
+
+/* Playing: the photo whole, over a blurred copy of itself. */
+.recap-play { position: fixed; inset: 0; z-index: 60; overflow: hidden; background: #000; color: #fff; touch-action: none; user-select: none; -webkit-user-select: none; }
+.recap-blur { position: absolute; inset: -40px; width: calc(100% + 80px); height: calc(100% + 80px); object-fit: cover; filter: blur(28px) brightness(0.55); }
+.recap-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; animation: recap-in 0.5s ease-out; -webkit-touch-callout: none; }
+@keyframes recap-in { from { opacity: 0; transform: scale(1.03); } }
+.recap-bars { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 10px; right: 10px; display: flex; gap: 3px; pointer-events: none; }
+.recap-bars span { flex: 1; height: 3px; overflow: hidden; border-radius: 2px; background: rgb(255 255 255 / 0.3); }
+.recap-bars i { display: block; height: 100%; background: #fff; transform-origin: left; }
+.recap-close { position: absolute; top: calc(20px + env(safe-area-inset-top)); right: 6px; color: #fff; filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.6)); }
+.recap-caption { position: absolute; left: 14px; right: 14px; bottom: calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; pointer-events: none; }
+.recap-loved, .recap-by { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 5px; border-radius: 999px; background: rgb(0 0 0 / 0.45); backdrop-filter: blur(8px); font-size: 14px; font-weight: 600; }
+.recap-loved { animation: recap-in 0.6s 0.3s ease-out both; }
+
+/* The story on the front page and in What's new. */
+.recap-card-pics { position: relative; flex: none; width: 64px; height: 64px; }
+.recap-card-pics img { position: absolute; width: 46px; height: 54px; object-fit: cover; border: 3px solid #f4efe6; border-radius: 4px; box-shadow: 0 4px 10px rgb(0 0 0 / 0.3); }
+.recap-card-pics img:first-child { left: 2px; top: 2px; transform: rotate(-7deg); }
+.recap-card-pics img:nth-child(2) { right: 0; bottom: 0; transform: rotate(6deg); }
+.news-story { background: rgb(var(--accent-rgb) / 0.08); }
+.news-story-pic { position: relative; flex: none; width: 40px; height: 40px; }
+.news-story-pic img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; display: block; }
+.news-story-pic svg { position: absolute; right: -4px; bottom: -4px; padding: 3px; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
+
+/* Advent: today's thing to look for, and twenty-four small days. */
+.advent { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--edge); border-radius: 20px; background: var(--surface); }
+.album-body .advent, .screen > .advent { margin: 0 9px 10px; }
+.advent-head { display: flex; align-items: center; gap: 10px; }
+.advent-head > span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.advent-head small { color: var(--accent); font-size: 12.5px; font-weight: 700; }
+.advent-head b { font: 400 22px/1.1 'Instrument Serif', serif; }
+.advent-head .pill-btn { flex: none; }
+.advent-days { display: grid; grid-template-columns: repeat(12, 1fr); gap: 5px; margin: 0; padding: 0; list-style: none; }
+.advent-days li {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.advent-days li.done { background: var(--accent); color: var(--on-accent); }
+.advent-days li.today { box-shadow: 0 0 0 2px var(--accent); color: var(--text); }
+.advent-days li.today.done { color: var(--on-accent); }
+.advent-days li.later { opacity: 0.4; }
+
+/* ---------- the holidays page (screens/Holidays.jsx) ---------- */
+.holidays-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 16px calc(32px + env(safe-area-inset-bottom)); }
+.holidays-body > .hint { margin: 0 2px; }
+.holidays-h { margin: 18px 2px 0; font-size: 18px; }
+.day-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--edge); border-radius: 20px; background: var(--surface); overflow: hidden; }
+.day-list li { display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 10px; }
+.day-list li + li { border-top: 1px solid var(--edge); }
+.day-list li > span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.day-list b { font-size: 15.5px; }
+.day-list small { color: var(--text-2); font-size: 13px; }
+.day-list li.off > :first-child { filter: grayscale(1); opacity: 0.5; }
+.day-list li.off b { color: var(--text-2); }
+.day-list .chip, .day-list .text-btn { flex: none; }
+.day-when { display: flex; gap: 8px; }
+.day-when .card-field { flex: 1; min-width: 0; }
+.chip-line.flush { margin: 0 0 6px; }
+.holiday-more { align-self: flex-start; margin: -2px 4px 0; padding: 4px 0; color: var(--text-2); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgb(var(--accent-rgb) / 0.5); }
+.family-day-card .holiday-card-text b { font: 400 22px/1.1 'Instrument Serif', serif; }

@@ -39,6 +39,8 @@ let state = {
   guest: false, // an approved guest: sees every album and adds to them, changes nothing else
   requests: [], // for the admin: people asking to add photos through links
   pins: {}, // the library's pinned front-page photo per season: { [season]: { album, image } }
+  // Choices the admin makes for everyone (seamline_settings), by key: { v2: true }.
+  settings: {},
   // What the database supports beyond the basics (see supabase/migrations):
   // thumbs, notes, views, comments, push, people. Each stays off until its pieces exist there.
   features: {},
@@ -226,7 +228,7 @@ async function refresh(session, claimed = false) {
   if (!session) {
     return set({
       loading: false, session: null, uploader: false, admin: false, guest: false, requests: [], pins: {}, shares: [], hearts: NO_HEARTS,
-      library: null, photos: {}, canSync: false, features: {}, comments: {},
+      library: null, photos: {}, canSync: false, features: {}, comments: {}, settings: {},
     })
   }
   set({ session })
@@ -269,7 +271,22 @@ async function refresh(session, claimed = false) {
   await refreshComments()
   await refreshRequests()
   await refreshPins()
+  await refreshSettings()
   set({ activityLoaded: true })
+}
+
+// ---------- the admin's choices for everyone (see 20261123_hugpix2.sql) ----------
+export async function refreshSettings() {
+  if (!supabase || !state.canSync || !state.features.settings) return
+  const { data, error } = await supabase.from('seamline_settings').select('key, value')
+  if (!error) set({ settings: Object.fromEntries((data ?? []).map((r) => [r.key, r.value])) })
+}
+
+// Only the admin may (the database says so too).
+export async function setSetting(key, value) {
+  const { error } = await supabase.from('seamline_settings').upsert({ library: state.library, key, value }, { onConflict: 'library,key' })
+  if (error) throw new Error(error.message)
+  set({ settings: { ...state.settings, [key]: value } })
 }
 
 // Re-read the notes visitors have left on photos in the owner's links.

@@ -8,14 +8,16 @@ import { useStore } from '../lib/store'
 // number shows the order). With `max` 1 a tap just picks that one. `onPick`
 // gets the ids chosen and the images they are in. `action(n)` is the button's
 // words for n chosen; `secretNote` shows when the album is a secret one.
-export default function AlbumPhotoPicker({ open, onClose, onPick, max = 10, title, action, secretNote }) {
+// `startAlbum` is the album it opens on.
+export default function AlbumPhotoPicker({ open, onClose, onPick, max = 10, title, action, secretNote, startAlbum = null }) {
   const albums = useStore((s) => s.albums)
   const images = useStore((s) => s.images)
-  const [albumId, setAlbumId] = useState(null)
+  const [albumId, setAlbumId] = useState(startAlbum)
   const [picked, setPicked] = useState([])
   useEffect(() => {
     if (!open) setPicked([])
-  }, [open])
+    else if (startAlbum) setAlbumId(startAlbum)
+  }, [open, startAlbum])
   const isPhoto = (id) => images[id] && !isVideo(images[id])
   const withPhotos = albums.filter((a) => a.imageIds.some(isPhoto))
   const album = withPhotos.find((a) => a.id === albumId) ?? withPhotos[0]

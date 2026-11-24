@@ -10,6 +10,7 @@ import Avatar from '../components/Avatar'
 import Camera from '../components/Camera'
 import CoverFramer from '../components/CoverFramer'
 import Icon from '../components/Icon'
+import HolidayHome from '../components/HolidayHome'
 import LiveNow from '../components/LiveNow'
 import Logo from '../components/Logo'
 import NotifyNudge from '../components/NotifyNudge'
@@ -24,6 +25,7 @@ import { fadeIn } from '../lib/motion'
 import { adderOf, usePeople } from '../lib/people'
 import { albumSpot } from '../lib/places'
 import { announceAlbum, announceUpload } from '../lib/push'
+import { useFamilyDays } from '../lib/familyDays'
 import { celebrateAdded } from '../lib/feedback'
 import { SEASONS, useActiveSeason, useLayout } from '../lib/theme'
 import { addedAt, addImages, addToAlbum, createAlbum, lastUpload, setCoverFocus, useStore } from '../lib/store'
@@ -222,6 +224,7 @@ function PlacesCard({ albums }) {
 
 export default function Home() {
   const albums = useStore((s) => s.albums)
+  useFamilyDays() // a birthday changes the greeting (lib/activity.js)
   const images = useStore((s) => s.images)
   const saveFailed = useStore((s) => s.saveFailed)
   const cloud = useCloud()
@@ -355,6 +358,7 @@ export default function Home() {
             {news.length > 0 ? <News news={news} /> : <p className="home-sub">{summary}</p>}
             <LiveNow />
             <CoverLine onCover={onCover} coverFor={coverFor} count={coverCount} />
+            <HolidayHome />
           </section>
         </>
       )}
