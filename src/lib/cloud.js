@@ -563,6 +563,13 @@ const pathsInUse = (exceptShareId) =>
   new Set(state.shares.filter((sh) => sh.id !== exceptShareId).flatMap((sh) => sh.items.map((it) => it.path)))
 // Paths the registry looks after; those are only deleted by its own clean-up.
 const registered = () => new Set(Object.values(state.photos).map((row) => row.path))
+// Whether a link's photos are its own to delete. A carousel's frames are. An
+// album's or a photo's are the library's once the registry is on, and a link
+// never deletes those: this phone's copy of the album or of the registry may
+// be days out of date (on 2026-11-24 a phone that was behind deleted three
+// videos it didn't know about). The registry's clean-up (cleanPhotos), which
+// runs after a full sync, looks after them.
+const linkOwnsFiles = (kind) => kind === 'carousel' || !state.canSync
 
 // Bytes actually stored: a photo used in several places is only stored once.
 // Videos are counted apart, as they are stored somewhere else.
@@ -903,12 +910,14 @@ async function doSync({ kind, sourceId, title, images, captions = {}, note, plac
     if (error) throw new Error(error.message)
     set({ shares: existing ? state.shares.map((sh) => (sh.id === data.id ? data : sh)) : [data, ...state.shares] })
 
-    // Delete what this link dropped, unless something else still needs it.
-    const kept = new Set(items.map((it) => it.path))
-    const inUse = pathsInUse(data.id)
-    const library = registered()
-    const dead = before.map((it) => it.path).filter((path) => !kept.has(path) && !inUse.has(path) && !library.has(path))
-    if (dead.length) await removeStored(dead)
+    // Delete what this link dropped, if it was the link's own (see linkOwnsFiles).
+    if (linkOwnsFiles(kind)) {
+      const kept = new Set(items.map((it) => it.path))
+      const inUse = pathsInUse(data.id)
+      const library = registered()
+      const dead = before.map((it) => it.path).filter((path) => !kept.has(path) && !inUse.has(path) && !library.has(path))
+      if (dead.length) await removeStored(dead)
+    }
     return data
   } catch (err) {
     if (fresh.length) await removeStored(fresh).catch(() => {})
@@ -1015,7 +1024,11 @@ export async function replaceLink(share) {
 export async function stopShare(share) {
   const inUse = pathsInUse(share.id)
   const library = registered()
-  const dead = share.items.map((it) => it.path).filter((path) => !inUse.has(path) && !library.has(path))
+  // What visitors added through the link is the link's own too.
+  const dead = share.items
+    .filter((it) => linkOwnsFiles(share.kind) || it.visitor)
+    .map((it) => it.path)
+    .filter((path) => !inUse.has(path) && !library.has(path))
   if (dead.length) {
     await removeStored(dead)
   }

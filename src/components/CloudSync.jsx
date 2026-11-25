@@ -1,7 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { supabase, syncAlbums, useCloud, userName } from '../lib/cloud'
 import { renameUploader, useStore } from '../lib/store'
-import { syncNow } from '../lib/sync'
+import { getSyncStatus, onSyncStatus, syncNow } from '../lib/sync'
 
 // Runs quietly while the app is open. Shortly after anything changes it puts
 // new photos online and sends the change to the other signed-in devices; it
@@ -61,11 +61,14 @@ export default function CloudSync() {
     }
   }, [on, canSync, live])
 
+  // Links follow the albums only once this phone has heard from the server
+  // since it opened, so an out-of-date copy of an album doesn't reach the link.
+  const synced = !!useSyncExternalStore(onSyncStatus, () => getSyncStatus().lastSync)
   useEffect(() => {
-    if (!on || !autoSync) return
+    if (!on || !autoSync || (canSync && !synced)) return
     const t = setTimeout(() => syncAlbums(albums, images), 1500)
     return () => clearTimeout(t)
-  }, [albums, images, on, autoSync])
+  }, [albums, images, on, autoSync, canSync, synced])
 
   return null
 }
