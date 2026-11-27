@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { holidayOn, holidaysOff, saveHolidaysOff } from './holidays'
+import { holidayOn, holidaysOff, saveHolidaysOff, seasonHoliday } from './holidays'
 
 // The app's accent colour: buttons, the logo's dot and seam, highlights and
 // the glow behind the front page. Chosen in Settings and kept on the device.
@@ -67,10 +67,27 @@ if (!localStorage.getItem(SEASON_RESET)) {
 let season = localStorage.getItem(SEASON_KEY) ?? 'auto'
 if (!SEASONS.some((s) => s.id === season)) season = 'auto'
 
-// The season showing now, or null for everyday.
+// Thanksgiving picked by hand ends with Thanksgiving: once Christmas's season
+// starts, a phone on Thanksgiving goes back to Auto (and so to Christmas).
+// Once a year; a look picked after that stays picked.
+{
+  const now = new Date()
+  const mark = `hugpix:afterThanksgiving:${now.getFullYear()}`
+  if (seasonHoliday(now)?.id === 'christmas' && !localStorage.getItem(mark)) {
+    if (season === 'thanksgiving') {
+      season = 'auto'
+      localStorage.setItem(SEASON_KEY, 'auto')
+    }
+    localStorage.setItem(mark, '1')
+  }
+}
+
+// The season showing now, or null for everyday. On Auto it is the holiday's
+// season by the calendar (Christmas from the day after Thanksgiving); a
+// holiday this person has turned off (lib/holidays.js) leaves the everyday look.
 export function activeSeason(date = new Date()) {
-  // On Auto, a holiday this person has turned off (lib/holidays.js) leaves the everyday look.
-  const id = season === 'auto' ? SEASONS.find((s) => s.month === date.getMonth() && holidayOn(s.id))?.id : season
+  const due = season === 'auto' ? seasonHoliday(date) : null
+  const id = season === 'auto' ? (due && holidayOn(due.id) ? due.id : null) : season
   return SEASONS.find((s) => s.id === id && s.accent) ?? null
 }
 
@@ -86,6 +103,15 @@ function apply() {
   else delete root.dataset.season
 }
 apply()
+
+// A phone left open while one season gives way to the next takes the new
+// look the next time it comes back to the front.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return
+  const before = document.documentElement.dataset.season
+  apply()
+  if (document.documentElement.dataset.season !== before) listeners.forEach((l) => l())
+})
 
 export function setSeason(id) {
   season = id

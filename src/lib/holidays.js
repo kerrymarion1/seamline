@@ -1,5 +1,5 @@
 // The holidays Hugpix keeps, by the calendar: each one's month (its season,
-// the same months as lib/theme.js), its day, and its album each year. The
+// see seasonHoliday), its day, and its album each year. The
 // family's holiday album is made by the calendar, whatever look a phone has
 // chosen; see components/HolidayHome.jsx.
 
@@ -40,9 +40,18 @@ const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 // The holiday as it falls in `year`: { ...holiday, year, day }.
 export const holidayIn = (h, year) => ({ ...h, year, day: h.dayOf(year) })
 
-// The holiday whose month it is, or null.
+// The holiday whose season it is, or null: each holiday has its month, except
+// that Christmas starts the day after Thanksgiving. The Auto look
+// (lib/theme.js) and the front page's holiday follow this.
+export function seasonHoliday(date = today()) {
+  const d = startOf(date)
+  const id = d.getMonth() === 10 && d > thanksgiving(d.getFullYear()) ? 'christmas' : HOLIDAYS.find((x) => x.month === d.getMonth())?.id
+  return id ? holidayById(id) : null
+}
+
+// The holiday whose season it is, as it falls this year, or null.
 export function holidayNow(date = today()) {
-  const h = HOLIDAYS.find((x) => x.month === date.getMonth())
+  const h = seasonHoliday(date)
   return h ? holidayIn(h, date.getFullYear()) : null
 }
 
