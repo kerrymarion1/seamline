@@ -5,12 +5,12 @@ import { ReactionFace } from './ReactionFaces'
 import { useCloud } from '../lib/cloud'
 import { refreshFamilyDays, useFamilyDays } from '../lib/familyDays'
 import {
-  ADVENT, adventDay, adventDone, countdown, familyDayAlbumId, familyDayGreeting, familyDayTitle, familyDayToday, holidayAlbum, holidayAlbumId, holidayName,
+  ADVENT, adventDay, adventDone, countdown, familyDayAlbumId, familyDayGreeting, familyDayTitle, familyDayToday, holidayAlbum, holidayAlbumId, holidayCandidate, holidayName,
   holidayNow, holidayOn, holidayYears, recapNow, today,
 } from '../lib/holidays'
 import { personIn, usePeople } from '../lib/people'
 import { isVideo } from '../lib/images'
-import { addedAt, createFamilyDayAlbum, createHolidayAlbum, useStore } from '../lib/store'
+import { addedAt, createFamilyDayAlbum, createHolidayAlbum, deleteAlbum, setAlbumHoliday, useStore } from '../lib/store'
 import { useHolidaysOff } from '../lib/theme'
 import { getSyncStatus, knownOnServer, onSyncStatus } from '../lib/sync'
 import { useV2, useV2Everyone } from '../lib/v2'
@@ -40,7 +40,12 @@ export default function HolidayHome({ className = '' }) {
   useEffect(() => {
     if (v2 && session && features.familyDays) refreshFamilyDays().catch(() => {})
   }, [v2, session?.user.id, features.familyDays])
-  const found = h ? holidayAlbum(albums, h.id, h.year) : null
+  const marked = h ? holidayAlbum(albums, h.id, h.year) : null
+  // An album the family made for it themselves ("Christmas 26") is the one:
+  // it's marked as the holiday's, and the empty one Hugpix made, if any, goes.
+  const madeEmpty = !!marked && marked.id === holidayAlbumId(h.id, h.year) && !marked.imageIds.length && (marked.updatedAt ?? 0) - (marked.createdAt ?? 0) < 60e3
+  const own = h && (!marked || madeEmpty) ? holidayCandidate(albums, h) : null
+  const found = own ?? marked
   // Localhost works on the family's real library: there it only shows what
   // would be made, and makes nothing.
   const preview = (import.meta.env.DEV || !everyone) && h && !found ? { id: holidayAlbumId(h.id, h.year), name: holidayName(h), imageIds: [], preview: true } : null
@@ -55,6 +60,15 @@ export default function HolidayHome({ className = '' }) {
     // The holiday and year stand for `h`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [h?.id, h?.year, !!found, everyone, session?.user.id, canSync, guest, synced])
+
+  // Taking the family's own album as the holiday's, on the same terms as making one.
+  useEffect(() => {
+    if (!own || !everyone || import.meta.env.DEV || !session || !canSync || guest || !synced) return
+    setAlbumHoliday(own.id, { id: h.id, year: h.year })
+    if (madeEmpty) deleteAlbum(marked.id)
+    // `own` and `marked` stand for themselves by id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [own?.id, madeEmpty, everyone, session?.user.id, canSync, guest, synced])
 
   if (!v2) return null
   if (!h && !story) return days.length ? <section className={`holiday-home ${className}`}><FamilyDays days={days} /></section> : null

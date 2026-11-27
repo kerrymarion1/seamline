@@ -100,6 +100,33 @@ export function holidayAlbum(albums, id, year) {
   return all.filter((a) => a.id !== made).sort((a, b) => b.imageIds.length - a.imageIds.length)[0] ?? all.find((a) => a.id === made) ?? null
 }
 
+// Words that name each holiday in an album's name.
+const NAMED = {
+  newyear: /new\s*year|\bnye\b/i,
+  july4: /(4th|fourth)\s+of\s+july|july\s*4(th)?\b|independence\s+day/i,
+  halloween: /hall?ow(e|ee)n/i,
+  thanksgiving: /thanks\s*giving|turkey\s+day/i,
+  christmas: /christmas|x-?mas|navidad|no[eë]l/i,
+}
+
+// An album the family made for the holiday themselves, not marked as it
+// (`h` as holidayIn gives it): its name says the holiday, and it is this
+// year's, by the year in its name ("Christmas 26", "Christmas 2026") or by
+// being made in the two months before the day. The one with the most photos;
+// secret albums, and albums already some holiday's or family day's, are left alone.
+export function holidayCandidate(albums, h) {
+  const words = NAMED[h.id]
+  if (!words) return null
+  const yy = String(h.year % 100).padStart(2, '0')
+  const year = new RegExp(`(^|\\D)(${h.year}|'?${yy})(\\D|$)`)
+  const from = h.day.getTime() - 61 * DAY
+  const until = h.day.getTime() + 14 * DAY
+  return albums
+    .filter((a) => !a.secret && !a.holiday && !a.familyDay && words.test(a.name ?? ''))
+    .filter((a) => year.test(a.name) || (a.createdAt >= from && a.createdAt <= until))
+    .sort((a, b) => b.imageIds.length - a.imageIds.length)[0] ?? null
+}
+
 // Every year's album for one holiday, the newest first (one a year).
 export function holidayYears(albums, id) {
   const years = [...new Set(albums.filter((a) => a.holiday?.id === id).map((a) => a.holiday.year))].sort((a, b) => b - a)
