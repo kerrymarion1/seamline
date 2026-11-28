@@ -4,21 +4,72 @@
 // took it out when the photo was chosen for a web page.
 
 export async function gpsOf(blob) {
-  if (!blob || (blob.type && !/jpe?g/i.test(blob.type))) return null
   try {
-    const view = new DataView(await blob.slice(0, 256 * 1024).arrayBuffer())
-    if (view.getUint16(0) !== 0xffd8) return null
-    // Walk the JPEG's sections to the one holding the Exif data.
-    let at = 2
-    while (at + 10 < view.byteLength) {
-      const marker = view.getUint16(at)
-      if ((marker & 0xff00) !== 0xff00 || marker === 0xffda) return null
-      const length = view.getUint16(at + 2)
-      if (marker === 0xffe1 && view.getUint32(at + 4) === 0x45786966) return readGps(view, at + 10)
-      at += 2 + length
-    }
+    const found = await exifOf(blob)
+    return found ? readGps(found.view, found.tiff) : null
   } catch {
     // A file cut short or written oddly: no place.
+    return null
+  }
+}
+
+// When a photo was taken, read from the date its camera wrote into it (the
+// moment the picture was taken, else when the file was last written), as ms
+// on this device's clock, or null. Only JPEGs, and only the file as chosen:
+// a copy made smaller or put online has lost it.
+export async function takenOf(blob) {
+  try {
+    const found = await exifOf(blob)
+    return found ? readTaken(found.view, found.tiff) : null
+  } catch {
+    return null
+  }
+}
+
+// The Exif block of a JPEG: its bytes, and where its own offsets count from.
+async function exifOf(blob) {
+  if (!blob || (blob.type && !/jpe?g/i.test(blob.type))) return null
+  const view = new DataView(await blob.slice(0, 256 * 1024).arrayBuffer())
+  if (view.getUint16(0) !== 0xffd8) return null
+  // Walk the JPEG's sections to the one holding the Exif data.
+  let at = 2
+  while (at + 10 < view.byteLength) {
+    const marker = view.getUint16(at)
+    if ((marker & 0xff00) !== 0xff00 || marker === 0xffda) return null
+    const length = view.getUint16(at + 2)
+    if (marker === 0xffe1 && view.getUint32(at + 4) === 0x45786966) return { view, tiff: at + 10 }
+    at += 2 + length
+  }
+  return null
+}
+
+// "2026:11:26 14:03:22" in DateTimeOriginal (in the Exif section), else DateTime.
+function readTaken(view, tiff) {
+  const little = view.getUint16(tiff) === 0x4949
+  const u16 = (o) => view.getUint16(tiff + o, little)
+  const u32 = (o) => view.getUint32(tiff + o, little)
+  const entries = (dir) => Array.from({ length: u16(dir) }, (_, i) => dir + 2 + i * 12)
+  const text = (entry) => {
+    const n = u32(entry + 4)
+    const from = n > 4 ? u32(entry + 8) : entry + 8
+    return Array.from({ length: Math.min(n, 19) }, (_, i) => String.fromCharCode(view.getUint8(tiff + from + i))).join('')
+  }
+  const first = u32(4)
+  let written = null
+  let exif = 0
+  for (const entry of entries(first)) {
+    if (u16(entry) === 0x0132) written = text(entry)
+    if (u16(entry) === 0x8769) exif = u32(entry + 8)
+  }
+  let original = null
+  if (exif) for (const entry of entries(exif)) if (u16(entry) === 0x9003) original = text(entry)
+  for (const stamp of [original, written]) {
+    const m = stamp?.match(/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/)
+    if (!m) continue
+    const [y, mo, d, h, mi, s] = m.slice(1).map(Number)
+    const at = new Date(y, mo - 1, d, h, mi, s).getTime()
+    // A camera whose clock was never set says 1970, or 0000.
+    if (y >= 1990 && Number.isFinite(at) && at <= Date.now() + 864e5) return at
   }
   return null
 }

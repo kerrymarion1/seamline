@@ -397,18 +397,34 @@ export const addToAlbum = (id, imageIds, by = '') =>
     const addedBy = by ? { ...a.addedBy, ...Object.fromEntries(fresh.map((i) => [i, by])) } : a.addedBy
     const found = fresh.filter((i) => state.images[i]?.gps).map((i) => [i, state.images[i].gps])
     const spots = found.length ? { ...a.spots, ...Object.fromEntries(found) } : a.spots
+    // When each was taken, when the file said (`taken`, ms; lib/exif.js).
+    const dated = fresh.filter((i) => state.images[i]?.taken).map((i) => [i, state.images[i].taken])
+    const taken = dated.length ? { ...a.taken, ...Object.fromEntries(dated) } : a.taken
     // When something was last added: this alone decides the album's place on the front page.
     return {
       ...a, imageIds: [...fresh, ...a.imageIds], ...(addedBy ? { addedBy } : null), ...(spots ? { spots } : null),
+      ...(taken ? { taken } : null),
       ...(fresh.length ? { uploadedAt: Date.now() } : null),
     }
   })
+
+// Dates found later for photos already in an album ({ [imageId]: ms }; see
+// lib/taken.js). A date already noted stays.
+export function setPhotosTaken(id, found) {
+  const album = state.albums.find((a) => a.id === id)
+  const fresh = Object.entries(found).filter(([i]) => album?.imageIds.includes(i) && !album.taken?.[i])
+  // Nothing new: the album isn't touched, so it isn't sent again either.
+  if (fresh.length) patchAlbum(id, (a) => ({ ...a, taken: { ...a.taken, ...Object.fromEntries(fresh) } }))
+}
+
+// When a photo in an album was taken (ms), or null when it isn't known.
+export const takenIn = (album, imageId) => album?.taken?.[imageId] ?? null
 
 // Move photos from one album to another, keeping what was noted about each
 // (who added it, tags, place, caption, framing, crop stamp) with it. Photos
 // already in the other album just leave this one. Returns the two albums as
 // they were, for undoing (see putBack).
-const PER_PHOTO = ['addedBy', 'tags', 'spots', 'captions', 'edited', 'focus']
+const PER_PHOTO = ['addedBy', 'tags', 'spots', 'captions', 'edited', 'focus', 'taken']
 export function moveToAlbum(fromId, toId, imageIds) {
   const before = state.albums.filter((a) => a.id === fromId || a.id === toId)
   const from = state.albums.find((a) => a.id === fromId)
@@ -475,12 +491,17 @@ export const addedAt = (id) => parseInt(id.slice(0, -6), 36) || 0
 // shared page; photos added afterwards still go to the front.
 export function sortAlbum(id, mode) {
   const name = (i) => (state.images[i]?.name ?? '').toLowerCase()
-  const by = {
-    newest: (x, y) => addedAt(y) - addedAt(x),
-    oldest: (x, y) => addedAt(x) - addedAt(y),
-    name: (x, y) => name(x).localeCompare(name(y), undefined, { numeric: true }) || addedAt(x) - addedAt(y),
-  }[mode]
-  patchAlbum(id, (a) => ({ ...a, imageIds: [...a.imageIds].sort(by) }))
+  patchAlbum(id, (a) => {
+    // A photo whose date isn't known counts as taken when it was added.
+    const when = (i) => a.taken?.[i] ?? addedAt(i)
+    const by = {
+      newest: (x, y) => addedAt(y) - addedAt(x),
+      oldest: (x, y) => addedAt(x) - addedAt(y),
+      taken: (x, y) => when(x) - when(y) || addedAt(x) - addedAt(y),
+      name: (x, y) => name(x).localeCompare(name(y), undefined, { numeric: true }) || addedAt(x) - addedAt(y),
+    }[mode]
+    return { ...a, imageIds: [...a.imageIds].sort(by) }
+  })
 }
 
 // Move photos, keeping their own order, to sit in front of `before`

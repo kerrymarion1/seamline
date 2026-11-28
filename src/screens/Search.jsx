@@ -55,6 +55,8 @@ export default function Search() {
         seen.add(`${album.id}:${id}`)
         const at = addedAt(id)
         const d = new Date(at)
+        // The month it was taken too, when that's known: "2024 july".
+        const taken = album.taken?.[id] ? new Date(album.taken[id]) : null
         const text = fold([
           albumText,
           ...(album.tags?.[id] ?? []).map((t) => tagName(t, people)),
@@ -62,6 +64,7 @@ export default function Search() {
           album.captions?.[id],
           uploaderName(album.addedBy?.[id]),
           at ? `${d.getFullYear()} ${MONTHS[d.getMonth()]}` : '',
+          taken ? `${taken.getFullYear()} ${MONTHS[taken.getMonth()]}` : '',
           isVideo(images[id]) ? 'video' : 'photo',
         ].join(' '))
         photos.push({ id, album, at, text })

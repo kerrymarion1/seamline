@@ -1,6 +1,8 @@
-import { cleanPhotos, ensurePhotos, ensureThumbs, fetchMedia, getCloud, publicUrl, refreshPhotos, releasePhotos, repairOnline, supabase } from './cloud'
+import { cleanPhotos, ensurePhotos, ensureThumbs, fetchMedia, getCloud, publicUrl, refreshPhotos, purgeTrash, releasePhotos, repairOnline, supabase } from './cloud'
 import { previewOf } from './images'
 import { addImages, applyRemote, clearTombstone, getState, historyProjects, tombstones } from './store'
+import { fillTaken } from './taken'
+import { saveNow } from './persist'
 
 // Keeps projects, albums and templates the same on every signed-in device.
 // Each is one row in seamline_docs. A cycle pulls what changed elsewhere, then
@@ -75,7 +77,11 @@ async function pull(synced) {
     if (tomb) clearTombstone(row.kind, row.id)
   }
   applyRemote({ docs, removed })
-  if (data.length) write('cursor', data.at(-1).synced_at)
+  // Kept on this device before noting how far it has read: a phone closed
+  // between the two (or too full to save) would otherwise think it has
+  // albums it never kept. While it can't save, it reads everything each time.
+  if (docs.length || removed.length) await saveNow()
+  if (data.length && !getState().saveFailed) write('cursor', data.at(-1).synced_at)
   pulledAll = getCloud().library
 }
 
@@ -310,6 +316,11 @@ export async function syncNow() {
     if (repaired !== cloud.library) {
       repaired = cloud.library
       repairOnline(getState().albums, getState().images).catch(() => {})
+      // And note when older photos were taken, from the files this device
+      // holds (lib/taken.js). Not on localhost, which works on the real library.
+      if (!import.meta.env.DEV) fillTaken().catch(() => {})
+      // The admin's app empties what has been in the bin 30 days (once a day).
+      purgeTrash().catch(() => {})
     }
   } catch (err) {
     setStatus({ state: 'idle', error: err.message || 'Could not sync' })

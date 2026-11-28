@@ -222,11 +222,24 @@ function PlacesCard({ albums }) {
   )
 }
 
+// Whether this phone is nearly out of the room the browser gives Hugpix (it
+// shrinks as the phone fills up), so it's said before saving starts to fail.
+function useLowSpace() {
+  const [low, setLow] = useState(false)
+  useEffect(() => {
+    navigator.storage?.estimate?.()
+      .then(({ usage, quota }) => setLow(!!quota && usage / quota > 0.9))
+      .catch(() => {})
+  }, [])
+  return low
+}
+
 export default function Home() {
   const albums = useStore((s) => s.albums)
   useFamilyDays() // a birthday changes the greeting (lib/activity.js)
   const images = useStore((s) => s.images)
   const saveFailed = useStore((s) => s.saveFailed)
+  const lowSpace = useLowSpace()
   const cloud = useCloud()
   const { session } = cloud
   const layout = useLayout()
@@ -362,9 +375,13 @@ export default function Home() {
           </section>
         </>
       )}
-      {saveFailed && (
+      {saveFailed ? (
         <p className="banner" role="alert">
-          Changes are not being saved on this device. Storage may be full or blocked (private browsing).
+          This phone can't save Hugpix's changes. It may be out of space: free some up, then close and reopen Hugpix.
+        </p>
+      ) : lowSpace && (
+        <p className="banner" role="status">
+          This phone is nearly out of space. Free some up so Hugpix can keep saving.
         </p>
       )}
 

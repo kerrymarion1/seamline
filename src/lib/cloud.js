@@ -289,6 +289,57 @@ export async function setSetting(key, value) {
   set({ settings: { ...state.settings, [key]: value } })
 }
 
+// ---------- Recently deleted (the admin's) ----------
+// Every photo or video record deleted is kept 30 days in seamline_photo_trash
+// (see 20261128_trash_reminders.sql), its files in trash/ in video storage
+// (seamline-media). The admin sees them in Settings and can put one back.
+
+// Where a binned file is: the same name under trash/.
+export const trashUrl = (path) => (external(path) ? path.replace(/^(https?:\/\/[^/]+)\//, '$1/trash/') : null)
+
+export async function fetchTrash() {
+  if (!supabase || !state.admin || !state.features.trash) return []
+  const { data, error } = await supabase.from('seamline_photo_trash').select('*').order('deleted_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+// Put one back: its files out of the bin, then its record. It then shows in
+// whichever album still lists it; the caller adds it to one if none does.
+export async function restoreFromTrash(row) {
+  const paths = [row.path, row.poster, row.thumb].filter((p) => p && external(p))
+  if (paths.length) await media({ action: 'restore', paths })
+  const { error } = await supabase.rpc('seamline_restore_photo', { p_id: row.id })
+  if (error) throw new Error(error.message)
+  await refreshPhotos()
+}
+
+// What has been in the bin 30 days goes for good: the admin's app, once a day.
+const PURGED = 'hugpix:trashPurged'
+export async function purgeTrash() {
+  if (!supabase || !state.admin || !state.features.trash || import.meta.env.DEV) return
+  const day = new Date().toDateString()
+  if (localStorage.getItem(PURGED) === day) return
+  localStorage.setItem(PURGED, day)
+  await media({ action: 'purge' })
+  await supabase.rpc('seamline_purge_trash')
+}
+
+// ---------- reminders ----------
+// The Advent reminder (supabase/functions/seamline-advent): sent only once the
+// admin turns it on (setting "advent"), and then to everyone who hasn't
+// turned it off for themselves (seamline_reminders).
+export async function fetchAdventReminder() {
+  if (!supabase || !state.session || !state.features.reminders) return true
+  const { data } = await supabase.from('seamline_reminders').select('advent').eq('user_id', state.session.user.id).maybeSingle()
+  return data?.advent ?? true
+}
+export async function setAdventReminder(on) {
+  const { error } = await supabase.from('seamline_reminders')
+    .upsert({ user_id: state.session.user.id, library: state.library, advent: on, updated_at: new Date().toISOString() })
+  if (error) throw new Error(error.message)
+}
+
 // Re-read the notes visitors have left on photos in the owner's links.
 export async function refreshComments() {
   if (!supabase || !state.session || !state.features.comments) return
@@ -727,6 +778,11 @@ export async function repairOnline(albums, images) {
         // Asked afresh (the query keeps a cached answer out of it); no answer is no news.
         const res = await fetch(`${row.path}?check=${Date.now()}`, { method: 'HEAD', cache: 'no-store' }).catch(() => null)
         if (res?.status !== 404) continue
+        // Out of the bin first, if it's there: no upload needed.
+        if (state.features.trash) {
+          const back = await media({ action: 'restore', paths: [row.path, row.poster, row.thumb].filter(Boolean) }).catch(() => null)
+          if (back?.moved?.includes(row.path)) continue
+        }
       } else if (row) continue
       try {
         await sendOne(image, album.secret ? album.id : null, () => {})

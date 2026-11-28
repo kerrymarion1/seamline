@@ -5194,3 +5194,13 @@ span.bubble-face:empty { visibility: hidden; }
 .chip-line.flush { margin: 0 0 6px; }
 .holiday-more { align-self: flex-start; margin: -2px 4px 0; padding: 4px 0; color: var(--text-2); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgb(var(--accent-rgb) / 0.5); }
 .family-day-card .holiday-card-text b { font: 400 22px/1.1 'Instrument Serif', serif; }
+
+/* Settings > Recently deleted (the admin's): each one with its picture, when
+   it went and who took it, and Put back. */
+.trash-list { display: grid; gap: 10px; margin: 4px 0 0; padding: 0; list-style: none; }
+.trash-list li { display: flex; align-items: center; gap: 10px; }
+.trash-pic { flex: none; width: 46px; height: 46px; overflow: hidden; border-radius: 10px; background: var(--surface-2); }
+.trash-pic img { width: 100%; height: 100%; object-fit: cover; }
+.trash-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.trash-text b { overflow: hidden; font-size: 14px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.trash-text small, .trash-gone { color: var(--text-2); font-size: 12px; }

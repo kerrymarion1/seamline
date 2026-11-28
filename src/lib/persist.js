@@ -71,6 +71,10 @@ async function flush() {
 }
 
 const queue = () => (saving = saving.then(flush))
+// Save now rather than in a moment: lib/sync.js waits for this before noting
+// how far it has read, so a phone closed in between doesn't lose albums it
+// thinks it has.
+export const saveNow = () => queue()
 
 // Load everything saved on this device, then keep it saved as it changes.
 export async function startPersistence() {

@@ -1,4 +1,4 @@
-import { gpsOf } from './exif'
+import { gpsOf, takenOf } from './exif'
 import { uid } from './scene'
 
 const MAX_EDGE = 4000 // stored full-size copy, used for export
@@ -71,13 +71,15 @@ export async function importFile(file) {
     let full = { blob: file, w: img.naturalWidth, h: img.naturalHeight }
     if (long > MAX_EDGE) full = await resize(img, MAX_EDGE, type)
     const preview = long > PREVIEW_EDGE ? await resize(img, PREVIEW_EDGE, type) : full
-    // Where it was taken, while the file still says (resizing drops it).
+    // Where and when it was taken, while the file still says (resizing drops it).
     const gps = await gpsOf(file)
+    const taken = await takenOf(file)
 
     return {
       id: uid(),
       name: file.name,
       ...(gps ? { gps } : null),
+      ...(taken ? { taken } : null),
       width: full.w,
       height: full.h,
       blob: full.blob,

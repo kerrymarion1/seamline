@@ -4,6 +4,10 @@
 // passes through here: the app asks for a one-hour upload address, then sends
 // the file straight to R2. Everything is filed under the caller's library, and
 // a caller can only delete what is under their own.
+//
+// Since 2026-11-28 nothing is deleted outright: "delete" moves a file to
+// trash/<library>/ (Recently deleted, 30 days), "restore" moves it back, and
+// "purge" (the admin's app, once a day) removes what has been there 30 days.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { AwsClient } from "npm:aws4fetch@1.0.20";
@@ -87,21 +91,66 @@ Deno.serve(async (req: Request) => {
     return reply({ files: signed });
   }
 
-  if (body.action === "delete") {
-    // Guests add to the library but never remove from it.
+  // The file names a request may move: only plain names under the caller's
+  // own library; anything else is left alone.
+  const prefix = `${PUBLIC_URL}/${library}/`;
+  const namesOf = (paths: unknown[]) =>
+    paths.map((p) => String(p)).filter((p) => p.startsWith(prefix)).map((p) => p.slice(prefix.length))
+      .filter((name) => /^[\w-]+\.[a-z0-9]+$/.test(name));
+  // Copy then delete: R2 has no move. A copy that finds nothing (404) is fine,
+  // the file is already gone; any other failure leaves the original in place.
+  const move = async (from: string, to: string) => {
+    const copy = await r2.fetch(`${ENDPOINT}/${to}`, { method: "PUT", headers: { "x-amz-copy-source": `/${BUCKET}/${from}` } });
+    if (copy.status === 404) return false;
+    if (!copy.ok) throw new Error(`copy ${copy.status}`);
+    const gone = await r2.fetch(`${ENDPOINT}/${from}`, { method: "DELETE" });
+    if (!gone.ok && gone.status !== 404) throw new Error(`delete ${gone.status}`);
+    return true;
+  };
+
+  if (body.action === "delete" || body.action === "restore") {
+    // Guests add to the library but never remove from it (nor put back).
     const { data: guest } = await user.rpc("seamline_is_guest");
     if (guest) return reply({ error: "Guests cannot remove anything." }, 403);
     const paths = body.paths ?? [];
     if (paths.length > 200) return reply({ error: "Bad request" }, 400);
-    const prefix = `${PUBLIC_URL}/${library}/`;
-    for (const path of paths) {
-      const name = String(path).slice(prefix.length);
-      // Anything outside the caller's own library is left alone.
-      if (!String(path).startsWith(prefix) || !/^[\w-]+\.[a-z0-9]+$/.test(name)) continue;
-      const res = await r2.fetch(`${ENDPOINT}/${library}/${name}`, { method: "DELETE" });
-      if (!res.ok && res.status !== 404) return reply({ error: "A video could not be removed." }, 502);
+    const moved: string[] = [];
+    try {
+      for (const name of namesOf(paths)) {
+        const live = `${library}/${name}`, binned = `trash/${library}/${name}`;
+        if (body.action === "delete" ? await move(live, binned) : await move(binned, live)) moved.push(`${prefix}${name}`);
+      }
+    } catch {
+      return reply({ error: body.action === "delete" ? "A video could not be removed." : "A file could not be put back." }, 502);
     }
-    return reply({ ok: true });
+    return reply({ ok: true, moved });
+  }
+
+  // What has been in the bin 30 days goes for good. The admin's app asks once a day.
+  if (body.action === "purge") {
+    const { data: admin } = await user.rpc("seamline_is_admin");
+    if (!admin) return reply({ error: "Only the admin can empty the bin." }, 403);
+    const before = Date.now() - 30 * 864e5;
+    let token: string | null = null;
+    let purged = 0;
+    do {
+      const url = new URL(ENDPOINT);
+      url.searchParams.set("list-type", "2");
+      url.searchParams.set("prefix", `trash/${library}/`);
+      if (token) url.searchParams.set("continuation-token", token);
+      const res = await r2.fetch(url.toString());
+      if (!res.ok) return reply({ error: "The bin could not be read." }, 502);
+      const xml = await res.text();
+      for (const part of xml.split("<Contents>").slice(1)) {
+        const key = part.match(/<Key>(.*?)<\/Key>/)?.[1];
+        const at = Date.parse(part.match(/<LastModified>(.*?)<\/LastModified>/)?.[1] ?? "");
+        if (!key || !(at < before)) continue;
+        const gone = await r2.fetch(`${ENDPOINT}/${key}`, { method: "DELETE" });
+        if (gone.ok || gone.status === 404) purged++;
+      }
+      token = /<IsTruncated>true<\/IsTruncated>/.test(xml) ? xml.match(/<NextContinuationToken>(.*?)<\/NextContinuationToken>/)?.[1] ?? null : null;
+    } while (token);
+    return reply({ ok: true, purged });
   }
 
   return reply({ error: "Bad request" }, 400);

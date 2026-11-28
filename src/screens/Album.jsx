@@ -46,7 +46,7 @@ import { SEASONS, useActiveSeason } from '../lib/theme'
 import { downloadFile, imageFile, saveToPhone } from '../lib/share'
 import {
   addedAt, addImages, addToAlbum, clearAsked, deleteAlbum, moveInAlbum, removeFromAlbum, renameAlbum, setAlbumCover, setAlbumNote, setAlbumPeople, setAsked,
-  setCaption, setCoverFocus, getState, moveToAlbum, putBack, setAlbumHoliday, setPhotoSpots, sortAlbum, useAlbum, useStore,
+  setCaption, setCoverFocus, getState, moveToAlbum, putBack, setAlbumHoliday, setPhotoSpots, sortAlbum, takenIn, useAlbum, useStore,
 } from '../lib/store'
 
 // When a photo was added, for under it: "today", "yesterday", "Oct 17", or
@@ -63,6 +63,7 @@ function addedDay(t) {
 const SORTS = [
   { id: 'newest', name: 'Newest first', hint: 'The most recently added at the top' },
   { id: 'oldest', name: 'Oldest first', hint: 'In the order they were added' },
+  { id: 'taken', name: 'By date taken', hint: 'In the order they were taken, the earliest first' },
   { id: 'name', name: 'By name', hint: 'File names, A to Z' },
 ]
 
@@ -278,6 +279,9 @@ export default function Album({ albumId }) {
   // Whoever added it, by the name they go by now (the admin may have renamed them).
   const adder = viewed ? adderOf(people, addedBy[viewing]) : null
   const addedOn = viewed ? addedDay(addedAt(viewing)) : ''
+  // When it was taken, said only when that was another day than its adding.
+  const takenAt = viewed ? takenIn(album, viewing) : null
+  const takenOn = takenAt && new Date(takenAt).toDateString() !== new Date(addedAt(viewing)).toDateString() ? addedDay(takenAt) : ''
   const tagsHere = album.tags?.[viewing] ?? []
   const placeHere = viewed ? photoPlace(album, viewing) : null // where it sits on the map, if anywhere
   // Who else has seen it, the first to see it first.
@@ -1100,6 +1104,7 @@ export default function Album({ albumId }) {
                     <span>
                       {adder ? <>Added by <b>{adder.name?.split(' ')[0]}</b></> : 'Added'}
                       {addedOn && <i className="added-when">{addedOn}</i>}
+                      {takenOn && <i className="added-when">taken {takenOn}</i>}
                     </span>
                   </span>
                 )}

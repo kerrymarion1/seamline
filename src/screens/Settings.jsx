@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { navigate } from '../App'
+import AlbumChooser from '../components/AlbumChooser'
 import AlbumPhotoPicker from '../components/AlbumPhotoPicker'
 import CoverFramer from '../components/CoverFramer'
 import Avatar from '../components/Avatar'
@@ -13,13 +14,14 @@ import { setSoundOn, soundOn } from '../lib/sounds'
 import {
   addInvite, answerRequest, avatarOf, createInvite, deleteInvite, fetchMyInvites, renameMember, expiryText, fetchInvites, fetchPeople, fetchUsers, setAvatar, setRole, inviteUrl, setInviteActive, setPinned, unpin, useAllCovers, refreshRequests, removePerson, savePerson, setAutoSync, shareUrl, signOut, stopShare, STORAGE_LIMIT, MEDIA_LIMIT, MEDIA_WARN,
   storageUsed, getCloud, setSetting, setUserName, useCloud, userName, mediaStorageUsed, viewsText,
+  fetchTrash, restoreFromTrash, trashUrl, fetchAdventReminder, setAdventReminder,
 } from '../lib/cloud'
 import { setV2Mine, useV2, useV2Everyone, useV2Mine } from '../lib/v2'
 import { personIn, refreshPeople, usePeople } from '../lib/people'
 import { codeMessage, inviteMessage } from '../lib/pitch'
 import PauseBar from '../components/PauseBar'
 import { pushStatus, turnOffPush, turnOnPush } from '../lib/push'
-import { renameUploader, setCoverFocus, setImportAlbum, useStore } from '../lib/store'
+import { addToAlbum, renameUploader, setCoverFocus, setImportAlbum, useStore } from '../lib/store'
 import {
   COLOURS, LAYOUTS, SEASONS, setColour, setLayout, setSeason, useActiveSeason, useColour, useLayout, useSeason,
 } from '../lib/theme'
@@ -171,6 +173,9 @@ function HugpixTwo() {
         )}
       </div>
       {!features.settings && <p className="hint">Turning it on for everyone needs one change to the database first.</p>}
+      {/* The Advent reminder at noon, December 1 to 24 (seamline-advent): off
+          until the admin turns it on (Kerry: "off for now"). */}
+      {features.settings && features.reminders && <AdventSwitch />}
       {asking && !everyone && (
         <div className="confirm-row">
           <p className="hint">Everyone sees Hugpix 2 the next time they open it. You can turn it off again here.</p>
@@ -179,6 +184,149 @@ function HugpixTwo() {
         </div>
       )}
       {error && <p className="note warn">{error}</p>}
+    </section>
+  )
+}
+
+// The admin's switch for the Advent reminder, for everyone.
+function AdventSwitch() {
+  const { settings } = useCloud()
+  const on = settings.advent === true
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const flip = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await setSetting('advent', !on)
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(false)
+  }
+  return (
+    <>
+      <p className="hint">Advent reminders: a notification at noon each day, December 1 to 24, with that day's thing to look for.</p>
+      <div className="chips wrap">
+        <button className={`chip small ${on ? 'on' : ''}`} aria-pressed={on} disabled={busy} onClick={flip}>
+          Advent reminders {on ? 'on' : 'off'}
+        </button>
+      </div>
+      {error && <p className="note warn">{error}</p>}
+    </>
+  )
+}
+
+// Each person's own Advent reminder, once the admin has them on.
+function MyAdvent() {
+  const [on, setOn] = useState(null)
+  const [error, setError] = useState(null)
+  useEffect(() => {
+    fetchAdventReminder().then(setOn).catch(() => setOn(true))
+  }, [])
+  if (on === null) return null
+  const flip = () => {
+    setOn(!on)
+    setAdventReminder(!on).catch((e) => {
+      setOn(on)
+      setError(e.message)
+    })
+  }
+  return (
+    <>
+      <div className="chips wrap">
+        <button className={`chip small ${on ? 'on' : ''}`} aria-pressed={on} onClick={flip}>
+          Advent reminder at noon {on ? 'on' : 'off'}
+        </button>
+      </div>
+      {error && <p className="note warn">{error}</p>}
+    </>
+  )
+}
+
+// The admin's bin: every photo or video deleted in the last 30 days, by anyone
+// or by the app's clean-up, with Put back (lib/cloud.js restoreFromTrash). It
+// goes back into the album that still lists it, or one chosen here.
+function RecentlyDeleted() {
+  const { admin, features } = useCloud()
+  const albums = useStore((s) => s.albums)
+  const people = usePeople()
+  const [rows, setRows] = useState(null)
+  const [all, setAll] = useState(false)
+  const [choosing, setChoosing] = useState(null) // the one waiting for an album
+  const [busy, setBusy] = useState(null)
+  const [error, setError] = useState(null)
+  useEffect(() => {
+    if (admin && features.trash) fetchTrash().then(setRows).catch((e) => setError(e.message))
+  }, [admin, features.trash])
+  if (!admin || !features.trash) return null
+
+  const albumOf = (row) => albums.find((a) => a.imageIds.includes(row.id))
+  const putBack = async (row, album) => {
+    setBusy(row.id)
+    setError(null)
+    try {
+      await restoreFromTrash(row)
+      if (album && !album.imageIds.includes(row.id)) {
+        const adder = personIn(people, row.added_by)
+        addToAlbum(album.id, [row.id], adder ? { id: adder.id, name: adder.name } : '')
+      }
+      setRows((list) => list.filter((r) => r.id !== row.id))
+      syncNow()
+    } catch (e) {
+      setError(e.message)
+    }
+    setBusy(null)
+  }
+  const shown = all ? rows : rows?.slice(0, 6)
+  return (
+    <section className="panel">
+      <h2>Recently deleted</h2>
+      <p className="hint">Photos and videos deleted in the last 30 days. Put one back and it returns to its album.</p>
+      {rows && rows.length === 0 && <p className="note">Nothing has been deleted lately.</p>}
+      {shown?.length > 0 && (
+        <ul className="trash-list">
+          {shown.map((row) => {
+            const pic = trashUrl(row.thumb || row.poster || row.path)
+            const album = albumOf(row)
+            const by = row.deleted_by ? personIn(people, row.deleted_by)?.name?.split(' ')[0] : null
+            const can = !!trashUrl(row.path)
+            return (
+              <li key={row.id}>
+                <span className="trash-pic">{pic && <img src={pic} alt="" loading="lazy" draggable={false} />}</span>
+                <span className="trash-text">
+                  <b>{row.name || (row.kind === 'video' ? 'A video' : 'A photo')}</b>
+                  <small>
+                    {ago(Date.parse(row.deleted_at))}{by ? ` · by ${by}` : ''}{album ? ` · in ${album.name}` : ''}
+                  </small>
+                </span>
+                {can ? (
+                  <button className="pill-btn" disabled={busy === row.id} onClick={() => (album ? putBack(row, album) : setChoosing(row))}>
+                    {busy === row.id ? 'Putting back…' : 'Put back'}
+                  </button>
+                ) : (
+                  <small className="trash-gone">Gone</small>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {rows?.length > 6 && (
+        <button className="text-btn" onClick={() => setAll(!all)}>{all ? 'Fewer' : `All ${rows.length}`}</button>
+      )}
+      {error && <p className="note warn">{error}</p>}
+      <AlbumChooser
+        open={!!choosing}
+        onClose={() => setChoosing(null)}
+        title="Put it back in"
+        note="No album has it any more. Choose one for it."
+        onPick={(a) => {
+          const row = choosing
+          setChoosing(null)
+          putBack(row, a)
+        }}
+      />
     </section>
   )
 }
@@ -308,6 +456,7 @@ function Notifications({ cloud }) {
       {status === 'on' && !cloud.features.quiet && (
         <button className="secondary block" onClick={toggle} disabled={busy}>Turn off</button>
       )}
+      {status === 'on' && cloud.features.reminders && cloud.settings.advent === true && <MyAdvent />}
       <PauseBar />
     </section>
   )
@@ -1176,6 +1325,8 @@ export default function Settings() {
                 when the project is restored in Supabase.
               </p>
             </section>
+
+            <RecentlyDeleted />
 
             <section className="panel">
               <h2>Active links</h2>
