@@ -1184,11 +1184,17 @@ export default function Album({ albumId }) {
                     ))}
                   </div>
                 )}
-                <input
-                  className="caption-input" value={saying} onChange={(e) => setSaying(e.target.value)}
-                  onBlur={() => !saying.trim() && !replyTo && setWriting(null)}
-                  placeholder={replyTo ? 'Write a reply' : 'Add a comment · @ to mention someone'} maxLength={1000} enterKeyHint="send" aria-label="Comment" autoFocus
-                />
+                <div className="comment-line">
+                  <input
+                    className="caption-input" value={saying} onChange={(e) => setSaying(e.target.value)}
+                    onBlur={() => !saying.trim() && !replyTo && setWriting(null)}
+                    placeholder={replyTo ? 'Write a reply' : 'Add a comment · @ to mention someone'} maxLength={1000} enterKeyHint="send" aria-label="Comment" autoFocus
+                  />
+                  {/* Keeps the keyboard up while it sends, like the chat's. */}
+                  <button className="send-btn" disabled={!saying.trim()} onMouseDown={(e) => e.preventDefault()} aria-label="Send">
+                    <Icon name="up" size={20} />
+                  </button>
+                </div>
               </form>
             ) : writingHere === 'caption' ? (
               <input
@@ -1206,6 +1212,10 @@ export default function Album({ albumId }) {
             ) : (
               (
                 <div className="viewer-write">
+                  {/* Share first, so it is in sight on a phone whatever else there is. */}
+                  <button className="chip small share" onClick={() => setSharingPhoto(true)}>
+                    <Icon name="share" size={14} /> Share
+                  </button>
                   {features.social && (
                     <button className="chip small" onClick={() => setWriting({ kind: 'comment', photo: viewing })}>Comment</button>
                   )}
@@ -1215,9 +1225,6 @@ export default function Album({ albumId }) {
                   {!limited && <button className="chip small" onClick={() => setTagging(true)}>{tagsHere.length ? 'Tags' : 'Tag'}</button>}
                   {!limited && <button className="chip small" onClick={() => setPlacing([viewing])}>Place</button>}
                   {v2 && !isVideo(viewed) && <button className="chip small" onClick={() => setCarding(viewing)}>Card</button>}
-                  <button className="chip small share" onClick={() => setSharingPhoto(true)}>
-                    <Icon name="share" size={14} /> Share
-                  </button>
                 </div>
               )
             )}

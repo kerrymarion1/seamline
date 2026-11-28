@@ -507,6 +507,8 @@ export const outOfDate = (share, imageIds, { captions = {}, note, place, places 
   return (
     own.length !== imageIds.length ||
     own.some((it, i) => it.id !== imageIds[i] || (it.caption ?? '') !== (captions[it.id] ?? '') || (it.place ?? '') !== (places[it.id] ?? '')) ||
+    // A photo put online again under a new address (repairOnline).
+    own.some((it) => state.photos[it.id] && state.photos[it.id].path !== it.path) ||
     (!!state.features.notes && note != null && (share.note ?? '') !== note) ||
     (!!state.features.places && place !== undefined && !samePlace(share.place, place))
   )
@@ -705,6 +707,36 @@ export const useUploads = () => useSyncExternalStore(subscribeUploads, () => upl
 const sending = new Map()
 
 // Put one photo or video online (see ensurePhotos).
+// Put back, from a device that still holds the original, any photo or video
+// in its albums whose online copy is gone: no record in the registry, or a
+// record whose file no longer answers. (On 2026-11-24 and -27 phones that were
+// behind deleted some; see linkOwnsFiles and cleanPhotos.) Run once a launch
+// by lib/sync.js. A new file and record replace the old; links showing the
+// old address follow (outOfDate), and other devices fetch it again (fetchMissing).
+export async function repairOnline(albums, images) {
+  // Localhost works on the family's real library: it puts nothing online.
+  if (!supabase || !state.canSync || state.guest || import.meta.env.DEV) return
+  const checked = new Set()
+  for (const album of albums) {
+    for (const id of album.imageIds) {
+      const image = images[id]
+      if (checked.has(id) || !image?.blob || !canLink(image)) continue
+      checked.add(id)
+      const row = state.photos[id]
+      if (row && external(row.path)) {
+        // Asked afresh (the query keeps a cached answer out of it); no answer is no news.
+        const res = await fetch(`${row.path}?check=${Date.now()}`, { method: 'HEAD', cache: 'no-store' }).catch(() => null)
+        if (res?.status !== 404) continue
+      } else if (row) continue
+      try {
+        await sendOne(image, album.secret ? album.id : null, () => {})
+      } catch {
+        // Offline, or storage refused: the next launch tries again.
+      }
+    }
+  }
+}
+
 async function sendOne(image, album, onFraction) {
   if (isVideo(image)) return ensureVideo(image, onFraction, album)
   const copy = await uploadCopy(image)
@@ -810,7 +842,11 @@ export async function replaceOnline(image) {
 // the album or project that will mention them may not have synced yet.
 // `heldAlbums` are the albums on this device: a secret album's photos are
 // only judged by a device that holds that album, or once it is deleted.
-export async function cleanPhotos(usedIds, heldAlbums = new Set()) {
+// `serverUsed` resolves to the photos the server's copies of everything
+// mention (or null when it can't say): nothing they mention goes, so a phone
+// that is behind never takes a new photo for an unused one (on 2026-11-27 one
+// deleted two this way).
+export async function cleanPhotos(usedIds, heldAlbums = new Set(), serverUsed = async () => null) {
   // A guest never removes anything (and the database would refuse).
   if (!state.canSync || state.guest) return
   const linked = new Set(state.shares.flatMap((sh) => sh.items.map((it) => it.id)))
@@ -824,6 +860,10 @@ export async function cleanPhotos(usedIds, heldAlbums = new Set()) {
     const deleted = new Set((data ?? []).map((row) => row.id))
     dead = dead.filter((row) => !row.album || heldAlbums.has(row.album) || deleted.has(row.album))
   }
+  if (!dead.length) return
+  const everywhere = await serverUsed().catch(() => null)
+  if (!everywhere) return
+  dead = dead.filter((row) => !everywhere.has(row.id))
   if (!dead.length) return
   await removeStored(dead.flatMap((row) => [row.path, row.poster, row.thumb].filter(Boolean)))
   await supabase.from('seamline_photos').delete().eq('library', state.library).in('id', dead.map((row) => row.id))

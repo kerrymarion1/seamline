@@ -1675,6 +1675,9 @@ select.field { appearance: none; -webkit-appearance: none; }
 .comment-list .icon-btn { width: 32px; height: 32px; }
 .comment-form { display: flex; flex-wrap: wrap; gap: 8px; }
 .comment-form .caption-input { flex: 1 1 100%; }
+.comment-form .comment-line { flex: 1 1 100%; display: flex; gap: 8px; }
+.comment-form .comment-line .caption-input { flex: 1 1 0; min-width: 0; }
+.comment-form .send-btn:disabled { opacity: 0.4; }
 .comment-form .caption-input.name { flex: 1 1 0; min-width: 0; }
 .comment-form .pill-btn { height: 44px; }
 

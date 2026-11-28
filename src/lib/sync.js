@@ -1,4 +1,4 @@
-import { cleanPhotos, ensurePhotos, ensureThumbs, fetchMedia, getCloud, publicUrl, refreshPhotos, releasePhotos, supabase } from './cloud'
+import { cleanPhotos, ensurePhotos, ensureThumbs, fetchMedia, getCloud, publicUrl, refreshPhotos, releasePhotos, repairOnline, supabase } from './cloud'
 import { previewOf } from './images'
 import { addImages, applyRemote, clearTombstone, getState, historyProjects, tombstones } from './store'
 
@@ -41,8 +41,14 @@ export function photoIdsOf(doc) {
   return ids
 }
 
+// The first pull after the app opens reads everything again, not only what
+// changed since the last: the place it got to is kept at once, but this
+// device's copies are saved a moment later, and a phone that closes in
+// between (or is too full to save) would otherwise keep old albums for good.
+// Everything together is a few kB.
+let pulledAll = null // the library whose everything has been read this launch
 async function pull(synced) {
-  const since = read('cursor', null)
+  const since = pulledAll === getCloud().library ? read('cursor', null) : null
   let query = supabase.from('seamline_docs').select('*').order('synced_at', { ascending: true })
   if (since) query = query.gt('synced_at', since)
   const { data, error } = await query
@@ -70,6 +76,14 @@ async function pull(synced) {
   }
   applyRemote({ docs, removed })
   if (data.length) write('cursor', data.at(-1).synced_at)
+  pulledAll = getCloud().library
+}
+
+// Every photo the server's copies of everything mention (see cleanPhotos).
+async function usedOnServer() {
+  const { data, error } = await supabase.from('seamline_docs').select('data').eq('deleted', false)
+  if (error) return null
+  return new Set(data.flatMap((row) => photoIdsOf(row.data ?? {})))
 }
 
 // Secret albums this device holds that the server no longer shows us: we
@@ -179,7 +193,9 @@ async function fetchMissing() {
   for (const album of local.albums) {
     for (const [id, at] of Object.entries(album.edited ?? {})) editedAt.set(id, Math.max(editedAt.get(id) ?? 0, at))
   }
-  const stale = (id) => !!local.images[id] && (local.images[id].edited ?? 0) < (editedAt.get(id) ?? 0)
+  // So does one put online again at a new address (repairOnline in cloud.js).
+  const moved = (id) => !!local.images[id]?.remote && !!photos[id] && local.images[id].remote !== publicUrl(photos[id].path)
+  const stale = (id) => !!local.images[id] && ((local.images[id].edited ?? 0) < (editedAt.get(id) ?? 0) || moved(id))
   const todo = [...wanted].filter((id) => (!local.images[id] || stale(id)) && photos[id])
   for (const [i, id] of todo.entries()) {
     setStatus({ fetching: { done: i, total: todo.length } })
@@ -234,6 +250,7 @@ async function fetchMissing() {
 }
 
 let running = false
+let repaired = null // the library repairOnline has run for this launch
 let again = false
 // Cycles started so far, and who is waiting for one to push.
 let cycles = 0
@@ -286,8 +303,14 @@ export async function syncNow() {
     for (const doc of [...local.projects, ...local.albums, ...local.presets, ...historyProjects()]) {
       for (const id of photoIdsOf(doc)) used.add(id)
     }
-    await cleanPhotos(used, new Set(local.albums.map((a) => a.id)))
+    await cleanPhotos(used, new Set(local.albums.map((a) => a.id)), usedOnServer)
     setStatus({ state: 'idle', lastSync: Date.now() })
+    // Once a launch, alongside the cycles: put back what went missing online
+    // that this device still holds (it can mean a long upload).
+    if (repaired !== cloud.library) {
+      repaired = cloud.library
+      repairOnline(getState().albums, getState().images).catch(() => {})
+    }
   } catch (err) {
     setStatus({ state: 'idle', error: err.message || 'Could not sync' })
   }
