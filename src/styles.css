@@ -2782,7 +2782,9 @@ img.fade.in { opacity: 1; }
 .mo-span, .mo-hero { grid-column: 1 / -1; }
 .mo-head {
   position: absolute;
-  z-index: 2;
+  /* In front of the season's dressing (.season-decor, 4): the Christmas
+     lights hang behind the logo and the buttons. */
+  z-index: 5;
   top: 12px;
   left: 12px;
   right: 12px;
@@ -2802,6 +2804,53 @@ img.fade.in { opacity: 1; }
   backdrop-filter: blur(12px);
 }
 .mo-brand .logo { font-size: 30px; }
+/* At Christmas, the logo's frame, as Plait's: a spark runs once round the
+   logo as Hugpix opens, drawing a green line that glows as it closes and then
+   stays, quieter, as a border (pathLength="100" keeps the speed even; the
+   line's dash is a touch longer than the frame, so its ends meet with no seam).
+   Already drawn when the front page comes back, and with reduced motion. */
+.mo-brand { position: relative; }
+.brand-trace { display: none; }
+:root[data-season='christmas'] .brand-trace {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.brand-trace rect { x: 1px; y: 1px; width: calc(100% - 2px); height: calc(100% - 2px); rx: 21px; fill: none; stroke-width: 2px; }
+.brand-trace .line {
+  stroke: #3fb37f;
+  stroke-dasharray: 101;
+  stroke-dashoffset: 0;
+  opacity: 0.8;
+  animation: brand-trace-draw 1.6s cubic-bezier(0.45, 0.1, 0.25, 1) 0.3s both;
+}
+.brand-trace .spark {
+  stroke: #c8ffdf;
+  stroke-width: 3.5px;
+  stroke-linecap: round;
+  stroke-dasharray: 5 95;
+  stroke-dashoffset: -95;
+  opacity: 0;
+  filter: drop-shadow(0 0 6px #7ee8a8);
+  animation: brand-trace-spark 1.6s cubic-bezier(0.45, 0.1, 0.25, 1) 0.3s both;
+}
+@keyframes brand-trace-draw {
+  0% { stroke-dashoffset: 101; opacity: 1; filter: drop-shadow(0 0 4px #7ee8a8); }
+  72% { stroke-dashoffset: 0; opacity: 1; filter: drop-shadow(0 0 9px #7ee8a8); }
+  100% { stroke-dashoffset: 0; opacity: 0.8; filter: drop-shadow(0 0 0 transparent); }
+}
+@keyframes brand-trace-spark {
+  0% { stroke-dashoffset: 5; opacity: 0; }
+  4% { opacity: 1; }
+  72% { stroke-dashoffset: -95; opacity: 1; }
+  90%, 100% { stroke-dashoffset: -95; opacity: 0; }
+}
+.brand-trace.still .line, .brand-trace.still .spark { animation: none; }
+@media (prefers-reduced-motion: reduce) { .brand-trace .line, .brand-trace .spark { animation: none; } }
 .mo-head .who { background: rgb(14 14 16 / 0.55); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .mo-tile {
   position: relative;

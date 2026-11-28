@@ -443,6 +443,26 @@ export function Editorial({ albums, images, who, greet, first, stats, news, onNe
 
 // Mosaic: every album a photo tile, edge to edge, the latest one wide across
 // the top; or a pinned photo across the top, with every album a tile.
+// At Christmas, the logo's frame, as Plait's (Kerry: "like the plait logo"):
+// a spark runs once round the logo as Hugpix opens, drawing a green line that
+// glows as it closes and then stays as a quieter border (.brand-trace in
+// styles.css). Once an opening: back on the front page later it is already drawn.
+let traced = false
+function BrandTrace() {
+  const [still] = useState(() => traced)
+  useEffect(() => {
+    // Marked once the trace has run (a timer, so React's dev double-mount doesn't count).
+    const t = setTimeout(() => { traced = true }, 2500)
+    return () => clearTimeout(t)
+  }, [])
+  return (
+    <svg className={`brand-trace ${still ? 'still' : ''}`} aria-hidden="true">
+      <rect className="line" pathLength="100" />
+      <rect className="spark" pathLength="100" />
+    </svg>
+  )
+}
+
 export function Mosaic({ albums, images, who, greet, first, news, onNewAlbum, banner, onCover, coverFor, coverCount }) {
   const lead = banner ? null : albums[0]
   const rest = banner ? albums : albums.slice(1)
@@ -450,7 +470,10 @@ export function Mosaic({ albums, images, who, greet, first, news, onNewAlbum, ba
   return (
     <div className={`mosaic ${lead || banner ? '' : 'bare'}`}>
       <header className="mo-head">
-        <span className="mo-brand"><Logo /></span>
+        <span className="mo-brand">
+          <Logo />
+          <BrandTrace />
+        </span>
         <Who name={who} />
       </header>
       <Hello greet={greet} first={first} className="mo-hello" />
