@@ -1594,8 +1594,9 @@ select.field { appearance: none; -webkit-appearance: none; }
 .cover-pick-name small { color: var(--text-2); font-size: 12px; }
 .viewer-tools .icon-btn.active { color: var(--accent); }
 /* Comment and caption: small buttons until tapped. */
-.viewer-write { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
-.viewer-write .chip { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; color: var(--text-2); font-size: 13px; }
+/* One line on a phone: the chips draw in a little on narrow screens. */
+.viewer-write { display: flex; flex-wrap: wrap; justify-content: center; gap: clamp(4px, 1.2vw, 5px); }
+.viewer-write .chip { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 clamp(7px, 2.1vw, 11px); color: var(--text-2); font-size: 13px; }
 .viewer-write .chip.share { color: var(--accent); }
 .viewer-write .chip.on { background: var(--text); color: var(--bg); }
 .viewer-write .chip svg { flex: none; }

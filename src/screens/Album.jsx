@@ -1223,7 +1223,6 @@ export default function Album({ albumId }) {
                     <button className="chip small" onClick={() => setWriting({ kind: 'caption', photo: viewing })}>Caption</button>
                   )}
                   {!limited && <button className="chip small" onClick={() => setTagging(true)}>{tagsHere.length ? 'Tags' : 'Tag'}</button>}
-                  {!limited && <button className="chip small" onClick={() => setPlacing([viewing])}>Place</button>}
                   {v2 && !isVideo(viewed) && <button className="chip small" onClick={() => setCarding(viewing)}>Card</button>}
                 </div>
               )
