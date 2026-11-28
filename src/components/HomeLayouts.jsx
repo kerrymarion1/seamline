@@ -244,8 +244,10 @@ function Hello({ greet, first, className }) {
   const words = greet.split(' ')
   const last = words.pop()
   const stop = <b aria-hidden="true">.</b>
+  // How long it is, for a greeting set on one line (.mo-hello) to size itself to fit.
+  const length = `${greet}${first ? `, ${first}` : ''}.`.length
   return (
-    <p className={className}>
+    <p className={className} style={{ '--len': length }}>
       {words.length > 0 && <span>{words.join(' ')}</span>}
       <em><LastWord word={last} />{first ? ',' : stop}</em>
       {first && <span>{first}{stop}</span>}

@@ -2836,16 +2836,25 @@ img.fade.in { opacity: 1; }
   top: 68px;
   left: 14px;
   max-width: calc(100% - 28px);
+  /* One line, above the people in the photo: "Merry Christmas, Kerry." Its
+     size follows the screen and the greeting's length (--len, set by Hello),
+     so a long one still fits (0.42em a letter allows for the season's lettering). */
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  column-gap: 0.24em;
+  white-space: nowrap;
   padding: 7px 12px 10px 11px;
   /* Straight on the photo, no box (Kerry: "get rid of the blur"); the shade
      across the top of the photo and a shadow under the letters keep it readable. */
   color: #fff;
-  font: 400 clamp(34px, 9.5vw, 52px)/0.92 'Instrument Serif', serif;
+  font: 400 clamp(20px, calc((100vw - 63px) / (var(--len, 20) * 0.42)), 46px)/1 'Instrument Serif', serif;
   letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 14px rgba(0, 0, 0, 0.55);
+  /* A thin dark outline round the letters (Kerry: "a small stroke ... so it's
+     easy to read"). Drawn under the fill, so only its outer half shows and
+     the letters keep their weight. */
+  -webkit-text-stroke: 3px rgb(0 0 0 / 0.7);
+  paint-order: stroke fill;
   pointer-events: none;
 }
 .mo-hello > * { animation: rise 0.6s var(--spring) 0.15s both; }
@@ -2860,6 +2869,7 @@ img.fade.in { opacity: 1; }
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   text-shadow: none;
+  -webkit-text-stroke: 0;
 }
 .mo-hero::before {
   content: '';
