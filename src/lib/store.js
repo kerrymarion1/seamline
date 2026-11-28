@@ -316,13 +316,64 @@ function patchAlbum(id, fn) {
   setState((s) => ({ ...s, albums: s.albums.map((a) => (a.id === id ? { ...fn(a), updatedAt: Date.now() } : a)) }))
 }
 
-export function createAlbum(name) {
-  const album = { id: uid(), name: name?.trim() || 'Untitled album', imageIds: [], createdAt: Date.now(), updatedAt: Date.now() }
+// `createdBy` is the signed-in account making it: a guest may change only the
+// albums they made (the database sets and checks it too). `members` makes it
+// a secret album, seen only by those accounts (and the admin).
+export function createAlbum(name, createdBy = '', members = null) {
+  const album = {
+    id: uid(), name: name?.trim() || 'Untitled album', imageIds: [], createdAt: Date.now(), updatedAt: Date.now(),
+    ...(createdBy ? { createdBy } : null),
+    ...(members ? { secret: true, members } : null),
+  }
   setState((s) => ({ ...s, albums: [album, ...s.albums] }))
   return album
 }
 
+// The family's album for a holiday this year (lib/holidays.js), under the
+// one id every phone gives it, so two making it at once make the same one.
+export function createHolidayAlbum(holiday, albumId, createdBy = '') {
+  if (state.albums.some((a) => a.id === albumId)) return
+  const album = {
+    id: albumId, name: `${holiday.name} ${holiday.year}`, imageIds: [], createdAt: Date.now(), updatedAt: Date.now(),
+    holiday: { id: holiday.id, year: holiday.year },
+    ...(createdBy ? { createdBy } : null),
+  }
+  setState((s) => ({ ...s, albums: [album, ...s.albums] }))
+}
+
+// The same for a family day (lib/familyDays.js) on the day: "Regine's birthday
+// 2026", marked `familyDay: { id, year }`.
+export function createFamilyDayAlbum(albumId, name, familyDay, createdBy = '') {
+  if (state.albums.some((a) => a.id === albumId)) return
+  const album = {
+    id: albumId, name, imageIds: [], createdAt: Date.now(), updatedAt: Date.now(), familyDay,
+    ...(createdBy ? { createdBy } : null),
+  }
+  setState((s) => ({ ...s, albums: [album, ...s.albums] }))
+}
+
+// Mark an album as a holiday's album for a year ({ id, year }), or (null) not.
+export const setAlbumHoliday = (id, holiday) =>
+  patchAlbum(id, (a) => {
+    const { holiday: _was, ...rest } = a
+    return holiday ? { ...rest, holiday } : rest
+  })
+
 export const renameAlbum = (id, name) => patchAlbum(id, (a) => ({ ...a, name }))
+
+// Who sees an album: everyone (members null), or only these accounts.
+// People added to an album that was already private are noted in
+// `sharedWith` ({ [id]: { at, by } }), for What's new; `by` is who added them.
+export const setAlbumPeople = (id, members, by = null) =>
+  patchAlbum(id, (a) => {
+    const { secret, members: _, ...rest } = a
+    if (!members) return rest
+    const fresh = a.secret ? members.filter((m) => !(a.members ?? []).includes(m) && m !== by) : []
+    const sharedWith = fresh.length
+      ? { ...a.sharedWith, ...Object.fromEntries(fresh.map((m) => [m, { at: Date.now(), by }])) }
+      : a.sharedWith
+    return { ...rest, secret: true, members, ...(sharedWith ? { sharedWith } : null) }
+  })
 
 export function deleteAlbum(id) {
   entomb('album', id)
@@ -332,19 +383,79 @@ export function deleteAlbum(id) {
 // Newest photos first.
 // `by` is whoever is adding them: { id, name } for a signed-in person, or
 // just a name. It is kept per photo in the album's `addedBy`, which travels
-// with the album to the other devices.
+// with the album to the other devices, as does where each photo was taken
+// when it says (`spots`, for the map).
 export const addToAlbum = (id, imageIds, by = '') =>
   patchAlbum(id, (a) => {
+    // Asked for photos here (album.asked): adding some answers it.
+    const askedMe = typeof by === 'object' && by?.id && a.asked?.[by.id]
+    if (askedMe) {
+      const { [by.id]: _, ...rest } = a.asked
+      a = { ...a, asked: rest }
+    }
     const fresh = imageIds.filter((i) => !a.imageIds.includes(i))
     const addedBy = by ? { ...a.addedBy, ...Object.fromEntries(fresh.map((i) => [i, by])) } : a.addedBy
+    const found = fresh.filter((i) => state.images[i]?.gps).map((i) => [i, state.images[i].gps])
+    const spots = found.length ? { ...a.spots, ...Object.fromEntries(found) } : a.spots
+    // When each was taken, when the file said (`taken`, ms; lib/exif.js).
+    const dated = fresh.filter((i) => state.images[i]?.taken).map((i) => [i, state.images[i].taken])
+    const taken = dated.length ? { ...a.taken, ...Object.fromEntries(dated) } : a.taken
     // When something was last added: this alone decides the album's place on the front page.
-    return { ...a, imageIds: [...fresh, ...a.imageIds], ...(addedBy ? { addedBy } : null), ...(fresh.length ? { uploadedAt: Date.now() } : null) }
+    return {
+      ...a, imageIds: [...fresh, ...a.imageIds], ...(addedBy ? { addedBy } : null), ...(spots ? { spots } : null),
+      ...(taken ? { taken } : null),
+      ...(fresh.length ? { uploadedAt: Date.now() } : null),
+    }
   })
+
+// Dates found later for photos already in an album ({ [imageId]: ms }; see
+// lib/taken.js). A date already noted stays.
+export function setPhotosTaken(id, found) {
+  const album = state.albums.find((a) => a.id === id)
+  const fresh = Object.entries(found).filter(([i]) => album?.imageIds.includes(i) && !album.taken?.[i])
+  // Nothing new: the album isn't touched, so it isn't sent again either.
+  if (fresh.length) patchAlbum(id, (a) => ({ ...a, taken: { ...a.taken, ...Object.fromEntries(fresh) } }))
+}
+
+// When a photo in an album was taken (ms), or null when it isn't known.
+export const takenIn = (album, imageId) => album?.taken?.[imageId] ?? null
+
+// Move photos from one album to another, keeping what was noted about each
+// (who added it, tags, place, caption, framing, crop stamp) with it. Photos
+// already in the other album just leave this one. Returns the two albums as
+// they were, for undoing (see putBack).
+const PER_PHOTO = ['addedBy', 'tags', 'spots', 'captions', 'edited', 'focus', 'taken']
+export function moveToAlbum(fromId, toId, imageIds) {
+  const before = state.albums.filter((a) => a.id === fromId || a.id === toId)
+  const from = state.albums.find((a) => a.id === fromId)
+  if (!from) return before
+  const moving = from.imageIds.filter((i) => imageIds.includes(i))
+  patchAlbum(toId, (a) => {
+    const fresh = moving.filter((i) => !a.imageIds.includes(i))
+    const next = { ...a, imageIds: [...fresh, ...a.imageIds], ...(fresh.length ? { uploadedAt: Date.now() } : null) }
+    for (const key of PER_PHOTO) {
+      const carried = Object.fromEntries(fresh.filter((i) => from[key]?.[i] !== undefined).map((i) => [i, from[key][i]]))
+      if (Object.keys(carried).length) next[key] = { ...a[key], ...carried }
+    }
+    return next
+  })
+  removeFromAlbum(fromId, moving)
+  if (from.cover && moving.includes(from.cover)) patchAlbum(fromId, ({ cover: _, ...rest }) => rest)
+  return before
+}
+
+// Put albums back as they were (from moveToAlbum), stamped as changed now so
+// the other devices take them too.
+export const putBack = (albums) => albums.forEach((was) => patchAlbum(was.id, () => was))
 
 export const removeFromAlbum = (id, imageIds) =>
   patchAlbum(id, (a) => {
     const next = { ...a, imageIds: a.imageIds.filter((i) => !imageIds.includes(i)) }
-    if (a.addedBy) next.addedBy = Object.fromEntries(Object.entries(a.addedBy).filter(([i]) => !imageIds.includes(i)))
+    // What was noted about each photo goes with it.
+    for (const key of ['addedBy', 'tags', 'spots', 'edited', 'focus']) {
+      if (a[key]) next[key] = Object.fromEntries(Object.entries(a[key]).filter(([i]) => !imageIds.includes(i)))
+    }
+    if (a.cover && imageIds.includes(a.cover)) delete next.cover
     return next
   })
 
@@ -374,18 +485,23 @@ export function renameUploader(id, name) {
 }
 
 // An id starts with the moment it was made, so it doubles as "when added".
-const addedAt = (id) => parseInt(id.slice(0, -6), 36) || 0
+export const addedAt = (id) => parseInt(id.slice(0, -6), 36) || 0
 
 // Put an album's photos in order once. The order is kept, and shown on its
 // shared page; photos added afterwards still go to the front.
 export function sortAlbum(id, mode) {
   const name = (i) => (state.images[i]?.name ?? '').toLowerCase()
-  const by = {
-    newest: (x, y) => addedAt(y) - addedAt(x),
-    oldest: (x, y) => addedAt(x) - addedAt(y),
-    name: (x, y) => name(x).localeCompare(name(y), undefined, { numeric: true }) || addedAt(x) - addedAt(y),
-  }[mode]
-  patchAlbum(id, (a) => ({ ...a, imageIds: [...a.imageIds].sort(by) }))
+  patchAlbum(id, (a) => {
+    // A photo whose date isn't known counts as taken when it was added.
+    const when = (i) => a.taken?.[i] ?? addedAt(i)
+    const by = {
+      newest: (x, y) => addedAt(y) - addedAt(x),
+      oldest: (x, y) => addedAt(x) - addedAt(y),
+      taken: (x, y) => when(x) - when(y) || addedAt(x) - addedAt(y),
+      name: (x, y) => name(x).localeCompare(name(y), undefined, { numeric: true }) || addedAt(x) - addedAt(y),
+    }[mode]
+    return { ...a, imageIds: [...a.imageIds].sort(by) }
+  })
 }
 
 // Move photos, keeping their own order, to sit in front of `before`
@@ -407,6 +523,65 @@ export const setCaption = (id, imageId, text) =>
     else delete captions[imageId]
     return { ...a, captions }
   })
+
+// Who is in a photo: people in Hugpix by their id, anyone else by name.
+export const setTags = (id, imageId, tags) =>
+  patchAlbum(id, (a) => {
+    const all = { ...a.tags }
+    if (tags.length) all[imageId] = tags
+    else delete all[imageId]
+    return { ...a, tags: all }
+  })
+
+// A tag that is a person in Hugpix (their account id) rather than a name.
+export const isPersonTag = (tag) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(tag)
+
+// The photo that stands for an album wherever albums are shown; null goes
+// back to its newest photo. Removing the photo from the album does the same.
+export const setAlbumCover = (id, imageId) =>
+  patchAlbum(id, (a) => {
+    const { cover: _, ...rest } = a
+    return imageId ? { ...rest, cover: imageId } : rest
+  })
+
+// How a photo sits when it fills a frame for its album (the front page's big
+// picture, the album's tile): [x, y] percentages (see components/CoverFramer),
+// or null for the middle.
+export const setCoverFocus = (id, imageId, at) =>
+  patchAlbum(id, (a) => {
+    const focus = { ...a.focus }
+    if (at) focus[imageId] = at
+    else delete focus[imageId]
+    return { ...a, focus }
+  })
+
+// People asked to add their photos to an album: { [accountId]: { by, at } },
+// `by` the asker's id. Each one shows to them until they add something.
+export const setAsked = (id, people, by) =>
+  patchAlbum(id, (a) => ({ ...a, asked: { ...a.asked, ...Object.fromEntries(people.map((p) => [p, { by, at: Date.now() }])) } }))
+
+// Answering "not now" to being asked for photos.
+export const clearAsked = (id, person) =>
+  patchAlbum(id, (a) => {
+    const { [person]: _, ...rest } = a.asked ?? {}
+    return { ...a, asked: rest }
+  })
+
+// Where an album's photos were taken: { name, lat, lng }, or null for nowhere.
+export const setAlbumPlace = (id, place) =>
+  patchAlbum(id, (a) => {
+    const { place: _, ...rest } = a
+    return place ? { ...rest, place } : rest
+  })
+
+// Where single photos were taken: { [imageId]: [lat, lng] } read from the
+// photos themselves, [lat, lng, name] put there by hand, or null for one
+// taken off the map on purpose (see lib/places.js).
+export const setPhotoSpots = (id, spots) => patchAlbum(id, (a) => ({ ...a, spots: { ...a.spots, ...spots } }))
+
+// A photo's picture changed (cropped or turned): the time it did, so other
+// devices know to fetch it again (see sync.js).
+export const markEdited = (id, imageId, at) => patchAlbum(id, (a) => ({ ...a, edited: { ...a.edited, [imageId]: at } }))
 
 // A few words about the album, shown at the top of its shared page.
 export const setAlbumNote = (id, note) => patchAlbum(id, (a) => ({ ...a, note }))
@@ -472,10 +647,11 @@ export function setImportAlbum(value) {
 }
 
 // File freshly imported photos into the chosen album, creating "Imported"
-// the first time when the setting is automatic.
+// the first time when the setting is automatic. Returns the album, if any.
 export function fileImports(imageIds, by = '') {
-  if (!imageIds.length || state.importAlbum === 'off') return
+  if (!imageIds.length || state.importAlbum === 'off') return null
   let album = state.albums.find((a) => a.id === state.importAlbum)
   if (!album) album = state.albums.find((a) => a.name === 'Imported') ?? createAlbum('Imported')
   addToAlbum(album.id, imageIds, by)
+  return album
 }

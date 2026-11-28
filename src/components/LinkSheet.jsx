@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { navigate } from '../App'
 import {
-  EXPIRY_CHOICES, expiryText, findShare, isExpired, isOnline, linkable, outOfDate, progressText, replaceLink, rememberedPin, setExpiry, setUploadPin, shareUrl,
+  EXPIRY_CHOICES, expiryText, findShare, isExpired, isOnline, linkable, outOfDate, progressText, replaceLink, setExpiry, setGuestUploads, shareUrl,
   stopShare, syncShare, useCloud, viewsText,
 } from '../lib/cloud'
 import { useStore } from '../lib/store'
@@ -19,13 +19,6 @@ export default function LinkSheet({ target, onClose }) {
   const [progress, setProgress] = useState(null)
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
-  const [pin, setPin] = useState('')
-  // Offer the PIN already on this link, else the one used last time.
-  useEffect(() => {
-    if (target) setPin(findShare(cloud.shares, target.kind, target.sourceId)?.upload_pin ?? rememberedPin())
-    // Only when the sheet opens for something else.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target?.kind, target?.sourceId])
 
   const share = target && findShare(cloud.shares, target.kind, target.sourceId)
   const url = share && shareUrl(share)
@@ -131,24 +124,15 @@ export default function LinkSheet({ target, onClose }) {
             <div className="visitor-adds">
               <div className="row">
                 <div>
-                  <div className="label">Visitors can add photos</div>
-                  <div className="hint">{share.upload_pin ? `On. They need the PIN ${share.upload_pin}.` : 'Off. Only you can add to this album.'}</div>
+                  <div className="label">Others can add photos</div>
+                  <div className="hint">
+                    {share.guest_uploads
+                      ? 'On. Members and people approved in Settings can add, once signed in.'
+                      : 'Off. Only you can add to this album.'}
+                  </div>
                 </div>
-                {share.upload_pin && (
-                  <button className="pill-btn" onClick={() => run(() => setUploadPin(share, null))}>Turn off</button>
-                )}
-              </div>
-              <div className="row">
-                <input
-                  className="field pin-field"
-                  inputMode="numeric"
-                  maxLength={8}
-                  placeholder="PIN, 4 to 8 digits"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                />
-                <button className="pill-btn" disabled={pin.length < 4 || pin === share.upload_pin} onClick={() => run(() => setUploadPin(share, pin))}>
-                  {share.upload_pin ? 'Change PIN' : 'Turn on'}
+                <button className="pill-btn" onClick={() => run(() => setGuestUploads(share, !share.guest_uploads))}>
+                  {share.guest_uploads ? 'Turn off' : 'Turn on'}
                 </button>
               </div>
             </div>

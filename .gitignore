@@ -6,3 +6,4 @@ dev-dist
 !.env.example
 .netlify
 *.local
+.claude/settings.local.json

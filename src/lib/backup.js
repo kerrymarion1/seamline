@@ -94,9 +94,9 @@ export async function restoreBackup(file, onProgress = () => {}) {
     throw new Error('That file could not be read as a backup.')
   }
   const manifestBlob = entries.get(MANIFEST)
-  if (!manifestBlob) throw new Error('That file is not a Seamline backup.')
+  if (!manifestBlob) throw new Error('That file is not a Hugpix backup.')
   const manifest = JSON.parse(await manifestBlob.text())
-  if (manifest.app !== 'seamline') throw new Error('That file is not a Seamline backup.')
+  if (manifest.app !== 'seamline') throw new Error('That file is not a Hugpix backup.')
 
   const have = getState().images
   const missing = manifest.images.filter((m) => !have[m.id] && entries.has(`images/${m.id}`))

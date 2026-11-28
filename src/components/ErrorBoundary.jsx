@@ -10,7 +10,7 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error) {
-    console.error('Seamline crashed', error)
+    console.error('Hugpix crashed', error)
   }
 
   render() {
@@ -19,7 +19,7 @@ export default class ErrorBoundary extends Component {
       <div className="screen">
         <div className="empty">
           <h2>Something went wrong</h2>
-          <p>This page could not be shown. Your albums and collages are safe.</p>
+          <p>This page could not be shown. Your albums are safe.</p>
           <p className="note">{String(this.state.error?.message ?? this.state.error)}</p>
           <button className="primary" onClick={() => window.location.assign('/')}>Back to the start</button>
         </div>

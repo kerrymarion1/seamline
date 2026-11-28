@@ -1,3 +1,4 @@
+import { gpsOf, takenOf } from './exif'
 import { uid } from './scene'
 
 const MAX_EDGE = 4000 // stored full-size copy, used for export
@@ -70,10 +71,15 @@ export async function importFile(file) {
     let full = { blob: file, w: img.naturalWidth, h: img.naturalHeight }
     if (long > MAX_EDGE) full = await resize(img, MAX_EDGE, type)
     const preview = long > PREVIEW_EDGE ? await resize(img, PREVIEW_EDGE, type) : full
+    // Where and when it was taken, while the file still says (resizing drops it).
+    const gps = await gpsOf(file)
+    const taken = await takenOf(file)
 
     return {
       id: uid(),
       name: file.name,
+      ...(gps ? { gps } : null),
+      ...(taken ? { taken } : null),
       width: full.w,
       height: full.h,
       blob: full.blob,
@@ -110,6 +116,15 @@ export function countText(items) {
   const say = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
   if (!videos) return say(photos, 'photo')
   return photos ? `${say(photos, 'photo')} · ${say(videos, 'video')}` : say(videos, 'video')
+}
+
+// What of mine someone reacted to: "your photo", "your video", "3 of your
+// photos", "3 of your videos" or "3 of your photos and videos".
+export function yourText(items) {
+  const videos = items.filter(isVideo).length
+  if (items.length === 1) return videos ? 'your video' : 'your photo'
+  const word = videos === items.length ? 'videos' : videos ? 'photos and videos' : 'photos'
+  return `${items.length} of your ${word}`
 }
 
 // A video's size and length, and a still to stand for it in the grid.

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { holidayOn, holidaysOff, saveHolidaysOff, seasonHoliday } from './holidays'
 
 // The app's accent colour: buttons, the logo's dot and seam, highlights and
 // the glow behind the front page. Chosen in Settings and kept on the device.
@@ -22,15 +23,102 @@ const channels = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)
 let colour = localStorage.getItem(KEY) ?? 'ember'
 const listeners = new Set()
 
+// Seasonal dress for the whole app, chosen at the top of Settings. 'auto'
+// follows the calendar: each season with a `month` (0 = January) is on for
+// that whole month. While a season is on it brings its own colours (in place
+// of the accent above), backgrounds and decorations (styles.css, under
+// [data-season]) and greeting. A non-breaking space keeps the words of a
+// greeting's last part together where the front page sets it in italics.
+const SEASON_KEY = 'seamline:season'
+
+export const SEASONS = [
+  { id: 'auto', name: 'Auto' },
+  { id: 'everyday', name: 'Everyday' },
+  {
+    id: 'newyear', name: 'New Year', month: 0, greeting: 'Happy New Year',
+    accent: '#f5c451', light: '#fff1c1', on: '#241a03',
+  },
+  {
+    id: 'july4', name: 'Fourth of July', month: 6, greeting: 'Happy Fourth of July',
+    accent: '#ff4d5e', light: '#8fb0ff', on: '#22060a',
+  },
+  {
+    id: 'halloween', name: 'Halloween', month: 9, greeting: 'Happy Halloween',
+    accent: '#ff7518', light: '#ffb347', on: '#1a0b02',
+  },
+  {
+    id: 'thanksgiving', name: 'Thanksgiving', month: 10, greeting: 'Happy Thanksgiving',
+    accent: '#e07a2e', light: '#f2b45a', on: '#1a0d04',
+  },
+  {
+    id: 'christmas', name: 'Christmas', month: 11, greeting: 'Merry Christmas',
+    accent: '#d7263d', light: '#e8c372', on: '#fff7ef',
+  },
+]
+
+// Everyone goes back to Auto once, on 2026-10-30, whatever they had picked;
+// a season chosen after that stays chosen.
+const SEASON_RESET = 'seamline:seasonAuto1'
+if (!localStorage.getItem(SEASON_RESET)) {
+  localStorage.setItem(SEASON_KEY, 'auto')
+  localStorage.setItem(SEASON_RESET, '1')
+}
+
+let season = localStorage.getItem(SEASON_KEY) ?? 'auto'
+if (!SEASONS.some((s) => s.id === season)) season = 'auto'
+
+// Thanksgiving picked by hand ends with Thanksgiving: once Christmas's season
+// starts, a phone on Thanksgiving goes back to Auto (and so to Christmas).
+// Once a year; a look picked after that stays picked.
+{
+  const now = new Date()
+  const mark = `hugpix:afterThanksgiving:${now.getFullYear()}`
+  if (seasonHoliday(now)?.id === 'christmas' && !localStorage.getItem(mark)) {
+    if (season === 'thanksgiving') {
+      season = 'auto'
+      localStorage.setItem(SEASON_KEY, 'auto')
+    }
+    localStorage.setItem(mark, '1')
+  }
+}
+
+// The season showing now, or null for everyday. On Auto it is the holiday's
+// season by the calendar (Christmas from the day after Thanksgiving); a
+// holiday this person has turned off (lib/holidays.js) leaves the everyday look.
+export function activeSeason(date = new Date()) {
+  const due = season === 'auto' ? seasonHoliday(date) : null
+  const id = season === 'auto' ? (due && holidayOn(due.id) ? due.id : null) : season
+  return SEASONS.find((s) => s.id === id && s.accent) ?? null
+}
+
 function apply() {
-  const c = COLOURS.find((x) => x.id === colour) ?? COLOURS[0]
-  const root = document.documentElement.style
-  root.setProperty('--accent', c.accent)
-  root.setProperty('--accent-rgb', channels(c.accent))
-  root.setProperty('--accent-2', c.light)
-  root.setProperty('--on-accent', c.on)
+  const c = activeSeason() ?? COLOURS.find((x) => x.id === colour) ?? COLOURS[0]
+  const root = document.documentElement
+  root.style.setProperty('--accent', c.accent)
+  root.style.setProperty('--accent-rgb', channels(c.accent))
+  root.style.setProperty('--accent-2', c.light)
+  root.style.setProperty('--on-accent', c.on)
+  const on = activeSeason()
+  if (on) root.dataset.season = on.id
+  else delete root.dataset.season
 }
 apply()
+
+// A phone left open while one season gives way to the next takes the new
+// look the next time it comes back to the front.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return
+  const before = document.documentElement.dataset.season
+  apply()
+  if (document.documentElement.dataset.season !== before) listeners.forEach((l) => l())
+})
+
+export function setSeason(id) {
+  season = id
+  localStorage.setItem(SEASON_KEY, id)
+  apply()
+  listeners.forEach((l) => l())
+}
 
 export function setColour(id) {
   colour = id
@@ -44,3 +132,40 @@ const subscribe = (l) => {
   return () => listeners.delete(l)
 }
 export const useColour = () => useSyncExternalStore(subscribe, () => colour)
+// The season as chosen ('auto' included), and the one showing now (or null).
+export const useSeason = () => useSyncExternalStore(subscribe, () => season)
+// The holidays this person keeps: one on or off, for them alone (screens/Holidays.jsx).
+let off = holidaysOff().join(',')
+export const useHolidaysOff = () => useSyncExternalStore(subscribe, () => off)
+export function setHolidayOn(id, on) {
+  const list = holidaysOff().filter((x) => x !== id)
+  saveHolidaysOff(on ? list : [...list, id])
+  off = holidaysOff().join(',')
+  apply()
+  listeners.forEach((l) => l())
+}
+export const useActiveSeason = () => useSyncExternalStore(subscribe, () => activeSeason()?.id ?? null)
+// How the front page lays out the albums, also chosen in Settings and kept on
+// the device. The first is the default.
+const LAYOUT_KEY = 'seamline:frontPage'
+// Choices made before Mosaic became the default are dropped, so every device
+// starts on Mosaic once.
+localStorage.removeItem('seamline:homeLayout')
+
+export const LAYOUTS = [
+  { id: 'mosaic', name: 'Mosaic', note: 'Albums as photo tiles, edge to edge' },
+  { id: 'editorial', name: 'Editorial', note: 'Big type and a numbered list of albums' },
+  { id: 'stack', name: 'Stack', note: 'The latest album as a fan of prints' },
+  { id: 'classic', name: 'Classic', note: 'Framed album cards in a grid' },
+]
+
+let layout = localStorage.getItem(LAYOUT_KEY)
+if (!LAYOUTS.some((l) => l.id === layout)) layout = LAYOUTS[0].id
+
+export function setLayout(id) {
+  layout = id
+  localStorage.setItem(LAYOUT_KEY, id)
+  listeners.forEach((l) => l())
+}
+
+export const useLayout = () => useSyncExternalStore(subscribe, () => layout)

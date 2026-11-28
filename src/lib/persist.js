@@ -6,9 +6,11 @@ const saved = { projects: new Map(), albums: new Map(), presets: new Map(), imag
 let timer = 0
 let saving = Promise.resolve()
 
-const toRow = ({ id, width, height, name, blob, previewBlob, kind, duration, remote }) => ({
+const toRow = ({ id, width, height, name, blob, previewBlob, kind, duration, remote, edited }) => ({
   id, width, height, name, blob,
   ...(kind ? { kind, duration } : null), // videos only
+  // When its picture was last cropped or turned, so it isn't fetched again.
+  ...(edited ? { edited } : null),
   // The online address of a photo or video whose file is not kept on this device.
   ...(remote ? { remote } : null),
   // Small photos use one blob for both; don't store it twice.
@@ -69,6 +71,10 @@ async function flush() {
 }
 
 const queue = () => (saving = saving.then(flush))
+// Save now rather than in a moment: lib/sync.js waits for this before noting
+// how far it has read, so a phone closed in between doesn't lose albums it
+// thinks it has.
+export const saveNow = () => queue()
 
 // Load everything saved on this device, then keep it saved as it changes.
 export async function startPersistence() {

@@ -1,16 +1,17 @@
-// Seamline: lets a visitor add a photo to a shared album.
-// There is no login here. Access is checked in this function instead: the
-// request must carry a valid link code and that link's PIN. Ten wrong PINs in
-// a row lock adding photos on that link for 15 minutes.
+// Seamline: lets a signed-in person add a photo to a shared album.
+// Only people allowed by the library can: its members, and people the admin
+// has approved by email (seamline_rights decides, and also applies any block).
+// The link itself must have adding photos switched on (guest_uploads).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { firstName, nameOf } from "../_shared/names.ts";
+import { countText, notifyLibrary } from "../_shared/push.ts";
 
 const BUCKET = "seamline";
+const BURST_MINUTES = 30; // photos added this close together are told as one batch
 const MAX_BYTES = 8 * 1024 * 1024; // per photo
 const MAX_VISITOR_PHOTOS = 100; // per link
 const STORAGE_LIMIT = 1024 ** 3; // free plan: 1 GB across all links
-const MAX_FAILURES = 10;
-const LOCK_MINUTES = 15;
 const TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
 const cors = {
@@ -25,6 +26,14 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return reply({ error: "Method not allowed" }, 405);
 
+  // Who is adding. Signed-out visitors can look, but not add.
+  const caller = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
+  });
+  const { data: auth } = await caller.auth.getUser();
+  const user = auth?.user;
+  if (!user) return reply({ error: "Sign in to add photos." }, 401);
+
   let form: FormData;
   try {
     form = await req.formData();
@@ -32,43 +41,24 @@ Deno.serve(async (req: Request) => {
     return reply({ error: "Bad request" }, 400);
   }
   const token = String(form.get("token") ?? "");
-  const pin = String(form.get("pin") ?? "");
   const file = form.get("file");
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const { data: share } = await admin
     .from("seamline_shares")
-    .select("id, owner, kind, items, upload_pin, pin_failures, pin_locked_until, expires_at")
+    .select("id, owner, kind, title, source_id, items, guest_uploads, expires_at")
     .eq("token", token)
     .maybeSingle();
 
   if (!share || (share.expires_at && new Date(share.expires_at) <= new Date())) {
     return reply({ error: "This link is not available." }, 404);
   }
-  if (!share.upload_pin || share.kind !== "album") {
+  if (!share.guest_uploads || share.kind !== "album") {
     return reply({ error: "Adding photos is turned off for this album." }, 403);
   }
-  if (share.pin_locked_until && new Date(share.pin_locked_until) > new Date()) {
-    return reply({ error: "Too many wrong PINs. Try again in 15 minutes." }, 429);
-  }
-  if (pin !== share.upload_pin) {
-    const failures = (share.pin_failures ?? 0) + 1;
-    const locked = failures >= MAX_FAILURES;
-    await admin
-      .from("seamline_shares")
-      .update({
-        pin_failures: locked ? 0 : failures,
-        pin_locked_until: locked ? new Date(Date.now() + LOCK_MINUTES * 60000).toISOString() : null,
-      })
-      .eq("id", share.id);
-    return reply({ error: "That PIN is not right." }, 401);
-  }
-
-  // A request without a photo just checks the PIN.
-  if (!(file instanceof File)) {
-    if (share.pin_failures) await admin.from("seamline_shares").update({ pin_failures: 0 }).eq("id", share.id);
-    return reply({ ok: true });
-  }
+  const { data: rights } = await caller.rpc("seamline_rights", { lib: share.owner });
+  if (!rights?.upload) return reply({ error: "You haven't been given permission to add photos to this album." }, 403);
+  if (!(file instanceof File)) return reply({ error: "Bad request" }, 400);
 
   const ext = TYPES[file.type];
   if (!ext) return reply({ error: "Only JPEG, PNG or WebP photos can be added." }, 415);
@@ -76,8 +66,16 @@ Deno.serve(async (req: Request) => {
   const visitorCount = (share.items as { visitor?: boolean }[]).filter((it) => it.visitor).length;
   if (visitorCount >= MAX_VISITOR_PHOTOS) return reply({ error: "This album cannot take any more added photos." }, 409);
 
-  const { data: rows } = await admin.from("seamline_shares").select("bytes").eq("owner", share.owner);
-  const used = (rows ?? []).reduce((n: number, r: { bytes: number }) => n + Number(r.bytes), 0);
+  // Only what is kept in Supabase Storage counts here; photos and videos kept
+  // in Cloudflare are recorded by their full address and have their own limit.
+  const { data: rows } = await admin.from("seamline_shares").select("items").eq("owner", share.owner);
+  const seen = new Map<string, number>();
+  for (const r of rows ?? []) {
+    for (const it of (r.items ?? []) as { path: string; bytes: number }[]) {
+      if (!/^https?:\/\//.test(it.path)) seen.set(it.path, Number(it.bytes) || 0);
+    }
+  }
+  const used = [...seen.values()].reduce((n, b) => n + b, 0);
   if (used + file.size > STORAGE_LIMIT) return reply({ error: "The album's storage is full." }, 507);
 
   const id = `v-${crypto.randomUUID()}`;
@@ -97,6 +95,8 @@ Deno.serve(async (req: Request) => {
     height: dim("height"),
     bytes: file.size,
     visitor: true,
+    // Who added it, so the album can say so once it is kept, and the admin can block them.
+    by: { id: user.id, name: nameOf(user) },
     added: new Date().toISOString(),
   };
   const { error: appendError } = await admin.rpc("seamline_append_item", { share: share.id, item });
@@ -104,5 +104,23 @@ Deno.serve(async (req: Request) => {
     await admin.storage.from(BUCKET).remove([path]);
     return reply({ error: "The photo could not be added." }, 500);
   }
+
+  // Tell the library's members. Photos arrive one at a time, so the message
+  // counts what this person added to this link in the last half hour, and each
+  // new one replaces the last on the phone rather than piling up.
+  const since = Date.now() - BURST_MINUTES * 60000;
+  const recent = 1 + (share.items as { visitor?: boolean; added?: string; by?: { id?: string } }[])
+    .filter((it) => it.visitor && it.by?.id === user.id && it.added && Date.parse(it.added) > since).length;
+  const albumId = String(share.source_id ?? "").split(":")[0];
+  const sent = notifyLibrary(admin, share.owner, {
+    title: share.title || "Your shared album",
+    body: `${firstName(user)} added ${countText(recent, 0)}`,
+    url: albumId ? `/album/${albumId}` : "/",
+    tag: `link-${share.id}-${user.id}`,
+  }, user.id).catch(() => {});
+  // Send after replying, so nobody is kept waiting.
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(sent);
+  else await sent;
+
   return reply({ ok: true, item });
 });

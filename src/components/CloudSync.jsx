@@ -1,19 +1,21 @@
-import { useEffect } from 'react'
-import { syncAlbums, useCloud, userName } from '../lib/cloud'
+import { useEffect, useSyncExternalStore } from 'react'
+import { supabase, syncAlbums, useCloud, userName } from '../lib/cloud'
 import { renameUploader, useStore } from '../lib/store'
-import { syncNow } from '../lib/sync'
+import { getSyncStatus, onSyncStatus, syncNow } from '../lib/sync'
 
 // Runs quietly while the app is open. Shortly after anything changes it puts
 // new photos online and sends the change to the other signed-in devices; it
 // also checks for their changes every minute and whenever the app comes back
-// to the front.
+// to the front, and, where the database sends live updates, the moment
+// another device sends one.
 export default function CloudSync() {
   const projects = useStore((s) => s.projects)
   const albums = useStore((s) => s.albums)
   const presets = useStore((s) => s.presets)
   const images = useStore((s) => s.images)
-  const { session, uploader, loading, autoSync, canSync } = useCloud()
+  const { session, uploader, loading, autoSync, canSync, features } = useCloud()
   const on = !!session && uploader && !loading
+  const live = !!features.live
 
   // A name changed on another device reaches this one with the account; make
   // sure everything this person has added here carries it.
@@ -41,11 +43,32 @@ export default function CloudSync() {
     }
   }, [on, canSync])
 
+  // Another device's change: a short wait first, so a burst of photos comes
+  // as one sync.
   useEffect(() => {
-    if (!on || !autoSync) return
+    if (!on || !canSync || !live || !supabase) return
+    let t
+    const channel = supabase
+      .channel('docs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'seamline_docs' }, () => {
+        clearTimeout(t)
+        t = setTimeout(syncNow, 1500)
+      })
+      .subscribe()
+    return () => {
+      clearTimeout(t)
+      supabase.removeChannel(channel)
+    }
+  }, [on, canSync, live])
+
+  // Links follow the albums only once this phone has heard from the server
+  // since it opened, so an out-of-date copy of an album doesn't reach the link.
+  const synced = !!useSyncExternalStore(onSyncStatus, () => getSyncStatus().lastSync)
+  useEffect(() => {
+    if (!on || !autoSync || (canSync && !synced)) return
     const t = setTimeout(() => syncAlbums(albums, images), 1500)
     return () => clearTimeout(t)
-  }, [albums, images, on, autoSync])
+  }, [albums, images, on, autoSync, canSync, synced])
 
   return null
 }
